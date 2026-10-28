@@ -15,9 +15,10 @@ import re
 from fastapi import APIRouter, File, Request, UploadFile
 from fastapi.responses import FileResponse
 
+from app.config import settings
 from app.exceptions import BadRequestError, NotFoundError
 from app.models.responses.branding import BrandingLogoResponse
-from app.models.schemas import BrandingResponse, BrandingUpdate
+from app.models.schemas import BrandingResponse, BrandingUpdate, DemoLoginInfo
 from app.services.audit import AuditEventType, audit_service
 from app.services.auth import TokenData
 from app.services.branding import ASSET_MEDIA_TYPES, resolve_asset_path
@@ -119,8 +120,18 @@ async def get_branding() -> BrandingResponse:
     This endpoint is **public** (no auth required) so the frontend can
     fetch brand assets on initial load before the user has logged in.
     Returns sensible defaults when no custom configuration has been saved.
+
+    On a public demo instance (DEMO_LOGIN_*) the response also carries the
+    demo account's credentials so the sign-in form can prefill them. They are
+    public by design; the account is reset at every startup and cannot be
+    changed by whoever signs in.
     """
-    return await _get_branding()
+    config = dict(await _get_branding())
+    if settings.demo_login_enabled:
+        config["demo_login"] = DemoLoginInfo(
+            email=settings.demo_login_email, password=settings.demo_login_password
+        )
+    return BrandingResponse.model_validate(config)
 
 
 @router.get("/assets/{filename}", include_in_schema=False)

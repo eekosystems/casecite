@@ -16,6 +16,7 @@ vi.mock('../../utils/logger', () => ({ default: { debug: vi.fn(), info: vi.fn(),
 
 import { api } from '../../api';
 import { useAuthStore } from '../../stores/authStore';
+import { useBrandingStore } from '../../stores/brandingStore';
 import { useUIStore } from '../../stores/uiStore';
 import { LoginModal } from './LoginModal';
 import { SignupModal } from './SignupModal';
@@ -26,8 +27,44 @@ const mockCall = (fn: unknown, n: number) => (fn as ReturnType<typeof vi.fn>).mo
 
 beforeEach(() => {
   useAuthStore.setState(useAuthStore.getInitialState(), true);
+  useBrandingStore.setState(useBrandingStore.getInitialState(), true);
   useUIStore.setState(useUIStore.getInitialState(), true);
   vi.clearAllMocks();
+});
+
+describe('LoginModal on a public demo instance', () => {
+  const demo_login = { email: 'demo@firm.com', password: 'Password1!' };
+  const withDemo = () => {
+    const { branding } = useBrandingStore.getState();
+    useBrandingStore.setState({ branding: { ...branding, demo_login } });
+  };
+
+  it('prefills the shared demo account and says so', () => {
+    withDemo();
+    useAuthStore.setState({ showLoginModal: true });
+    render(<LoginModal />);
+
+    expect(screen.getByLabelText('Email')).toHaveValue('demo@firm.com');
+    expect(screen.getByLabelText('Password')).toHaveValue('Password1!');
+    expect(screen.getByRole('note')).toHaveTextContent(/public demo/i);
+  });
+
+  it('leaves an email the user already has alone', () => {
+    withDemo();
+    useAuthStore.setState({ showLoginModal: true, loginEmail: 'a@firm.com' });
+    render(<LoginModal />);
+
+    expect(screen.getByLabelText('Email')).toHaveValue('a@firm.com');
+    expect(screen.getByLabelText('Password')).toHaveValue('');
+  });
+
+  it('does nothing on an ordinary instance', () => {
+    useAuthStore.setState({ showLoginModal: true });
+    render(<LoginModal />);
+
+    expect(screen.getByLabelText('Email')).toHaveValue('');
+    expect(screen.queryByRole('note')).toBeNull();
+  });
 });
 
 describe('LoginModal', () => {

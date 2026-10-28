@@ -286,22 +286,39 @@ async def lifespan(app: FastAPI):
     except Exception as _col_err:
         logger.error(f"SQLite column backstop failed: {_col_err}")
 
+    # Public demo account (DEMO_LOGIN_*): create it, or put it back in its known
+    # state after whatever the last visitor did. No-op unless configured.
+    if settings.demo_login_enabled:
+        try:
+            from app.database import AsyncSessionLocal
+            from app.services.demo_login import ensure_demo_login_account
+
+            async with AsyncSessionLocal() as _demo_session:
+                await ensure_demo_login_account(_demo_session)
+        except Exception as _demo_err:
+            logger.error(f"Could not seed the demo login account: {_demo_err}")
+
     # Ensure there is always at least one admin. On installs created before the
     # "first user is admin" rule, the earliest ACTIVE account is promoted so
     # admin-only settings (Users, integrations) are reachable. A deactivated
-    # account is never promoted: it was switched off deliberately.
+    # account is never promoted: it was switched off deliberately. The public
+    # demo account is ignored here: it must never be promoted, and an instance
+    # holding only the demo account is still "empty" for bootstrap purposes.
     try:
         from sqlalchemy import select
 
         from app.database import AsyncSessionLocal
         from app.models.db_models import User as DBUser
+        from app.services.demo_login import is_demo_login_email
 
         async with AsyncSessionLocal() as _admin_session:
-            users = (
-                (await _admin_session.execute(select(DBUser).order_by(DBUser.created_at)))
+            users = [
+                u
+                for u in (await _admin_session.execute(select(DBUser).order_by(DBUser.created_at)))
                 .scalars()
                 .all()
-            )
+                if not is_demo_login_email(u.email)
+            ]
             has_admin = any(isinstance(u.roles, list) and "admin" in u.roles for u in users)
             active_users = [u for u in users if u.is_active]
             if active_users and not has_admin:

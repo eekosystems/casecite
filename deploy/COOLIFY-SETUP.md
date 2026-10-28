@@ -110,6 +110,7 @@ Optional:
 | `COURTLISTENER_API_TOKEN` | free token; needed for citation check and usable rate limits on case-law tools |
 | `FRONTEND_URL` | `https://app.yourfirm.com` — used in password-reset emails |
 | `SENDGRID_API_KEY` | enables password-reset emails |
+| `DEMO_LOGIN_EMAIL` / `DEMO_LOGIN_PASSWORD` | **public demo instances only** — see "Public demo instance" in [docs/deployment.md](../docs/deployment.md) |
 
 `TRUSTED_PROXIES` matters: if the proxy's address is not trusted, every user
 appears to come from one IP, so one person's failed logins lock out the whole

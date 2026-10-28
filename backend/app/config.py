@@ -73,6 +73,17 @@ class Settings(BaseSettings):
     # development it is optional.
     registration_bootstrap_token: str = ""
 
+    # Public demo instance. Off unless BOTH are set. When they are, the account
+    # is created (or reset) at every startup with the attorney role and this
+    # password; it cannot change its password, be reset by email, enrol MFA or
+    # be promoted; it is exempt from the login lockout so one visitor cannot
+    # lock the others out; it never counts as the "first user" for the admin
+    # bootstrap; and GET /branding publishes the credentials so the sign-in form
+    # prefills them. Everything the account does is visible to every visitor —
+    # never set this on an instance that holds real client data.
+    demo_login_email: str = ""
+    demo_login_password: str = ""
+
     # Require every password account to enrol TOTP MFA before using the API
     # (SSO-only accounts rely on the identity provider's MFA policy).
     require_mfa: bool = False
@@ -237,6 +248,34 @@ class Settings(BaseSettings):
             )
             return None
         return v
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_demo_login(cls, data: dict[str, Any]) -> dict[str, Any]:
+        """Lower-case and trim the demo email so it matches the stored account."""
+        for key in [k for k in data if str(k).lower() == "demo_login_email"]:
+            data[key] = str(data[key] or "").strip().lower()
+        return data
+
+    @property
+    def demo_login_enabled(self) -> bool:
+        """True when a public demo account is configured (both settings set)."""
+        return bool(self.demo_login_email and self.demo_login_password)
+
+    @model_validator(mode="after")
+    def _validate_demo_login(self) -> "Settings":
+        """A half-configured demo account is a misconfiguration, not a quiet default."""
+        if bool(self.demo_login_email) != bool(self.demo_login_password):
+            raise ValueError(
+                "DEMO_LOGIN_EMAIL and DEMO_LOGIN_PASSWORD must be set together "
+                "(or both left unset)."
+            )
+        if self.demo_login_enabled and self.require_mfa:
+            raise ValueError(
+                "REQUIRE_MFA cannot be combined with DEMO_LOGIN_*: the demo account "
+                "can never enrol MFA, so nobody could sign in to it."
+            )
+        return self
 
     @model_validator(mode="after")
     def _validate_security_settings(self) -> "Settings":

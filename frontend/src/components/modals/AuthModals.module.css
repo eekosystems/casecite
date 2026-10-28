@@ -262,3 +262,15 @@
   line-height: 1.4;
   color: var(--gray-500);
 }
+
+/* Public demo instance: the shared account is prefilled */
+
+.infoBox {
+  padding: 10px 14px;
+  background: var(--gray-100);
+  color: var(--gray-700);
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.5;
+  margin-bottom: 16px;
+}

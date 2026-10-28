@@ -71,6 +71,7 @@ from app.services.auth import (
     mfa_enrollment_required,
     password_reset_service,
 )
+from app.services.demo_login import DEMO_LOGIN_LOCKED_MESSAGE, is_demo_login_email
 from app.services.device_auth import device_auth_service, format_user_code, normalize_user_code
 from app.utils.ip_resolution import get_client_ip
 
@@ -314,8 +315,14 @@ async def register(
 
     async with _registration_lock:
         # The very first account on a fresh install becomes the admin so there is
-        # always someone who can manage users and instance settings.
-        user_count = (await db.execute(select(func.count()).select_from(DBUser))).scalar_one()
+        # always someone who can manage users and instance settings. The public
+        # demo account (seeded at startup) never counts: it must not occupy the
+        # first-user slot, and the operator's own first registration must still
+        # become the admin.
+        count_stmt = select(func.count()).select_from(DBUser)
+        if settings.demo_login_enabled:
+            count_stmt = count_stmt.where(DBUser.email != settings.demo_login_email)
+        user_count = (await db.execute(count_stmt)).scalar_one()
 
         if user_count == 0:
             # Bootstrapping the first (admin) account requires the operator's
@@ -421,8 +428,13 @@ async def email_login(
     """
     from app.services.passwords import verify_password
 
+    # The shared public demo account is exempt from the per-account lockout:
+    # otherwise any visitor could lock every other visitor out with five bad
+    # passwords. The per-IP rate limit still applies.
+    lockout_exempt = is_demo_login_email(body.email)
+
     # Check account-level lockout before attempting authentication
-    if account_lockout.is_account_locked(body.email):
+    if not lockout_exempt and account_lockout.is_account_locked(body.email):
         await audit_service.log_event(
             event_type=AuditEventType.ACCESS_DENIED,
             user_email=body.email,
@@ -443,7 +455,8 @@ async def email_login(
             # doesn't reveal whether the account exists (user enumeration).
             dummy_hash = await asyncio.to_thread(_dummy_password_hash)
             await asyncio.to_thread(verify_password, body.password, dummy_hash)
-            account_lockout.record_login_failure(body.email)
+            if not lockout_exempt:
+                account_lockout.record_login_failure(body.email)
             await audit_service.log_event(
                 event_type=AuditEventType.LOGIN_FAILURE,
                 user_email=body.email,
@@ -454,7 +467,8 @@ async def email_login(
             raise UnauthorizedError("Invalid email or password")
 
         if not await asyncio.to_thread(verify_password, body.password, db_user.password_hash):
-            account_lockout.record_login_failure(body.email)
+            if not lockout_exempt:
+                account_lockout.record_login_failure(body.email)
             await audit_service.log_event(
                 event_type=AuditEventType.LOGIN_FAILURE,
                 user_email=body.email,
@@ -1031,6 +1045,9 @@ async def change_password(
     db_user = result.scalar_one_or_none()
     if not db_user or not db_user.password_hash:
         raise BadRequestError("Password change is not available for this account.")
+    if is_demo_login_email(db_user.email):
+        # Shared public account: a new password would lock every other visitor out.
+        raise ForbiddenError(DEMO_LOGIN_LOCKED_MESSAGE)
 
     if not await asyncio.to_thread(verify_password, body.current_password, db_user.password_hash):
         await audit_service.log_event(
@@ -1101,8 +1118,12 @@ async def forgot_password(
     # Only accounts that HAVE a local password can reset it. An SSO-only account
     # (password_hash is NULL) is treated exactly like an unknown address:
     # resetting it would create a password path around the identity provider.
+    # The public demo account is likewise never resettable: its password is
+    # fixed by configuration and shared by every visitor.
     resettable = False
     try:
+        if is_demo_login_email(email):
+            raise ValueError("demo account is not resettable")
         result = await db.execute(
             select(DBUser.password_hash, DBUser.is_active).where(DBUser.email == email)
         )
@@ -1193,9 +1214,15 @@ async def reset_password(
         result = await db.execute(select(DBUser).where(DBUser.email == email))
         user = result.scalar_one_or_none()
 
-        # An SSO-only account must never acquire a local password this way, and
-        # a deactivated account has nothing to reset. Both look like a bad token.
-        if user is None or user.password_hash is None or not user.is_active:
+        # An SSO-only account must never acquire a local password this way, a
+        # deactivated account has nothing to reset, and the shared demo
+        # account's password is fixed by configuration. All look like a bad token.
+        if (
+            user is None
+            or user.password_hash is None
+            or not user.is_active
+            or is_demo_login_email(user.email)
+        ):
             password_reset_service.invalidate_token(body.token)
             await audit_service.log_event(
                 event_type=AuditEventType.SECURITY_ALERT,

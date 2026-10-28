@@ -1,5 +1,11 @@
 // ==================== Branding Types ====================
 
+/** Credentials of the shared public demo account; present only on a demo instance. */
+export interface DemoLoginInfo {
+  email: string;
+  password: string;
+}
+
 export interface BrandingConfig {
   firm_name: string;
   logo_url: string | null;
@@ -8,6 +14,7 @@ export interface BrandingConfig {
   accent_color: string;
   favicon_url: string | null;
   updated_at: string | null;
+  demo_login?: DemoLoginInfo | null;
 }
 
 // ==================== API Response Types ====================

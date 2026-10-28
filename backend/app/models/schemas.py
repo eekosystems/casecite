@@ -1287,6 +1287,13 @@ class AuditVerifyResponse(BaseModel):
 # =============================================================================
 
 
+class DemoLoginInfo(BaseModel):
+    """Credentials of the public demo account (DEMO_LOGIN_*), published on purpose."""
+
+    email: str
+    password: str
+
+
 class BrandingResponse(BaseModel):
     """Public branding configuration returned to the frontend."""
 
@@ -1298,6 +1305,8 @@ class BrandingResponse(BaseModel):
     favicon_url: str | None = None
     custom_css: str | None = None
     updated_at: str | None = None
+    # Set only on a public demo instance; the sign-in form prefills from it.
+    demo_login: DemoLoginInfo | None = None
 
 
 class BrandingUpdate(BaseModel):

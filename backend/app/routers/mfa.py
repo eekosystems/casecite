@@ -19,6 +19,7 @@ from app.database import get_db
 from app.exceptions import (
     BadRequestError,
     ConflictError,
+    ForbiddenError,
     NotFoundError,
     RateLimitedError,
     UnauthorizedError,
@@ -37,6 +38,7 @@ from app.models.schemas import (
 from app.services import mfa as mfa_service
 from app.services.audit import AuditEventType, audit_service
 from app.services.auth import TokenData, auth_service, get_current_user
+from app.services.demo_login import DEMO_LOGIN_LOCKED_MESSAGE, is_demo_login_email
 from app.utils.ip_resolution import get_client_ip
 
 logger = logging.getLogger(__name__)
@@ -102,6 +104,9 @@ async def mfa_setup(
 ) -> MfaSetupResponse:
     """Begin enrollment: generate a secret (stored encrypted, not yet enabled)."""
     user = await _load_user(db, current_user.user_id)
+    if is_demo_login_email(user.email):
+        # Shared public account: a second factor would lock every other visitor out.
+        raise ForbiddenError(DEMO_LOGIN_LOCKED_MESSAGE)
     if user.mfa_enabled:
         # Never let a session-only attacker reset/disable an active second factor.
         # Re-enrollment requires disabling first, which demands a valid code.

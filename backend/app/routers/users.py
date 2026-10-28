@@ -20,7 +20,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.exceptions import BadRequestError, ConflictError, NotFoundError, ServiceUnavailableError
+from app.exceptions import (
+    BadRequestError,
+    ConflictError,
+    ForbiddenError,
+    NotFoundError,
+    ServiceUnavailableError,
+)
 from app.models.db_models import User as DBUser
 from app.models.schemas import (
     AdminUserItem,
@@ -33,6 +39,7 @@ from app.models.schemas import (
 )
 from app.services.audit import AuditEventType, audit_service
 from app.services.auth import TokenData, UserRole, auth_service
+from app.services.demo_login import is_demo_login_email
 from app.services.permissions import require_permission
 from app.utils.ip_resolution import get_client_ip
 
@@ -260,6 +267,10 @@ async def update_user_role(
     target = result.scalar_one_or_none()
     if target is None:
         raise NotFoundError("User not found")
+    if is_demo_login_email(target.email):
+        # The shared public demo account has a public password; giving it any
+        # other role hands that role to everyone on the internet.
+        raise ForbiddenError("The demo account's role is fixed by configuration.")
 
     current_roles = target.roles if isinstance(target.roles, list) else []
     was_admin = UserRole.ADMIN.value in current_roles

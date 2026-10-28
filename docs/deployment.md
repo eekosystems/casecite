@@ -143,6 +143,29 @@ Then sign in at `https://$DOMAIN`, enrol MFA, and invite the rest of the firm
 from Settings → Users. Self-service registration stays off
 (`ALLOW_REGISTRATION=false`) unless you turn it on.
 
+### Public demo instance
+
+For an instance whose only purpose is to let strangers try the product, set
+both of these and redeploy:
+
+```bash
+DEMO_LOGIN_EMAIL=demo@yourfirm.com
+DEMO_LOGIN_PASSWORD=<any password; it is public>
+```
+
+At every startup the app creates that account (or puts it back in its known
+state) with the attorney role, and `GET /api/v1/branding` publishes the
+credentials so the sign-in form opens with them filled in. Because every
+visitor shares the account, it cannot change its password, be reset by email,
+enrol MFA or be given another role, and it is exempt from the per-account
+login lockout. Everything one visitor uploads is visible to the next, and a
+redeploy resets the account but not its documents.
+
+The demo account never counts as the "first user", so the operator still
+creates the real admin account with the bootstrap token as above. Never set
+these variables on an instance that holds real client data; they are refused
+together with `REQUIRE_MFA`.
+
 This starts 5 services:
 - **caddy** — Reverse proxy with automatic Let's Encrypt certificates
 - **postgres** — PostgreSQL 16 database
