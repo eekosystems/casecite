@@ -67,6 +67,7 @@ function mapServerSettings(server: Record<string, unknown>): RagSettings {
     custom_document_prompt: text('custom_document_prompt'),
     custom_compliance_prompt: text('custom_compliance_prompt'),
     custom_strategy_prompt: text('custom_strategy_prompt'),
+    workflow_email_notifications: pick(server.workflow_email_notifications, true),
   };
 }
 
@@ -176,6 +177,7 @@ export const useSettingsStore = create<SettingsState>((set, _get) => ({
         custom_document_prompt: newSettings.custom_document_prompt ?? null,
         custom_compliance_prompt: newSettings.custom_compliance_prompt ?? null,
         custom_strategy_prompt: newSettings.custom_strategy_prompt ?? null,
+        workflow_email_notifications: newSettings.workflow_email_notifications ?? true,
       });
       logger.debug('Settings saved to backend');
       return true;

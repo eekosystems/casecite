@@ -47,7 +47,12 @@ from app.models.enums import (  # noqa: F401
 from app.models.matters import Matter, MatterMember  # noqa: F401
 
 # Tabular review (schema-driven extraction across many documents)
-from app.models.review_tables import ReviewCell, ReviewTable  # noqa: F401
+from app.models.review_tables import (  # noqa: F401
+    ReviewCell,
+    ReviewRun,
+    ReviewSchema,
+    ReviewTable,
+)
 
 # Branding, Instance Secrets, Workspace Sessions
 from app.models.tracking import (  # noqa: F401
@@ -57,4 +62,9 @@ from app.models.tracking import (  # noqa: F401
 )
 
 # Workflows (saved, repeatable sequences of the platform's own operations)
-from app.models.workflows import Workflow, WorkflowRun, WorkflowStepRun  # noqa: F401
+from app.models.workflows import (  # noqa: F401
+    Workflow,
+    WorkflowRun,
+    WorkflowStepRun,
+    WorkflowVersion,
+)

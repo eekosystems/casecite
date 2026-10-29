@@ -105,7 +105,8 @@ test.describe('Matters', () => {
     // Set it as the active matter: the header selector follows and remembers it.
     await main.getByRole('button', { name: 'Set as active' }).click();
     await expect(select).toHaveValue(SHARED.id);
-    await expect(main.getByRole('button', { name: 'Active matter' })).toBeVisible();
+    await expect(main.getByText('Active matter', { exact: true })).toBeVisible();
+    await expect(main.getByRole('button', { name: 'Clear active matter' })).toBeVisible();
     expect(await page.evaluate(() => localStorage.getItem('casecite.activeMatterId'))).toBe(SHARED.id);
   });
 

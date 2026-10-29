@@ -18,7 +18,7 @@ import { useAppUIState } from './hooks/useAppUIState';
 import { useAppEffects } from './hooks/useAppEffects';
 
 // Route config
-import { modeFromPath, MODE_TO_ROUTE } from './routeConfig';
+import { modeFromPath, MODE_TO_ROUTE, showsRightPanel } from './routeConfig';
 
 // Layout & components
 import { ErrorBoundary, ConfirmModal } from './components';
@@ -93,7 +93,7 @@ const App = () => {
         <AppHeader />
         <AppRoutes />
       </main>
-      <RightPanel />
+      {showsRightPanel(activeMode) && <RightPanel />}
     </div>
     </ResearchContext.Provider>
     </AppContext.Provider>

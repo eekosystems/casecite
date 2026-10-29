@@ -27,6 +27,8 @@ export interface RagSettings {
   custom_document_prompt?: string | null;
   custom_compliance_prompt?: string | null;
   custom_strategy_prompt?: string | null;
+  /** Email when a workflow run you started or must approve ends or needs you. */
+  workflow_email_notifications?: boolean;
   [key: string]: unknown;
 }
 

@@ -20,6 +20,7 @@ export const AdvancedTab = ({ local, setLocal, styles }: AdvancedTabProps) => {
       { key: 'contextCompression', label: 'Context Compression', desc: 'Compress retrieved context to fit more documents' },
       { key: 'queryExpansion', label: 'Query Expansion', desc: 'Automatically expand queries with related terms' },
       { key: 'sourceTracking', label: 'Source Tracking', desc: 'Track exact source locations for all citations' },
+      { key: 'workflow_email_notifications', label: 'Workflow Emails', desc: 'Email you when a workflow run you started finishes or fails, and when a run needs your approval. Only when the server has workflow notifications switched on.' },
     ].map((item: { key: string; label: string; desc: string }) => (
       <div key={item.key} className={styles.toggleItem}>
         <div>

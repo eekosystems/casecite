@@ -466,6 +466,17 @@ export interface ReviewFieldSpec {
 
 export type ReviewCellStatus = 'extracted' | 'unverified' | 'not_found' | 'error' | string;
 
+export type ReviewStatus = 'pending' | 'approved' | 'flagged';
+
+/** One change to a cell: the model's value, an override, an approval, a flag or a clear. */
+export interface ReviewCellHistoryEntry {
+  at: string;
+  by: string;
+  kind: 'model' | 'override' | 'approve' | 'flag' | 'clear' | string;
+  value?: string | null;
+  status?: string | null;
+}
+
 export interface ReviewCell {
   document_id: string;
   field_key: string;
@@ -478,6 +489,78 @@ export interface ReviewCell {
   error: string | null;
   model_used: string | null;
   updated_at: string | null;
+  /** Human review layer: the override replaces the model's value when set. */
+  override_value: string | null;
+  effective_value: string | null;
+  review_status: ReviewStatus | string;
+  note: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  history: ReviewCellHistoryEntry[];
+}
+
+/** A change a reviewer makes to a cell; a field left out keeps its value. */
+export interface ReviewCellReviewInput {
+  override_value?: string | null;
+  review_status?: ReviewStatus;
+  note?: string | null;
+}
+
+export interface ReviewCellRef {
+  document_id: string;
+  field_key: string;
+}
+
+export interface ReviewSchemaTemplate {
+  id: string;
+  name: string;
+  description: string | null;
+  matter_id: string | null;
+  owner_id: string | null;
+  role: 'owner' | 'member' | 'builtin' | string;
+  is_builtin: boolean;
+  fields: ReviewFieldSpec[];
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface ReviewSchemaCreateInput {
+  name: string;
+  description?: string | null;
+  matter_id?: string | null;
+  fields: ReviewFieldSpec[];
+}
+
+export interface ReviewRun {
+  id: string;
+  table_id: string;
+  runner_id: string;
+  scope: { document_ids?: string[] | null; field_keys?: string[] | null };
+  status: 'running' | 'completed' | 'failed' | 'cancelled' | string;
+  job_id: string | null;
+  counts: ReviewTableRunResult | null;
+  error: string | null;
+  started_at: string;
+  finished_at: string | null;
+}
+
+export type ReviewExportFormat = 'xlsx' | 'csv' | 'json';
+
+export interface ReviewExportOptions {
+  format: ReviewExportFormat;
+  /** Field keys to include; empty = all. */
+  fields?: string[];
+  reviewed_only?: boolean;
+  include_quotes?: boolean;
+  /** Extraction or review statuses to include; empty = all. */
+  statuses?: string[];
+}
+
+export interface ReviewDocumentText {
+  document_id: string;
+  filename: string;
+  text: string;
+  length: number;
 }
 
 export interface ReviewTableDocument {
@@ -498,6 +581,8 @@ export interface ReviewTableSummary {
   field_count: number;
   document_count: number;
   cell_count: number;
+  approved_count: number;
+  flagged_count: number;
   last_run_at: string | null;
   created_at: string;
   updated_at: string | null;
@@ -523,6 +608,13 @@ export interface ReviewTableRunStarted {
   poll_url: string;
   documents: number;
   fields: number;
+  run_id?: string | null;
+}
+
+export interface ReviewTableDocumentsAdded {
+  added: string[];
+  table: ReviewTableDetail;
+  run: ReviewTableRunStarted | null;
 }
 
 export interface ReviewTableRunResult {
@@ -534,6 +626,8 @@ export interface ReviewTableRunResult {
   unverified?: number;
   not_found?: number;
   errors?: number;
+  /** Cells whose model value differed from the previous run. */
+  changed?: number;
 }
 
 export interface ReviewTableJob {
@@ -751,7 +845,8 @@ export type WorkflowStepKind =
   | 'compare_contracts'
   | 'draft_document'
   | 'deep_research'
-  | 'citation_check';
+  | 'citation_check'
+  | 'approval';
 
 export type WorkflowInputSource = 'run' | 'documents' | 'step';
 
@@ -775,8 +870,40 @@ export interface AnalyzeContractParams {
 }
 
 export interface CompareContractsParams {
+  /** Where the baseline comes from: the first input, or the fixed document below. */
+  baseline?: 'first_input' | 'document';
   baseline_document_id?: string | null;
   focus?: string | null;
+}
+
+export type WorkflowApprovers = 'owner' | 'any_member' | string[];
+
+export interface ApprovalParams {
+  title: string;
+  instructions?: string | null;
+  approvers: WorkflowApprovers;
+}
+
+export type WorkflowConditionOp =
+  | 'exists'
+  | 'not_exists'
+  | 'equals'
+  | 'not_equals'
+  | 'contains'
+  | 'gt'
+  | 'lt'
+  | 'gte'
+  | 'lte'
+  | 'count_gt'
+  | 'count_eq';
+
+/** Run a step only when an earlier step's output satisfies the rule. */
+export interface WorkflowCondition {
+  step: string;
+  /** Dotted path into the earlier output (`data.analyses.0.issues`); empty = the whole output. */
+  path: string;
+  op: WorkflowConditionOp;
+  value: string | number | boolean | null;
 }
 
 export interface DraftDocumentParams {
@@ -801,13 +928,23 @@ export type WorkflowStepParams =
   | CompareContractsParams
   | DraftDocumentParams
   | DeepResearchParams
-  | CitationCheckParams;
+  | CitationCheckParams
+  | ApprovalParams;
 
 export interface WorkflowStep {
   name: string;
   kind: WorkflowStepKind;
   params: Record<string, unknown>;
   inputs: WorkflowStepInputs;
+  condition?: WorkflowCondition | null;
+}
+
+/** A document a workflow or run names, with the name the UI shows for it. */
+export interface WorkflowDocumentRef {
+  id: string;
+  filename: string | null;
+  /** False when the caller can no longer read it. */
+  accessible: boolean;
 }
 
 export interface WorkflowSummary {
@@ -819,6 +956,9 @@ export interface WorkflowSummary {
   /** The caller's role: owner edits and deletes; a matter member reads and runs. */
   role: 'owner' | 'member' | string;
   template_key: string | null;
+  /** Incremented every time the steps change. */
+  version: number;
+  archived_at: string | null;
   step_count: number;
   step_kinds: WorkflowStepKind[];
   run_count: number;
@@ -830,6 +970,40 @@ export interface WorkflowSummary {
 
 export interface WorkflowDetail extends WorkflowSummary {
   steps: WorkflowStep[];
+  /** Every document the steps name (fixed inputs, baselines, references). */
+  documents: WorkflowDocumentRef[];
+}
+
+export interface WorkflowStepIssue {
+  /** -1 for a workflow-level problem. */
+  index: number;
+  field: string;
+  message: string;
+}
+
+export interface WorkflowValidateResponse {
+  valid: boolean;
+  issues: WorkflowStepIssue[];
+}
+
+export interface WorkflowVersionSummary {
+  version: number;
+  name: string;
+  description: string | null;
+  step_count: number;
+  step_names: string[];
+  created_by: string;
+  created_at: string;
+  change_note: string | null;
+}
+
+export interface WorkflowVersionDetail extends WorkflowVersionSummary {
+  steps: WorkflowStep[];
+}
+
+export interface WorkflowVersionList {
+  current: number;
+  versions: WorkflowVersionSummary[];
 }
 
 export interface WorkflowTemplate {
@@ -850,6 +1024,8 @@ export interface WorkflowUpdateInput {
   name?: string;
   description?: string | null;
   steps?: WorkflowStep[];
+  /** Kept on the version a step change records. */
+  change_note?: string | null;
 }
 
 export interface WorkflowRunStarted {
@@ -860,13 +1036,25 @@ export interface WorkflowRunStarted {
   documents: number;
 }
 
-export type WorkflowStepStatus = 'pending' | 'running' | 'completed' | 'failed' | 'skipped' | string;
+export type WorkflowStepStatus =
+  | 'pending'
+  | 'running'
+  | 'completed'
+  | 'failed'
+  | 'skipped'
+  | 'skipped_condition'
+  | 'awaiting'
+  | 'rejected'
+  | string;
 
 export interface WorkflowStepOutput {
   summary: string;
   data: Record<string, unknown>;
   document_ids: string[];
   produced: Record<string, string[]>;
+  /** Set when the stored output was cut to the server's size cap. */
+  truncated?: boolean;
+  truncated_fields?: string[];
 }
 
 export interface WorkflowStepRun {
@@ -882,18 +1070,34 @@ export interface WorkflowStepRun {
   finished_at: string | null;
 }
 
+export type WorkflowRunStatus =
+  | 'running'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+  | 'awaiting_approval'
+  | 'rejected'
+  | string;
+
 export interface WorkflowRunSummary {
   id: string;
   workflow_id: string;
+  /** The workflow's name at read time, for lists that span workflows. */
+  workflow_name: string | null;
+  workflow_version: number;
   runner_id: string;
   matter_id: string | null;
-  status: 'running' | 'completed' | 'failed' | 'cancelled' | string;
+  status: WorkflowRunStatus;
   steps: number;
   completed_steps: number;
   documents: number;
   job_id: string | null;
   error: string | null;
   resumed_count: number;
+  /** While awaiting approval: the step waiting and who may decide it. */
+  awaiting_step: string | null;
+  approver_ids: string[];
+  can_approve: boolean;
   created_at: string;
   completed_at: string | null;
 }
@@ -902,15 +1106,19 @@ export interface WorkflowRunDetail extends WorkflowRunSummary {
   step_definitions: WorkflowStep[];
   step_runs: WorkflowStepRun[];
   input_document_ids: string[];
+  /** Names for every document the run read. */
+  document_refs: WorkflowDocumentRef[];
 }
 
 export interface WorkflowRunResult {
   run_id: string;
+  /** completed, or awaiting_approval when the job ended at an approval step. */
   status: string;
   steps: number;
   completed_steps: number;
   documents: number;
   produced: Record<string, number>;
+  awaiting_step?: string;
 }
 
 export interface WorkflowJob {
@@ -1568,7 +1776,17 @@ export interface ApiClient {
   estimateReviewTable(tableId: string): Promise<ReviewTableEstimate>;
   runReviewTable(tableId: string, scope?: { document_ids?: string[]; field_keys?: string[] }): Promise<ReviewTableRunStarted>;
   getReviewTableJob(jobId: string): Promise<ReviewTableJob>;
-  exportReviewTable(tableId: string, format: 'xlsx' | 'csv'): Promise<Blob>;
+  exportReviewTable(tableId: string, options: ReviewExportOptions | ReviewExportFormat): Promise<Blob>;
+  reviewCell(tableId: string, documentId: string, fieldKey: string, change: ReviewCellReviewInput): Promise<ReviewCell>;
+  bulkReviewCells(tableId: string, cells: ReviewCellRef[], change: ReviewCellReviewInput): Promise<{ updated: number; cells: ReviewCell[] }>;
+  listReviewSchemas(): Promise<{ schemas: ReviewSchemaTemplate[] }>;
+  createReviewSchema(input: ReviewSchemaCreateInput): Promise<ReviewSchemaTemplate>;
+  updateReviewSchema(schemaId: string, changes: Partial<ReviewSchemaCreateInput>): Promise<ReviewSchemaTemplate>;
+  deleteReviewSchema(schemaId: string): Promise<{ status: string; id: string }>;
+  addReviewDocuments(tableId: string, documentIds: string[], run?: boolean): Promise<ReviewTableDocumentsAdded>;
+  removeReviewDocument(tableId: string, documentId: string): Promise<ReviewTableDetail>;
+  getReviewDocumentText(tableId: string, documentId: string): Promise<ReviewDocumentText>;
+  listReviewRuns(tableId: string, limit?: number): Promise<{ runs: ReviewRun[] }>;
 
   // Deep research
   planDeepResearch(input: DeepResearchPlanInput): Promise<DeepResearchPlanResponse>;
@@ -1580,7 +1798,7 @@ export interface ApiClient {
   cancelDeepResearchJob(jobId: string): Promise<{ status: string; job_id: string }>;
 
   // Workflows
-  listWorkflows(): Promise<{ workflows: WorkflowSummary[] }>;
+  listWorkflows(includeArchived?: boolean): Promise<{ workflows: WorkflowSummary[] }>;
   createWorkflow(input: WorkflowCreateInput): Promise<WorkflowDetail>;
   getWorkflow(workflowId: string): Promise<WorkflowDetail>;
   updateWorkflow(workflowId: string, changes: WorkflowUpdateInput): Promise<WorkflowDetail>;
@@ -1594,6 +1812,20 @@ export interface ApiClient {
   resumeWorkflowRun(workflowId: string, runId: string): Promise<WorkflowRunStarted>;
   getWorkflowJob(jobId: string): Promise<WorkflowJob>;
   cancelWorkflowJob(jobId: string): Promise<{ status: string; job_id: string }>;
+  /** Check a step list without saving: every problem with its step and field. */
+  validateWorkflowSteps(steps: WorkflowStep[]): Promise<WorkflowValidateResponse>;
+  /** The newest runs across every workflow the caller can read, optionally one matter's. */
+  listRecentWorkflowRuns(matterId?: string | null, limit?: number): Promise<{ runs: WorkflowRunSummary[] }>;
+  duplicateWorkflow(workflowId: string, input?: { name?: string | null; matter_id?: string | null }): Promise<WorkflowDetail>;
+  archiveWorkflow(workflowId: string): Promise<WorkflowDetail>;
+  unarchiveWorkflow(workflowId: string): Promise<WorkflowDetail>;
+  listWorkflowVersions(workflowId: string): Promise<WorkflowVersionList>;
+  getWorkflowVersion(workflowId: string, version: number): Promise<WorkflowVersionDetail>;
+  restoreWorkflowVersion(workflowId: string, version: number, changeNote?: string | null): Promise<WorkflowDetail>;
+  approveWorkflowRun(workflowId: string, runId: string, note?: string | null): Promise<WorkflowRunStarted>;
+  rejectWorkflowRun(workflowId: string, runId: string, note?: string | null): Promise<WorkflowRunDetail>;
+  retryWorkflowStep(workflowId: string, runId: string, index: number): Promise<WorkflowRunStarted>;
+  skipWorkflowStep(workflowId: string, runId: string, index: number): Promise<WorkflowRunStarted>;
 
   // Connectors
   getConnectors(): Promise<ConnectorDataResponse>;

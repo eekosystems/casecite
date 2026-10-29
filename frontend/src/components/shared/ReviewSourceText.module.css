@@ -1,0 +1,34 @@
+.doc {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: 'Georgia', 'Times New Roman', serif;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--gray-800);
+}
+
+.mark {
+  padding: 1px 0;
+  border-radius: 2px;
+  scroll-margin: 80px;
+}
+
+.markExact {
+  background: var(--amber-100, #fef3c7);
+  box-shadow: 0 0 0 2px var(--amber-100, #fef3c7);
+}
+
+.markApprox {
+  background: var(--gray-200);
+  box-shadow: 0 0 0 2px var(--gray-200);
+  text-decoration: underline dotted var(--gray-500);
+}
+
+.trimmed {
+  display: block;
+  margin: 6px 0;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--gray-400);
+  font-style: italic;
+}

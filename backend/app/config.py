@@ -598,6 +598,13 @@ class Settings(BaseSettings):
     workflow_max_steps: int = 12
     workflow_max_documents_per_step: int = 25
     workflow_max_citations_per_step: int = 10
+    # A step's stored output is truncated past this many bytes (the fields
+    # that were cut are listed on the output).
+    workflow_max_output_bytes: int = 524_288
+    # Email the runner (and approvers) when a run completes, fails, waits for
+    # approval or is rejected. Needs SENDGRID_API_KEY; each user may opt out
+    # in Settings. Off by default.
+    workflow_notifications: bool = False
     # Jobs kept by the in-memory fallback (Redis unavailable) before the oldest
     # finished ones are evicted. Each can hold up to job_max_result_size.
     job_memory_max_jobs: int = 200

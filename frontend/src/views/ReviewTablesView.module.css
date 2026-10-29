@@ -12,6 +12,7 @@
   padding: 24px 32px;
   max-width: 1100px;
   width: 100%;
+  margin: 0 auto;
 }
 
 .headerRow {
@@ -62,7 +63,9 @@
 
 .primaryBtn:disabled,
 .secondaryBtn:disabled {
-  opacity: 0.6;
+  background: var(--gray-100);
+  border: 1px solid var(--gray-200);
+  color: var(--gray-400);
   cursor: not-allowed;
 }
 
@@ -194,7 +197,7 @@
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: 12px;
 }
 
@@ -308,4 +311,180 @@
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+
+/* ── Templates strip ── */
+.templateStrip {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.templateCards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 8px;
+}
+
+.templateCard {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 10px 12px;
+  background: white;
+  border: 1px solid var(--gray-200);
+  border-radius: 10px;
+  text-align: left;
+  color: var(--gray-700);
+  cursor: pointer;
+}
+
+.templateCard:hover {
+  border-color: var(--navy-700);
+}
+
+.templateCardBlank {
+  border-style: dashed;
+}
+
+.templateName {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gray-900);
+}
+
+.templateCount {
+  font-size: 11px;
+  color: var(--gray-500);
+}
+
+/* ── Schema editor additions ── */
+.templateRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 10px;
+  margin-bottom: 4px;
+  background: var(--primary-50);
+  border-radius: 8px;
+}
+
+.templateRow .select {
+  flex: 0 1 260px;
+}
+
+.templateIcon {
+  color: var(--gray-500);
+}
+
+.templateHint {
+  flex-basis: 100%;
+  font-size: 11px;
+  color: var(--gray-500);
+}
+
+.schemaIndex {
+  width: 18px;
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--gray-400);
+  text-align: right;
+}
+
+.schemaRowTools {
+  display: inline-flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.templateSave {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.templateSave .input {
+  flex: 0 1 240px;
+}
+
+.templateShare {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--gray-700);
+}
+
+.primaryBtnSm,
+.secondaryBtnSm {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 9px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.primaryBtnSm {
+  background: var(--navy-700);
+  color: var(--on-secondary);
+  border: none;
+}
+
+.secondaryBtnSm {
+  background: white;
+  color: var(--gray-700);
+  border: 1px solid var(--gray-300);
+}
+
+.primaryBtnSm:disabled,
+.secondaryBtnSm:disabled {
+  background: var(--gray-100);
+  border: 1px solid var(--gray-200);
+  color: var(--gray-400);
+  cursor: not-allowed;
+}
+
+/* ── Card review progress ── */
+.cardProgress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.cardProgressTrack {
+  flex: 1;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--gray-200);
+  overflow: hidden;
+}
+
+.cardProgressFill {
+  height: 100%;
+  background: var(--green-600, #16a34a);
+}
+
+.cardProgressLabel {
+  font-size: 11px;
+  color: var(--gray-500);
+  white-space: nowrap;
+}
+
+.cardFlag {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--red-600, #dc2626);
 }

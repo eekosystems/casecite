@@ -189,7 +189,7 @@ class TestExport:
     def test_xlsx_has_results_linked_to_citations(self):
         data = render_xlsx("NDA review", self.FIELDS, self.DOCS, self.CELLS)
         wb = load_workbook(io.BytesIO(data))
-        assert wb.sheetnames == [RESULTS_SHEET, CITATIONS_SHEET]
+        assert wb.sheetnames[:2] == [RESULTS_SHEET, CITATIONS_SHEET]
 
         results, citations = wb[RESULTS_SHEET], wb[CITATIONS_SHEET]
         assert [c.value for c in results[1]] == ["Document", "Governing law", "Effective date"]

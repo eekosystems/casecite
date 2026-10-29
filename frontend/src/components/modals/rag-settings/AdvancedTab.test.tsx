@@ -50,7 +50,7 @@ describe('AdvancedTab', () => {
   it('renders toggle buttons plus the rebuild-index button', () => {
     const { container } = render(<AdvancedTab {...defaultProps()} />);
     const buttons = container.querySelectorAll('button');
-    expect(buttons.length).toBe(7); // 6 toggles + Rebuild Search Index
+    expect(buttons.length).toBe(8); // 7 toggles + Rebuild Search Index
     expect(container.textContent).toContain('Rebuild Search Index');
   });
 

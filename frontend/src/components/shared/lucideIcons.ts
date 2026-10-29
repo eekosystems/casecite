@@ -23,6 +23,10 @@ import {
   Upload, User, UserPlus,
   Wand2, Workflow, Wrench,
   X, XCircle, Zap,
+  Activity, CheckCircle2, FileCheck, FileX, FolderInput, FolderKanban, MonitorSmartphone, Text, UserMinus, Users,
+  ArrowDown, ArrowUpDown, ClipboardCheck, FileJson, Filter, Flag, FlagOff, GripVertical, LayoutTemplate,
+  ListFilter, MoreHorizontal, PanelRightClose, Rows3, Settings2, SlidersHorizontal, Undo2,
+  Archive, ArchiveRestore, CircleSlash, FileDown, GitBranch, Hourglass, ListChecks, RotateCw, SkipForward, UserCheck,
 } from 'lucide-react';
 
 /**
@@ -58,4 +62,8 @@ export const lucideIconMap: Record<string, LucideIcon> = {
   Upload, User, UserPlus,
   Wand2, Workflow, Wrench,
   X, XCircle, Zap,
+  Activity, CheckCircle2, FileCheck, FileX, FolderInput, FolderKanban, MonitorSmartphone, Text, UserMinus, Users,
+  ArrowDown, ArrowUpDown, ClipboardCheck, FileJson, Filter, Flag, FlagOff, GripVertical, LayoutTemplate,
+  ListFilter, MoreHorizontal, PanelRightClose, Rows3, Settings2, SlidersHorizontal, Undo2,
+  Archive, ArchiveRestore, CircleSlash, FileDown, GitBranch, Hourglass, ListChecks, RotateCw, SkipForward, UserCheck,
 };

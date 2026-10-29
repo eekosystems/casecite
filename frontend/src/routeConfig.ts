@@ -42,3 +42,13 @@ export function modeFromPath(pathname: string): string {
   if (pathname === '/workflows' || pathname.startsWith('/workflows/')) return 'workflows';
   return ROUTE_TO_MODE[pathname] || 'research';
 }
+
+/**
+ * Modes whose pages have no sources or history to show. The right panel is
+ * not rendered for them, so the content takes the full width.
+ */
+const MODES_WITHOUT_RIGHT_PANEL = new Set(['matters', 'review-tables', 'workflows', 'device']);
+
+export function showsRightPanel(mode: string): boolean {
+  return !MODES_WITHOUT_RIGHT_PANEL.has(mode);
+}

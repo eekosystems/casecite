@@ -1,18 +1,30 @@
 import { useState } from 'react';
 import { Icon } from './Icon';
 import { WorkflowStepParams } from './WorkflowStepParams';
+import { WorkflowConditionEditor } from './WorkflowConditionEditor';
+import { WorkflowDocumentSelect } from './WorkflowDocumentSelect';
 import { STEP_KINDS, newStep, stepKindInfo } from '../../stores/workflowsStore';
-import type { WorkflowInputSource, WorkflowStep, WorkflowStepKind } from '../../api/types';
+import { fieldLabel, issuesForStep } from '../../utils/workflowDiff';
+import type { MatterMember, WorkflowInputSource, WorkflowStep, WorkflowStepIssue, WorkflowStepKind } from '../../api/types';
+import type { RagDocument } from '../../types';
 
 interface WorkflowStepListProps {
   steps: WorkflowStep[];
   onChange: (steps: WorkflowStep[]) => void;
+  /** Problems the server found with the draft, shown under the step they concern. */
+  issues?: WorkflowStepIssue[];
+  documents: RagDocument[];
+  documentsLoading: boolean;
+  knownRefs?: Array<{ id: string; filename?: string | null }>;
+  members?: MatterMember[];
   disabled?: boolean;
   styles: Record<string, string>;
 }
 
-/** The ordered step editor: each step's name, inputs and parameter form; add, reorder, remove. */
-export function WorkflowStepList({ steps, onChange, disabled, styles }: WorkflowStepListProps) {
+/** The ordered step editor: each step's name, inputs, condition and parameter form; add, reorder, remove. */
+export function WorkflowStepList({
+  steps, onChange, issues = [], documents, documentsLoading, knownRefs, members, disabled, styles,
+}: WorkflowStepListProps) {
   const [adding, setAdding] = useState(false);
 
   const update = (index: number, patch: Partial<WorkflowStep>) =>
@@ -29,17 +41,24 @@ export function WorkflowStepList({ steps, onChange, disabled, styles }: Workflow
     onChange([...steps, newStep(kind, steps)]);
     setAdding(false);
   };
+  const general = issuesForStep(issues, -1);
 
   return (
     <div className={styles.stepList}>
       {steps.length === 0 && (
         <div className={styles.schemaEmpty}>No steps yet. Add the first operation the workflow should run.</div>
       )}
+      {general.length > 0 && (
+        <ul className={styles.issueList} aria-label="Workflow problems">
+          {general.map((i, n) => <li key={n}><Icon name="AlertCircle" size={12} /> {i.message}</li>)}
+        </ul>
+      )}
       {steps.map((step, index) => {
         const info = stepKindInfo(step.kind);
         const earlier = steps.slice(0, index).map((s) => s.name).filter(Boolean);
+        const stepIssues = issuesForStep(issues, index);
         return (
-          <div key={`${index}-${step.kind}`} className={styles.stepCard}>
+          <div key={`${index}-${step.kind}`} className={`${styles.stepCard} ${stepIssues.length ? styles.stepCardInvalid : ''}`}>
             <div className={styles.stepHead}>
               <span className={styles.stepIndex}>{index + 1}</span>
               <span className={styles.stepKind} title={info.desc}>
@@ -54,20 +73,22 @@ export function WorkflowStepList({ steps, onChange, disabled, styles }: Workflow
                 aria-label={`Step ${index + 1} name`}
                 title="Other steps refer to this step by name"
               />
-              <select
-                className={styles.select}
-                value={step.inputs.source}
-                onChange={(e) => {
-                  const source = e.target.value as WorkflowInputSource;
-                  update(index, { inputs: { source, document_ids: [], step: source === 'step' ? earlier[0] || null : null } });
-                }}
-                disabled={disabled}
-                aria-label={`Step ${index + 1} inputs`}
-              >
-                <option value="run">Reads the run&apos;s documents</option>
-                <option value="step" disabled={earlier.length === 0}>Reads an earlier step&apos;s documents</option>
-                <option value="documents">Reads fixed documents</option>
-              </select>
+              {step.kind !== 'approval' && (
+                <select
+                  className={styles.select}
+                  value={step.inputs.source}
+                  onChange={(e) => {
+                    const source = e.target.value as WorkflowInputSource;
+                    update(index, { inputs: { source, document_ids: [], step: source === 'step' ? earlier[0] || null : null } });
+                  }}
+                  disabled={disabled}
+                  aria-label={`Step ${index + 1} inputs`}
+                >
+                  <option value="run">Reads the run&apos;s documents</option>
+                  <option value="step" disabled={earlier.length === 0}>Reads an earlier step&apos;s documents</option>
+                  <option value="documents">Reads fixed documents</option>
+                </select>
+              )}
               {step.inputs.source === 'step' && (
                 <select
                   className={styles.select}
@@ -78,16 +99,6 @@ export function WorkflowStepList({ steps, onChange, disabled, styles }: Workflow
                 >
                   {earlier.map((name) => <option key={name} value={name}>{name}</option>)}
                 </select>
-              )}
-              {step.inputs.source === 'documents' && (
-                <input
-                  className={styles.input}
-                  value={step.inputs.document_ids.join(', ')}
-                  onChange={(e) => update(index, { inputs: { ...step.inputs, document_ids: e.target.value.split(',').map((x) => x.trim()).filter(Boolean) } })}
-                  placeholder="document ids, comma-separated"
-                  disabled={disabled}
-                  aria-label={`Step ${index + 1} document ids`}
-                />
               )}
               <div className={styles.stepTools}>
                 <button type="button" className={styles.iconBtn} onClick={() => move(index, -1)} disabled={disabled || index === 0} title="Move up" aria-label={`Move step ${index + 1} up`}>
@@ -101,13 +112,47 @@ export function WorkflowStepList({ steps, onChange, disabled, styles }: Workflow
                 </button>
               </div>
             </div>
+            {step.inputs.source === 'documents' && (
+              <div className={styles.paramRow}>
+                <span className={styles.paramLabel}>Fixed documents</span>
+                <WorkflowDocumentSelect
+                  documents={documents}
+                  loading={documentsLoading}
+                  knownRefs={knownRefs}
+                  selectedIds={step.inputs.document_ids}
+                  onChange={(ids) => update(index, { inputs: { ...step.inputs, document_ids: ids } })}
+                  placeholder="Pick the documents this step always reads"
+                  disabled={disabled}
+                  ariaLabel={`Step ${index + 1} documents`}
+                  styles={styles}
+                />
+              </div>
+            )}
             <WorkflowStepParams
               step={step}
               earlierSteps={earlier}
+              documents={documents}
+              documentsLoading={documentsLoading}
+              knownRefs={knownRefs}
+              members={members}
               disabled={disabled}
               onChange={(params) => update(index, { params })}
               styles={styles}
             />
+            <WorkflowConditionEditor
+              condition={step.condition}
+              earlierSteps={earlier}
+              disabled={disabled}
+              onChange={(condition) => update(index, { condition })}
+              styles={styles}
+            />
+            {stepIssues.length > 0 && (
+              <ul className={styles.issueList} aria-label={`Step ${index + 1} problems`}>
+                {stepIssues.map((i, n) => (
+                  <li key={n}><Icon name="AlertCircle" size={12} /> <strong>{fieldLabel(i.field)}:</strong> {i.message}</li>
+                ))}
+              </ul>
+            )}
           </div>
         );
       })}

@@ -76,4 +76,38 @@ describe('api/workflows', () => {
     await a.cancelWorkflowJob('j1');
     expect(api.request).toHaveBeenLastCalledWith('/jobs/j1', { method: 'DELETE' });
   });
+  it('validate, recent runs, duplicate, archive and versions hit their routes', async () => {
+    const step = { name: 'x', kind: 'approval', params: {}, inputs: { source: 'run', document_ids: [], step: null } };
+    await a.validateWorkflowSteps([step]);
+    expect(api.request).toHaveBeenLastCalledWith('/workflows/validate', { method: 'POST', body: JSON.stringify({ steps: [step] }) });
+    await a.listRecentWorkflowRuns('m1', 5);
+    expect(api.request).toHaveBeenLastCalledWith('/workflows/runs?limit=5&matter_id=m1');
+    await a.listRecentWorkflowRuns();
+    expect(api.request).toHaveBeenLastCalledWith('/workflows/runs?limit=20');
+    await a.listWorkflows(true);
+    expect(api.request).toHaveBeenLastCalledWith('/workflows?include_archived=true');
+    await a.duplicateWorkflow('w1', { name: 'Copy' });
+    expect(api.request).toHaveBeenLastCalledWith('/workflows/w1/duplicate', { method: 'POST', body: JSON.stringify({ name: 'Copy', matter_id: null }) });
+    await a.archiveWorkflow('w1');
+    expect(api.request).toHaveBeenLastCalledWith('/workflows/w1/archive', { method: 'POST' });
+    await a.unarchiveWorkflow('w1');
+    expect(api.request).toHaveBeenLastCalledWith('/workflows/w1/unarchive', { method: 'POST' });
+    await a.listWorkflowVersions('w1');
+    expect(api.request).toHaveBeenLastCalledWith('/workflows/w1/versions');
+    await a.getWorkflowVersion('w1', 2);
+    expect(api.request).toHaveBeenLastCalledWith('/workflows/w1/versions/2');
+    await a.restoreWorkflowVersion('w1', 2, 'back');
+    expect(api.request).toHaveBeenLastCalledWith('/workflows/w1/versions/2/restore', { method: 'POST', body: JSON.stringify({ change_note: 'back' }) });
+  });
+
+  it('approve, reject, retry and skip post to the run', async () => {
+    await a.approveWorkflowRun('w1', 'r1', 'ok');
+    expect(api.request).toHaveBeenLastCalledWith('/workflows/w1/runs/r1/approve', { method: 'POST', body: JSON.stringify({ note: 'ok' }) });
+    await a.rejectWorkflowRun('w1', 'r1');
+    expect(api.request).toHaveBeenLastCalledWith('/workflows/w1/runs/r1/reject', { method: 'POST', body: JSON.stringify({ note: null }) });
+    await a.retryWorkflowStep('w1', 'r1', 2);
+    expect(api.request).toHaveBeenLastCalledWith('/workflows/w1/runs/r1/steps/2/retry', { method: 'POST' });
+    await a.skipWorkflowStep('w1', 'r1', 2);
+    expect(api.request).toHaveBeenLastCalledWith('/workflows/w1/runs/r1/steps/2/skip', { method: 'POST' });
+  });
 });

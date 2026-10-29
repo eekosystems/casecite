@@ -1,12 +1,13 @@
-"""Workflow endpoints: define a repeatable sequence of steps, run it over a set
-of documents as one background job, read and resume past runs.
+"""Workflow endpoints: define a repeatable sequence of steps, validate it as
+it is edited, run it over a set of documents as one background job, read,
+resume, retry, approve and compare past runs, and keep every version.
 
 Access follows the other work-product routers: the owner or a member of the
-workflow's matter may read it and run it; the owner alone edits the steps or
-deletes it. Anyone else gets 404, never 403. Every input document must be
-readable by the runner at that moment, so a colleague's private document
-cannot be put through a shared workflow. Permission and document checks
-happen here, once; the steps then call the service layer directly.
+workflow's matter may read it and run it; the owner alone edits the steps,
+archives or deletes it. Anyone else gets 404, never 403. Every input document
+must be readable by the runner at that moment, so a colleague's private
+document cannot be put through a shared workflow. Permission and document
+checks happen here, once; the steps then call the service layer directly.
 """
 
 import logging
@@ -17,11 +18,15 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.exceptions import BadRequestError, NotFoundError, UnprocessableError
+from app.exceptions import BadRequestError, ForbiddenError, NotFoundError, UnprocessableError
 from app.models.schemas import (
     WorkflowCreateRequest,
+    WorkflowDecisionRequest,
     WorkflowDetailResponse,
+    WorkflowDocumentRef,
+    WorkflowDuplicateRequest,
     WorkflowListResponse,
+    WorkflowRestoreRequest,
     WorkflowRunDetailResponse,
     WorkflowRunListResponse,
     WorkflowRunRequest,
@@ -33,8 +38,20 @@ from app.models.schemas import (
     WorkflowTemplate,
     WorkflowTemplatesResponse,
     WorkflowUpdateRequest,
+    WorkflowValidateRequest,
+    WorkflowValidateResponse,
+    WorkflowVersionDetail,
+    WorkflowVersionListResponse,
+    WorkflowVersionSummary,
 )
-from app.models.workflows import RUN_RUNNING, Workflow, WorkflowRun, WorkflowStepRun
+from app.models.workflows import (
+    RUN_AWAITING_APPROVAL,
+    RUN_RUNNING,
+    Workflow,
+    WorkflowRun,
+    WorkflowStepRun,
+    WorkflowVersion,
+)
 from app.routers._matter_deps import accessible_matter_ids
 from app.services import matters as matters_service
 from app.services.audit import AuditEventType, audit_service
@@ -45,6 +62,7 @@ from app.services.permissions import require_permission
 from app.services.user_keys import UserAPIKeys
 from app.services.workflows import WorkflowError, workflow_service
 from app.services.workflows.templates import TEMPLATES, template_by_key, template_steps
+from app.services.workflows.validation import validate_steps
 from app.utils.ip_resolution import get_client_ip
 
 logger = logging.getLogger(__name__)
@@ -99,11 +117,31 @@ async def _require_run(db: AsyncSession, workflow: Workflow, run_id: str) -> Wor
     return run
 
 
+def _require_active(workflow: Workflow) -> None:
+    if workflow.archived_at is not None:
+        raise BadRequestError("This workflow is archived. Unarchive it to run it.")
+
+
 async def _check_documents(ids: list[str], current_user: TokenData, matter_ids: set[str]) -> None:
     """Every document a run reads must be readable by the runner right now."""
     for doc_id in dict.fromkeys(ids):
         if await document_service.get_document(doc_id, current_user.user_id, matter_ids) is None:
             raise NotFoundError("Document not found")
+
+
+async def _document_refs(
+    ids: list[str], current_user: TokenData, matter_ids: set[str]
+) -> list[WorkflowDocumentRef]:
+    """Names for ``ids`` as the caller may see them; unreadable ones are marked, not hidden."""
+    refs: list[WorkflowDocumentRef] = []
+    for doc_id in dict.fromkeys(ids):
+        doc = await document_service.get_document(doc_id, current_user.user_id, matter_ids)
+        refs.append(
+            WorkflowDocumentRef(
+                id=doc_id, filename=doc.filename if doc else None, accessible=doc is not None
+            )
+        )
+    return refs
 
 
 def _fixed_document_ids(steps: list[dict[str, Any]]) -> list[str]:
@@ -124,6 +162,28 @@ def _check_step_count(steps: list[Any]) -> None:
         raise UnprocessableError(f"A workflow may have at most {cap} steps on this server.")
 
 
+async def _check_approvers(
+    db: AsyncSession, steps: list[dict[str, Any]], matter_id: str | None, owner_id: str
+) -> None:
+    """Named approvers must be the owner or members of the workflow's matter."""
+    named: set[str] = set()
+    for step in steps:
+        spec = (step.get("params") or {}).get("approvers")
+        if isinstance(spec, list):
+            named.update(str(s) for s in spec)
+    if not named:
+        return
+    allowed = {owner_id}
+    if matter_id:
+        allowed.update(str(m.user_id) for m in await matters_service.list_members(db, matter_id))
+    unknown = sorted(named - allowed)
+    if unknown:
+        raise UnprocessableError(
+            "Approvers must be the workflow's owner or members of its matter "
+            f"({len(unknown)} named user{'s' if len(unknown) != 1 else ''} not allowed)."
+        )
+
+
 async def _default_scope(db: AsyncSession, matter_id: str) -> list[str]:
     matter = await matters_service.get_matter(db, matter_id)
     if matter is None:
@@ -142,6 +202,8 @@ def _summary(workflow: Workflow, caller_id: str, stats: dict[str, Any] | None) -
         owner_id=workflow.owner_id,
         role=workflow_service.role_for(workflow, caller_id),
         template_key=workflow.template_key,
+        version=int(workflow.version or 1),
+        archived_at=workflow.archived_at,
         step_count=len(workflow.steps or []),
         step_kinds=[s["kind"] for s in (workflow.steps or [])],
         run_count=int(stats.get("run_count") or 0),
@@ -152,11 +214,29 @@ def _summary(workflow: Workflow, caller_id: str, stats: dict[str, Any] | None) -
     )
 
 
-async def _detail(db: AsyncSession, workflow: Workflow, caller_id: str) -> WorkflowDetailResponse:
+async def _detail(
+    db: AsyncSession, workflow: Workflow, current_user: TokenData, matter_ids: set[str]
+) -> WorkflowDetailResponse:
     stats = await workflow_service.run_stats(db, [workflow.id])
+    steps = list(workflow.steps or [])
     return WorkflowDetailResponse(
-        **_summary(workflow, caller_id, stats.get(workflow.id)).model_dump(),
-        steps=[WorkflowStep(**s) for s in (workflow.steps or [])],
+        **_summary(workflow, current_user.user_id, stats.get(workflow.id)).model_dump(),
+        steps=[WorkflowStep(**s) for s in steps],
+        documents=await _document_refs(_fixed_document_ids(steps), current_user, matter_ids),
+    )
+
+
+def _version_summary(row: WorkflowVersion) -> WorkflowVersionSummary:
+    steps = list(row.steps or [])
+    return WorkflowVersionSummary(
+        version=int(row.version),
+        name=row.name,
+        description=row.description,
+        step_count=len(steps),
+        step_names=[str(s.get("name")) for s in steps],
+        created_by=row.created_by,
+        created_at=row.created_at,
+        change_note=row.change_note,
     )
 
 
@@ -175,10 +255,20 @@ def _step_run_response(row: WorkflowStepRun) -> WorkflowStepRunResponse:
     )
 
 
-def _run_summary(run: WorkflowRun, completed: int) -> WorkflowRunSummary:
+def _run_summary(
+    run: WorkflowRun,
+    completed: int,
+    *,
+    caller_id: str,
+    workflow_name: str | None = None,
+    awaiting: tuple[str, list[str]] | None = None,
+) -> WorkflowRunSummary:
+    step_name, approver_ids = awaiting or (None, [])
     return WorkflowRunSummary(
         id=run.id,
         workflow_id=run.workflow_id,
+        workflow_name=workflow_name,
+        workflow_version=int(run.workflow_version or 1),
         runner_id=run.runner_id,
         matter_id=run.matter_id,
         status=run.status,
@@ -188,19 +278,59 @@ def _run_summary(run: WorkflowRun, completed: int) -> WorkflowRunSummary:
         job_id=run.job_id,
         error=run.error,
         resumed_count=int(run.resumed_count or 0),
+        awaiting_step=step_name,
+        approver_ids=approver_ids,
+        can_approve=run.status == RUN_AWAITING_APPROVAL and caller_id in approver_ids,
         created_at=run.created_at,
         completed_at=run.completed_at,
     )
 
 
-async def _run_detail(db: AsyncSession, run: WorkflowRun) -> WorkflowRunDetailResponse:
+async def _run_summaries(
+    db: AsyncSession,
+    runs: list[WorkflowRun],
+    *,
+    caller_id: str,
+    names: dict[str, str] | None = None,
+) -> list[WorkflowRunSummary]:
+    ids = [r.id for r in runs]
+    completed = await workflow_service.completed_counts(db, ids)
+    awaiting = await workflow_service.awaiting_info(db, ids)
+    return [
+        _run_summary(
+            r,
+            completed.get(r.id, 0),
+            caller_id=caller_id,
+            workflow_name=(names or {}).get(r.workflow_id),
+            awaiting=awaiting.get(r.id),
+        )
+        for r in runs
+    ]
+
+
+async def _run_detail(
+    db: AsyncSession,
+    workflow: Workflow,
+    run: WorkflowRun,
+    current_user: TokenData,
+    matter_ids: set[str],
+) -> WorkflowRunDetailResponse:
     rows = await workflow_service.step_runs(db, run.id)
-    completed = sum(1 for r in rows if r.status == "completed")
+    summary = (
+        await _run_summaries(
+            db, [run], caller_id=current_user.user_id, names={workflow.id: workflow.name}
+        )
+    )[0]
+    steps = list(run.steps or [])
+    doc_ids = list(run.input_document_ids or []) + _fixed_document_ids(steps)
+    for row in rows:
+        doc_ids.extend(row.input_document_ids or [])
     return WorkflowRunDetailResponse(
-        **_run_summary(run, completed).model_dump(),
-        step_definitions=[WorkflowStep(**s) for s in (run.steps or [])],
+        **summary.model_dump(),
+        step_definitions=[WorkflowStep(**s) for s in steps],
         step_runs=[_step_run_response(r) for r in rows],
         input_document_ids=list(run.input_document_ids or []),
+        document_refs=await _document_refs(doc_ids, current_user, matter_ids),
     )
 
 
@@ -226,7 +356,7 @@ async def _submit(
     start_index: int,
     action: str,
 ) -> JSONResponse:
-    """Submit the run (or its resumption) as one job; 202 + a job to poll."""
+    """Submit the run (or its continuation) as one job; 202 + a job to poll."""
     user_id, user_email = current_user.user_id, current_user.email
     steps = len(run.steps or [])
     documents = len(run.input_document_ids or [])
@@ -262,13 +392,19 @@ async def _submit(
                 details={"action": "workflow_run_failed", "run_id": run.id, "error": str(e)[:200]},
             )
             raise
+        finished = result.get("status") == RUN_AWAITING_APPROVAL
         await audit_service.log_event(
             event_type=AuditEventType.DATA_ACCESS,
             user_id=user_id,
             user_email=user_email,
             resource_type="workflow",
             resource_id=workflow.id,
-            details={"action": "workflow_run_completed", **result},
+            details={
+                "action": "workflow_run_awaiting_approval"
+                if finished
+                else "workflow_run_completed",
+                **result,
+            },
         )
         return result
 
@@ -291,17 +427,49 @@ async def _submit(
     return JSONResponse(status_code=202, content=payload.model_dump())
 
 
+async def _continue_run(
+    request: Request,
+    db: AsyncSession,
+    current_user: TokenData,
+    matter_ids: set[str],
+    workflow: Workflow,
+    run: WorkflowRun,
+    *,
+    start_index: int,
+    action: str,
+) -> JSONResponse:
+    """Checks every continuation shares, then submit from ``start_index``."""
+    _require_active(workflow)
+    await _check_documents(list(run.input_document_ids or []), current_user, matter_ids)
+    user_keys = _require_client(request, current_user)
+    return await _submit(
+        request,
+        db,
+        current_user,
+        matter_ids,
+        workflow,
+        run,
+        user_keys=user_keys,
+        start_index=start_index,
+        action=action,
+    )
+
+
 # ------------------------------------------------------------------- collection
 
 
 @router.get("", response_model=WorkflowListResponse)
 async def list_workflows(
+    include_archived: bool = Query(False),
     current_user: TokenData = require_permission("contracts.use"),
     db: AsyncSession = Depends(get_db),
     matter_ids: set[str] = Depends(accessible_matter_ids),
 ) -> WorkflowListResponse:
-    """Workflows the caller owns or can read through a matter, newest first."""
-    workflows = await workflow_service.list_for_user(db, current_user.user_id, matter_ids)
+    """Workflows the caller owns or can read through a matter, newest first.
+    Archived ones only with ``include_archived=true``."""
+    workflows = await workflow_service.list_for_user(
+        db, current_user.user_id, matter_ids, include_archived=include_archived
+    )
     stats = await workflow_service.run_stats(db, [w.id for w in workflows])
     return WorkflowListResponse(
         workflows=[_summary(w, current_user.user_id, stats.get(w.id)) for w in workflows]
@@ -321,6 +489,7 @@ async def create_workflow(
     _check_step_count(body.steps)
     steps = [s.model_dump(mode="json") for s in body.steps]
     await _check_documents(_fixed_document_ids(steps), current_user, matter_ids)
+    await _check_approvers(db, steps, body.matter_id, current_user.user_id)
     workflow = await workflow_service.create(
         db,
         owner_id=current_user.user_id,
@@ -339,7 +508,17 @@ async def create_workflow(
         steps=len(steps),
         step_kinds=[s["kind"] for s in steps],
     )
-    return await _detail(db, workflow, current_user.user_id)
+    return await _detail(db, workflow, current_user, matter_ids)
+
+
+@router.post("/validate", response_model=WorkflowValidateResponse)
+async def validate_workflow(
+    body: WorkflowValidateRequest,
+    current_user: TokenData = require_permission("contracts.use"),
+) -> WorkflowValidateResponse:
+    """Check a step list without saving: every problem, with the step and field it concerns."""
+    issues = validate_steps(body.steps, workflow_service.caps()["max_steps"])
+    return WorkflowValidateResponse(valid=not issues, issues=issues)
 
 
 @router.get("/templates", response_model=WorkflowTemplatesResponse)
@@ -357,6 +536,27 @@ async def list_templates(
             )
             for t in TEMPLATES
         ]
+    )
+
+
+@router.get("/runs", response_model=WorkflowRunListResponse)
+async def list_recent_runs(
+    matter_id: str | None = Query(None, max_length=36),
+    limit: int = Query(20, ge=1, le=200),
+    current_user: TokenData = require_permission("contracts.use"),
+    db: AsyncSession = Depends(get_db),
+    matter_ids: set[str] = Depends(accessible_matter_ids),
+) -> WorkflowRunListResponse:
+    """The newest runs across every workflow the caller can read, optionally one matter's."""
+    workflows = await workflow_service.list_for_user(
+        db, current_user.user_id, matter_ids, include_archived=True
+    )
+    if matter_id:
+        workflows = [w for w in workflows if w.matter_id == matter_id]
+    names = {w.id: w.name for w in workflows}
+    runs = await workflow_service.list_recent_runs(db, list(names), limit=limit)
+    return WorkflowRunListResponse(
+        runs=await _run_summaries(db, runs, caller_id=current_user.user_id, names=names)
     )
 
 
@@ -384,6 +584,7 @@ async def create_from_template(
         description=template["description"],
         steps=steps,
         template_key=key,
+        change_note=f"Created from the '{template['name']}' template",
     )
     await _audit(
         request,
@@ -396,7 +597,7 @@ async def create_from_template(
         steps=len(steps),
         step_kinds=[s["kind"] for s in steps],
     )
-    return await _detail(db, workflow, current_user.user_id)
+    return await _detail(db, workflow, current_user, matter_ids)
 
 
 # ------------------------------------------------------------------ one workflow
@@ -410,7 +611,7 @@ async def get_workflow(
     matter_ids: set[str] = Depends(accessible_matter_ids),
 ) -> WorkflowDetailResponse:
     workflow = await _require_readable(db, workflow_id, current_user, matter_ids)
-    return await _detail(db, workflow, current_user.user_id)
+    return await _detail(db, workflow, current_user, matter_ids)
 
 
 @router.patch("/{workflow_id}", response_model=WorkflowDetailResponse)
@@ -422,17 +623,26 @@ async def update_workflow(
     db: AsyncSession = Depends(get_db),
     matter_ids: set[str] = Depends(accessible_matter_ids),
 ) -> WorkflowDetailResponse:
-    """Owner only. Past runs keep the steps they ran with."""
+    """Owner only. A change to the steps records a new version; past runs keep theirs."""
     workflow = await _require_owned(db, workflow_id, current_user, matter_ids)
-    if body.model_dump(exclude_unset=True) == {}:
+    changed = body.model_dump(exclude_unset=True, exclude={"change_note"})
+    if changed == {}:
         raise BadRequestError("Nothing to update.")
     steps = None
     if body.steps is not None:
         _check_step_count(body.steps)
         steps = [s.model_dump(mode="json") for s in body.steps]
         await _check_documents(_fixed_document_ids(steps), current_user, matter_ids)
+        await _check_approvers(db, steps, workflow.matter_id, workflow.owner_id)
+    before = int(workflow.version or 1)
     workflow = await workflow_service.update(
-        db, workflow, name=body.name, description=body.description, steps=steps
+        db,
+        workflow,
+        editor_id=current_user.user_id,
+        name=body.name,
+        description=body.description,
+        steps=steps,
+        change_note=body.change_note,
     )
     await _audit(
         request,
@@ -440,10 +650,12 @@ async def update_workflow(
         AuditEventType.DATA_MODIFICATION,
         "workflow_updated",
         workflow.id,
-        changed=sorted(body.model_dump(exclude_unset=True)),
+        changed=sorted(changed),
         steps=len(workflow.steps or []),
+        version=int(workflow.version or 1),
+        new_version=int(workflow.version or 1) != before,
     )
-    return await _detail(db, workflow, current_user.user_id)
+    return await _detail(db, workflow, current_user, matter_ids)
 
 
 @router.delete("/{workflow_id}")
@@ -454,14 +666,151 @@ async def delete_workflow(
     db: AsyncSession = Depends(get_db),
     matter_ids: set[str] = Depends(accessible_matter_ids),
 ) -> dict[str, str]:
-    """Owner only; the runs go with it. Work product the runs created
-    (review tables, analyses, research runs) stays."""
+    """Owner only; the runs and versions go with it. Work product the runs
+    created (review tables, analyses, research runs) stays."""
     workflow = await _require_owned(db, workflow_id, current_user, matter_ids)
     await workflow_service.delete(db, workflow)
     await _audit(
         request, current_user, AuditEventType.DATA_DELETION, "workflow_deleted", workflow_id
     )
     return {"status": "deleted", "id": workflow_id}
+
+
+@router.post("/{workflow_id}/duplicate", response_model=WorkflowDetailResponse, status_code=201)
+async def duplicate_workflow(
+    workflow_id: str,
+    request: Request,
+    body: WorkflowDuplicateRequest | None = None,
+    current_user: TokenData = require_permission("contracts.use"),
+    db: AsyncSession = Depends(get_db),
+    matter_ids: set[str] = Depends(accessible_matter_ids),
+) -> WorkflowDetailResponse:
+    """A copy of the workflow owned by the caller (anyone who can read it), at version 1."""
+    workflow = await _require_readable(db, workflow_id, current_user, matter_ids)
+    body = body or WorkflowDuplicateRequest(name=None, matter_id=None)
+    if body.matter_id and body.matter_id not in matter_ids:
+        raise NotFoundError("Matter not found")
+    steps = list(workflow.steps or [])
+    await _check_documents(_fixed_document_ids(steps), current_user, matter_ids)
+    copy = await workflow_service.duplicate(
+        db, workflow, owner_id=current_user.user_id, name=body.name, matter_id=body.matter_id
+    )
+    await _audit(
+        request,
+        current_user,
+        AuditEventType.DATA_MODIFICATION,
+        "workflow_duplicated",
+        copy.id,
+        source_workflow_id=workflow.id,
+        matter_id=body.matter_id,
+        steps=len(steps),
+    )
+    return await _detail(db, copy, current_user, matter_ids)
+
+
+@router.post("/{workflow_id}/archive", response_model=WorkflowDetailResponse)
+async def archive_workflow(
+    workflow_id: str,
+    request: Request,
+    current_user: TokenData = require_permission("contracts.use"),
+    db: AsyncSession = Depends(get_db),
+    matter_ids: set[str] = Depends(accessible_matter_ids),
+) -> WorkflowDetailResponse:
+    """Owner only. Hidden from the default list and cannot be run; runs and versions stay."""
+    workflow = await _require_owned(db, workflow_id, current_user, matter_ids)
+    workflow = await workflow_service.set_archived(db, workflow, True)
+    await _audit(
+        request, current_user, AuditEventType.DATA_MODIFICATION, "workflow_archived", workflow.id
+    )
+    return await _detail(db, workflow, current_user, matter_ids)
+
+
+@router.post("/{workflow_id}/unarchive", response_model=WorkflowDetailResponse)
+async def unarchive_workflow(
+    workflow_id: str,
+    request: Request,
+    current_user: TokenData = require_permission("contracts.use"),
+    db: AsyncSession = Depends(get_db),
+    matter_ids: set[str] = Depends(accessible_matter_ids),
+) -> WorkflowDetailResponse:
+    workflow = await _require_owned(db, workflow_id, current_user, matter_ids)
+    workflow = await workflow_service.set_archived(db, workflow, False)
+    await _audit(
+        request, current_user, AuditEventType.DATA_MODIFICATION, "workflow_unarchived", workflow.id
+    )
+    return await _detail(db, workflow, current_user, matter_ids)
+
+
+# --------------------------------------------------------------------- versions
+
+
+@router.get("/{workflow_id}/versions", response_model=WorkflowVersionListResponse)
+async def list_versions(
+    workflow_id: str,
+    current_user: TokenData = require_permission("contracts.use"),
+    db: AsyncSession = Depends(get_db),
+    matter_ids: set[str] = Depends(accessible_matter_ids),
+) -> WorkflowVersionListResponse:
+    """Every version of the steps, newest first."""
+    workflow = await _require_readable(db, workflow_id, current_user, matter_ids)
+    rows = await workflow_service.list_versions(db, workflow.id)
+    return WorkflowVersionListResponse(
+        current=int(workflow.version or 1), versions=[_version_summary(r) for r in rows]
+    )
+
+
+@router.get("/{workflow_id}/versions/{version}", response_model=WorkflowVersionDetail)
+async def get_version(
+    workflow_id: str,
+    version: int,
+    current_user: TokenData = require_permission("contracts.use"),
+    db: AsyncSession = Depends(get_db),
+    matter_ids: set[str] = Depends(accessible_matter_ids),
+) -> WorkflowVersionDetail:
+    workflow = await _require_readable(db, workflow_id, current_user, matter_ids)
+    row = await workflow_service.get_version(db, workflow.id, version)
+    if row is None:
+        raise NotFoundError("Version not found")
+    return WorkflowVersionDetail(
+        **_version_summary(row).model_dump(),
+        steps=[WorkflowStep(**s) for s in (row.steps or [])],
+    )
+
+
+@router.post("/{workflow_id}/versions/{version}/restore", response_model=WorkflowDetailResponse)
+async def restore_version(
+    workflow_id: str,
+    version: int,
+    request: Request,
+    body: WorkflowRestoreRequest | None = None,
+    current_user: TokenData = require_permission("contracts.use"),
+    db: AsyncSession = Depends(get_db),
+    matter_ids: set[str] = Depends(accessible_matter_ids),
+) -> WorkflowDetailResponse:
+    """Owner only. The chosen version's steps become current as a NEW version."""
+    workflow = await _require_owned(db, workflow_id, current_user, matter_ids)
+    row = await workflow_service.get_version(db, workflow.id, version)
+    if row is None:
+        raise NotFoundError("Version not found")
+    steps = list(row.steps or [])
+    await _check_documents(_fixed_document_ids(steps), current_user, matter_ids)
+    workflow = await workflow_service.restore_version(
+        db,
+        workflow,
+        row,
+        editor_id=current_user.user_id,
+        change_note=(body.change_note if body else None),
+    )
+    await _audit(
+        request,
+        current_user,
+        AuditEventType.DATA_MODIFICATION,
+        "workflow_version_restored",
+        workflow.id,
+        restored=version,
+        version=int(workflow.version or 1),
+    )
+    return await _detail(db, workflow, current_user, matter_ids)
 
 
 # ------------------------------------------------------------------------- runs
@@ -483,6 +832,7 @@ async def run_workflow(
     input must be readable by the runner.
     """
     workflow = await _require_readable(db, workflow_id, current_user, matter_ids)
+    _require_active(workflow)
     if not workflow.steps:
         raise BadRequestError("Add at least one step before running.")
     body = body or WorkflowRunRequest()
@@ -521,8 +871,11 @@ async def list_runs(
 ) -> WorkflowRunListResponse:
     workflow = await _require_readable(db, workflow_id, current_user, matter_ids)
     runs = await workflow_service.list_runs(db, workflow.id, limit=limit)
-    completed = await workflow_service.completed_counts(db, [r.id for r in runs])
-    return WorkflowRunListResponse(runs=[_run_summary(r, completed.get(r.id, 0)) for r in runs])
+    return WorkflowRunListResponse(
+        runs=await _run_summaries(
+            db, runs, caller_id=current_user.user_id, names={workflow.id: workflow.name}
+        )
+    )
 
 
 @router.get("/{workflow_id}/runs/{run_id}", response_model=WorkflowRunDetailResponse)
@@ -535,7 +888,7 @@ async def get_run(
 ) -> WorkflowRunDetailResponse:
     workflow = await _require_readable(db, workflow_id, current_user, matter_ids)
     run = await _require_run(db, workflow, run_id)
-    return await _run_detail(db, run)
+    return await _run_detail(db, workflow, run, current_user, matter_ids)
 
 
 @router.post(
@@ -556,20 +909,195 @@ async def resume_run(
     run = await _require_run(db, workflow, run_id)
     if run.status == RUN_RUNNING:
         raise BadRequestError("This run is still in progress.")
-    await _check_documents(list(run.input_document_ids or []), current_user, matter_ids)
-    user_keys = _require_client(request, current_user)
+    _require_active(workflow)
     try:
         start_index = await workflow_service.prepare_resume(db, run)
     except ValueError as e:
         raise BadRequestError(str(e))
-    return await _submit(
+    return await _continue_run(
         request,
         db,
         current_user,
         matter_ids,
         workflow,
         run,
-        user_keys=user_keys,
         start_index=start_index,
         action="workflow_run_resumed",
     )
+
+
+@router.post(
+    "/{workflow_id}/runs/{run_id}/steps/{index}/retry",
+    response_model=WorkflowRunStarted,
+    status_code=202,
+)
+async def retry_step(
+    workflow_id: str,
+    run_id: str,
+    index: int,
+    request: Request,
+    current_user: TokenData = require_permission("contracts.use"),
+    db: AsyncSession = Depends(get_db),
+    matter_ids: set[str] = Depends(accessible_matter_ids),
+) -> JSONResponse:
+    """Re-run one step with the same inputs and continue from it. Owner or the runner."""
+    workflow = await _require_readable(db, workflow_id, current_user, matter_ids)
+    run = await _require_run(db, workflow, run_id)
+    if current_user.user_id not in (workflow.owner_id, run.runner_id):
+        raise ForbiddenError("Only the workflow's owner or the person who ran it can retry a step")
+    _require_active(workflow)
+    try:
+        start_index = await workflow_service.prepare_retry(db, run, index)
+    except ValueError as e:
+        raise BadRequestError(str(e))
+    return await _continue_run(
+        request,
+        db,
+        current_user,
+        matter_ids,
+        workflow,
+        run,
+        start_index=start_index,
+        action="workflow_step_retried",
+    )
+
+
+@router.post(
+    "/{workflow_id}/runs/{run_id}/steps/{index}/skip",
+    response_model=WorkflowRunStarted,
+    status_code=202,
+)
+async def skip_step(
+    workflow_id: str,
+    run_id: str,
+    index: int,
+    request: Request,
+    current_user: TokenData = require_permission("contracts.use"),
+    db: AsyncSession = Depends(get_db),
+    matter_ids: set[str] = Depends(accessible_matter_ids),
+) -> JSONResponse:
+    """Mark a failed step skipped and continue from the next one. Owner or the runner."""
+    workflow = await _require_readable(db, workflow_id, current_user, matter_ids)
+    run = await _require_run(db, workflow, run_id)
+    if current_user.user_id not in (workflow.owner_id, run.runner_id):
+        raise ForbiddenError("Only the workflow's owner or the person who ran it can skip a step")
+    _require_active(workflow)
+    try:
+        start_index = await workflow_service.prepare_skip(
+            db, run, index, user_id=current_user.user_id
+        )
+    except ValueError as e:
+        raise BadRequestError(str(e))
+    return await _continue_run(
+        request,
+        db,
+        current_user,
+        matter_ids,
+        workflow,
+        run,
+        start_index=start_index,
+        action="workflow_step_skipped",
+    )
+
+
+async def _require_approver(
+    db: AsyncSession, workflow: Workflow, run: WorkflowRun, current_user: TokenData
+) -> None:
+    """The caller must be one of the awaiting step's resolved approvers."""
+    if run.status != RUN_AWAITING_APPROVAL:
+        raise BadRequestError("This run is not waiting for an approval.")
+    info = (await workflow_service.awaiting_info(db, [run.id])).get(run.id)
+    approver_ids = info[1] if info else []
+    if current_user.user_id not in approver_ids:
+        raise ForbiddenError("You are not an approver for this step.")
+
+
+@router.post(
+    "/{workflow_id}/runs/{run_id}/approve", response_model=WorkflowRunStarted, status_code=202
+)
+async def approve_run(
+    workflow_id: str,
+    run_id: str,
+    request: Request,
+    body: WorkflowDecisionRequest | None = None,
+    current_user: TokenData = require_permission("contracts.use"),
+    db: AsyncSession = Depends(get_db),
+    matter_ids: set[str] = Depends(accessible_matter_ids),
+) -> JSONResponse:
+    """An approver's go-ahead: the run continues from the step after the approval."""
+    workflow = await _require_readable(db, workflow_id, current_user, matter_ids)
+    run = await _require_run(db, workflow, run_id)
+    await _require_approver(db, workflow, run, current_user)
+    _require_active(workflow)
+    note = body.note if body else None
+    try:
+        start_index = await workflow_service.decide_approval(
+            db,
+            run,
+            approved=True,
+            user_id=current_user.user_id,
+            user_email=current_user.email,
+            note=note,
+        )
+    except ValueError as e:
+        raise BadRequestError(str(e))
+    await _audit(
+        request,
+        current_user,
+        AuditEventType.DATA_MODIFICATION,
+        "workflow_run_approved",
+        workflow.id,
+        run_id=run.id,
+        step_index=start_index - 1,
+        note_chars=len(note or ""),
+    )
+    return await _continue_run(
+        request,
+        db,
+        current_user,
+        matter_ids,
+        workflow,
+        run,
+        start_index=start_index,
+        action="workflow_run_resumed",
+    )
+
+
+@router.post("/{workflow_id}/runs/{run_id}/reject", response_model=WorkflowRunDetailResponse)
+async def reject_run(
+    workflow_id: str,
+    run_id: str,
+    request: Request,
+    body: WorkflowDecisionRequest | None = None,
+    current_user: TokenData = require_permission("contracts.use"),
+    db: AsyncSession = Depends(get_db),
+    matter_ids: set[str] = Depends(accessible_matter_ids),
+) -> WorkflowRunDetailResponse:
+    """An approver's refusal: the run ends as rejected; later steps are skipped."""
+    workflow = await _require_readable(db, workflow_id, current_user, matter_ids)
+    run = await _require_run(db, workflow, run_id)
+    await _require_approver(db, workflow, run, current_user)
+    note = body.note if body else None
+    try:
+        index = await workflow_service.decide_approval(
+            db,
+            run,
+            approved=False,
+            user_id=current_user.user_id,
+            user_email=current_user.email,
+            note=note,
+        )
+    except ValueError as e:
+        raise BadRequestError(str(e))
+    await _audit(
+        request,
+        current_user,
+        AuditEventType.DATA_MODIFICATION,
+        "workflow_run_rejected",
+        workflow.id,
+        run_id=run.id,
+        step_index=index,
+        note_chars=len(note or ""),
+    )
+    await db.refresh(run)
+    return await _run_detail(db, workflow, run, current_user, matter_ids)

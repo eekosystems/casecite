@@ -432,7 +432,7 @@ def test_xlsx_export_links_results_to_citations(client, audit_events):
     assert 'filename="Q3-NDA-sweep.xlsx"' in resp.headers["content-disposition"]
 
     wb = load_workbook(io.BytesIO(resp.content))
-    assert wb.sheetnames == ["Results", "Citations"]
+    assert wb.sheetnames == ["Results", "Citations", "Review", "Summary"]
     results, citations = wb["Results"], wb["Citations"]
     assert [c.value for c in results[1]] == ["Document", "Governing law", "Effective date"]
     assert results["A2"].value == "nda.pdf" and results["B2"].value == "Delaware"

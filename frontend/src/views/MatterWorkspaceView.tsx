@@ -103,6 +103,11 @@ function MatterWorkspaceView() {
               <span className={`${s.roleBadge} ${isOwner ? s.roleOwner : ''}`}>
                 {workspace.is_personal ? 'private' : workspace.role}
               </span>
+              {isActive && (
+                <span className={s.activeBadge} title="Research, Contracts and Drafting are scoped to this matter">
+                  <Icon name="CheckCircle2" size={11} /> Active matter
+                </span>
+              )}
               {workspaceLoading && <Icon name="Loader2" size={14} className={s.spin} />}
             </div>
             <div className={s.meta}>
@@ -115,12 +120,12 @@ function MatterWorkspaceView() {
           </div>
           <div className={s.headerActions}>
             <button
-              className={`${s.secondaryBtn} ${isActive ? s.activeBtn : ''}`}
+              className={s.secondaryBtn}
               onClick={() => setActiveMatter(isActive ? null : workspace.id)}
               title={isActive ? 'Stop scoping the workspace to this matter' : 'Scope Research, Contracts and Drafting to this matter'}
             >
-              <Icon name={isActive ? 'CheckCircle2' : 'Target'} size={14} />
-              {isActive ? 'Active matter' : 'Set as active'}
+              <Icon name={isActive ? 'X' : 'Target'} size={14} />
+              {isActive ? 'Clear active matter' : 'Set as active'}
             </button>
             {isOwner && !workspace.is_personal && (
               <>

@@ -29,6 +29,9 @@ export const Icon = ({ name, size = 20, strokeWidth = 1.5, style = {}, className
   const LucideIcon = lucideIconMap[pascalName];
 
   if (!LucideIcon) {
+    if (import.meta.env.DEV) {
+      console.warn(`Icon "${name}" is not in lucideIconMap (components/shared/lucideIcons.ts); it renders empty.`);
+    }
     // Fallback: render empty span if icon not found
     return <span className={`${s.icon} ${className}`} style={{ width: size, height: size, ...style }} />;
   }

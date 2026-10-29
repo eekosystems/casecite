@@ -206,6 +206,22 @@ async def run_extract_fields(step: dict[str, Any], ctx: StepContext) -> StepOutp
 
 # ----------------------------------------------------------- analyze_contract
 
+# Issues kept per document in the step output (the full set stays on the analysis).
+_ISSUES_PER_DOCUMENT = 25
+
+
+def _issue_brief(issue: dict[str, Any]) -> dict[str, Any]:
+    """The fields the run view renders for one issue, each bounded."""
+    return {
+        "ref": issue.get("ref"),
+        "title": str(issue.get("title") or "")[:200],
+        "severity": str(issue.get("severity") or "minor"),
+        "why": str(issue.get("why") or "")[:600],
+        "grounding": issue.get("grounding"),
+        "matched_text": str(issue.get("matched_text") or "")[:300] or None,
+        "suggested_language": str(issue.get("suggested_language") or "")[:400] or None,
+    }
+
 
 async def run_analyze_contract(step: dict[str, Any], ctx: StepContext) -> StepOutput:
     params = step["params"]
@@ -248,6 +264,7 @@ async def run_analyze_contract(step: dict[str, Any], ctx: StepContext) -> StepOu
                 "contract_type": result.get("contract_type"),
                 "issues": len(issues),
                 "issues_by_severity": dict(severities),
+                "issue_list": [_issue_brief(i) for i in issues[:_ISSUES_PER_DOCUMENT]],
                 "executive_summary": result.get("executive_summary"),
                 "parties": result.get("parties") or [],
                 "key_terms": result.get("key_terms") or {},

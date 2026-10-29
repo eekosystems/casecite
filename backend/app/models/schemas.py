@@ -448,6 +448,130 @@ class ReviewCellResponse(BaseModel):
     error: str | None = None
     model_used: str | None = None
     updated_at: datetime | None = None
+    # Human review layer. ``effective_value`` is the override when set, else ``value``.
+    override_value: str | None = None
+    effective_value: str | None = None
+    review_status: str = "pending"
+    note: str | None = None
+    reviewed_by: str | None = None
+    reviewed_at: datetime | None = None
+    history: list[dict[str, Any]] = Field(default_factory=list)
+
+
+ReviewStatus = Literal["pending", "approved", "flagged"]
+
+
+class ReviewCellReviewRequest(BaseModel):
+    """Override, approve, flag or annotate one cell. A field left out keeps its
+    value; ``override_value: null`` clears the override."""
+
+    override_value: str | None = Field(None, max_length=1000)
+    review_status: ReviewStatus | None = None
+    note: str | None = Field(None, max_length=2000)
+
+    @model_validator(mode="after")
+    def _something_given(self) -> "ReviewCellReviewRequest":
+        if not self.model_fields_set:
+            raise ValueError("Nothing to change.")
+        return self
+
+
+class ReviewCellRef(BaseModel):
+    document_id: str = Field(..., max_length=64)
+    field_key: str = Field(..., max_length=80)
+
+
+class ReviewCellBulkRequest(ReviewCellReviewRequest):
+    """The same change applied to many cells at once."""
+
+    cells: list[ReviewCellRef] = Field(..., min_length=1, max_length=5000)
+
+    @model_validator(mode="after")
+    def _something_given(self) -> "ReviewCellBulkRequest":
+        if self.model_fields_set <= {"cells"}:
+            raise ValueError("Nothing to change.")
+        return self
+
+
+class ReviewCellBulkResponse(BaseModel):
+    updated: int
+    cells: list[ReviewCellResponse]
+
+
+class ReviewSchemaCreateRequest(BaseModel):
+    """Save a field schema for reuse; with a matter it is shared with the matter."""
+
+    name: str = Field(..., min_length=1, max_length=300)
+    description: str | None = Field(None, max_length=2000)
+    matter_id: str | None = Field(None, max_length=36)
+    fields: list[ReviewFieldSpec] = Field(..., min_length=1, max_length=40)
+
+    @field_validator("fields")
+    @classmethod
+    def _keys_unique(cls, v: list[ReviewFieldSpec]) -> list[ReviewFieldSpec]:
+        return _unique_field_keys(v)
+
+
+class ReviewSchemaUpdateRequest(BaseModel):
+    name: str | None = Field(None, min_length=1, max_length=300)
+    description: str | None = Field(None, max_length=2000)
+    matter_id: str | None = Field(None, max_length=36)
+    fields: list[ReviewFieldSpec] | None = Field(None, min_length=1, max_length=40)
+
+    @field_validator("fields")
+    @classmethod
+    def _keys_unique(cls, v: list[ReviewFieldSpec] | None) -> list[ReviewFieldSpec] | None:
+        return _unique_field_keys(v) if v is not None else None
+
+
+class ReviewSchemaResponse(BaseModel):
+    id: str
+    name: str
+    description: str | None = None
+    matter_id: str | None = None
+    owner_id: str | None = None
+    role: str  # "owner" | "member" | "builtin"
+    is_builtin: bool = False
+    fields: list[ReviewFieldSpec]
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class ReviewSchemaListResponse(BaseModel):
+    schemas: list[ReviewSchemaResponse]
+
+
+class ReviewRunResponse(BaseModel):
+    id: str
+    table_id: str
+    runner_id: str
+    scope: dict[str, Any] = Field(default_factory=dict)
+    status: str
+    job_id: str | None = None
+    counts: dict[str, Any] | None = None
+    error: str | None = None
+    started_at: datetime
+    finished_at: datetime | None = None
+
+
+class ReviewRunListResponse(BaseModel):
+    runs: list[ReviewRunResponse]
+
+
+class ReviewTableAddDocumentsRequest(BaseModel):
+    """Add documents to a table's scope; ``run`` extracts just the new rows."""
+
+    document_ids: list[str] = Field(..., min_length=1, max_length=1000)
+    run: bool = False
+
+
+class ReviewDocumentTextResponse(BaseModel):
+    """The indexed text of one document in a table, exactly as the cells' offsets see it."""
+
+    document_id: str
+    filename: str
+    text: str
+    length: int
 
 
 class ReviewTableDocument(BaseModel):
@@ -468,6 +592,8 @@ class ReviewTableSummary(BaseModel):
     field_count: int
     document_count: int
     cell_count: int = 0
+    approved_count: int = 0
+    flagged_count: int = 0
     last_run_at: datetime | None = None
     created_at: datetime
     updated_at: datetime | None = None
@@ -499,6 +625,13 @@ class ReviewTableRunStarted(BaseModel):
     poll_url: str
     documents: int
     fields: int
+    run_id: str | None = None
+
+
+class ReviewTableDocumentsAdded(BaseModel):
+    added: list[str]
+    table: "ReviewTableDetailResponse"
+    run: ReviewTableRunStarted | None = None
 
 
 # ---- Deep research (planned, multi-step, source-verified research) ----
@@ -610,6 +743,7 @@ class WorkflowStepKind(str, Enum):
     DRAFT_DOCUMENT = "draft_document"  # a draft from instructions and prior outputs
     DEEP_RESEARCH = "deep_research"  # plan + run a deep-research question
     CITATION_CHECK = "citation_check"  # treatment scan of citations found or given
+    APPROVAL = "approval"  # pause the run until a named approver decides
 
 
 class WorkflowInputSource(str, Enum):
@@ -660,10 +794,24 @@ class AnalyzeContractParams(BaseModel):
 
 
 class CompareContractsParams(BaseModel):
-    """Compare every input document against a baseline (the first input when unset)."""
+    """Compare every input document against a baseline.
 
+    ``baseline`` says where the baseline comes from: ``first_input`` (the
+    first document the step reads) or ``document`` (the fixed
+    ``baseline_document_id``, which is then required).
+    """
+
+    baseline: Literal["first_input", "document"] = "first_input"
     baseline_document_id: str | None = Field(None, max_length=64)
     focus: str | None = Field(None, max_length=2000)
+
+    @model_validator(mode="after")
+    def _baseline_present(self) -> "CompareContractsParams":
+        if self.baseline_document_id:
+            self.baseline = "document"
+        elif self.baseline == "document":
+            raise ValueError("baseline_document_id: pick the baseline document to compare against")
+        return self
 
 
 class DraftDocumentParams(BaseModel):
@@ -691,6 +839,36 @@ class CitationCheckParams(BaseModel):
     from_steps: list[str] | None = Field(None, max_length=12)
 
 
+APPROVER_GROUPS = ("owner", "any_member")
+
+
+class ApprovalParams(BaseModel):
+    """Pause the run until an approver decides.
+
+    ``approvers`` is ``"owner"`` (the workflow's owner), ``"any_member"`` (any
+    member of the workflow's matter, or the owner when it has none) or a list
+    of user ids who must be members of that matter.
+    """
+
+    title: str = Field("Approval", min_length=1, max_length=200)
+    instructions: str | None = Field(None, max_length=4000)
+    approvers: str | list[str] = "owner"
+
+    @field_validator("approvers")
+    @classmethod
+    def _approvers_valid(cls, v: str | list[str]) -> str | list[str]:
+        if isinstance(v, str):
+            if v not in APPROVER_GROUPS:
+                raise ValueError("approvers must be 'owner', 'any_member' or a list of user ids")
+            return v
+        ids = [str(x).strip() for x in v if str(x).strip()]
+        if not ids:
+            raise ValueError("approvers: name at least one approver")
+        if len(ids) > 20:
+            raise ValueError("approvers: at most 20 named approvers")
+        return list(dict.fromkeys(ids))
+
+
 STEP_PARAM_MODELS: dict[WorkflowStepKind, type[BaseModel]] = {
     WorkflowStepKind.EXTRACT_FIELDS: ExtractFieldsParams,
     WorkflowStepKind.ANALYZE_CONTRACT: AnalyzeContractParams,
@@ -698,11 +876,70 @@ STEP_PARAM_MODELS: dict[WorkflowStepKind, type[BaseModel]] = {
     WorkflowStepKind.DRAFT_DOCUMENT: DraftDocumentParams,
     WorkflowStepKind.DEEP_RESEARCH: DeepResearchParams,
     WorkflowStepKind.CITATION_CHECK: CitationCheckParams,
+    WorkflowStepKind.APPROVAL: ApprovalParams,
 }
 
 _STEP_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,59}$")
 # ``{{step}}``, ``{{step.field}}``, ``{{step.list.0.field}}`` in templated text.
 TEMPLATE_REF_RE = re.compile(r"\{\{\s*([A-Za-z][A-Za-z0-9_-]*)((?:\.[A-Za-z0-9_-]+)*)\s*\}\}")
+
+CONDITION_OPS = (
+    "exists",
+    "not_exists",
+    "equals",
+    "not_equals",
+    "contains",
+    "gt",
+    "lt",
+    "gte",
+    "lte",
+    "count_gt",
+    "count_eq",
+)
+# Operators that compare against nothing: ``value`` must be absent.
+_UNARY_OPS = ("exists", "not_exists")
+
+
+class WorkflowCondition(BaseModel):
+    """Run the step only when an earlier step's output satisfies this rule.
+
+    ``path`` walks the earlier step's output like a template reference
+    (``data.analyses.0.issues``, ``summary``; empty for the whole output).
+    """
+
+    step: str = Field(..., min_length=1, max_length=60)
+    path: str = Field("", max_length=300)
+    op: Literal[
+        "exists",
+        "not_exists",
+        "equals",
+        "not_equals",
+        "contains",
+        "gt",
+        "lt",
+        "gte",
+        "lte",
+        "count_gt",
+        "count_eq",
+    ]
+    value: str | int | float | bool | None = None
+
+    @model_validator(mode="after")
+    def _value_matches_op(self) -> "WorkflowCondition":
+        self.step = self.step.strip()
+        self.path = self.path.strip().strip(".")
+        if self.path and not re.match(r"^[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*$", self.path):
+            raise ValueError("path: dotted keys and list indexes only, e.g. data.analyses.0.issues")
+        if self.op in _UNARY_OPS:
+            self.value = None
+        elif self.value is None or (isinstance(self.value, str) and not self.value.strip()):
+            raise ValueError(f"value: the '{self.op}' condition needs a value to compare with")
+        if self.op in ("gt", "lt", "gte", "lte", "count_gt", "count_eq"):
+            try:
+                float(str(self.value))
+            except ValueError:
+                raise ValueError(f"value: the '{self.op}' condition needs a number") from None
+        return self
 
 
 class WorkflowStep(BaseModel):
@@ -716,6 +953,9 @@ class WorkflowStep(BaseModel):
             source=WorkflowInputSource.RUN, document_ids=[], step=None
         )
     )
+    # Run only when an earlier step's output satisfies the rule; else the step
+    # is recorded as skipped_condition and the run goes on.
+    condition: WorkflowCondition | None = None
 
     @model_validator(mode="after")
     def _validate_params(self) -> "WorkflowStep":
@@ -730,19 +970,34 @@ class WorkflowStep(BaseModel):
         return self
 
 
-def _referenced_steps(step: WorkflowStep) -> set[str]:
-    """Every earlier step this step names, through its inputs, params or templates."""
-    refs: set[str] = set()
+def _template_refs(text: Any) -> set[str]:
+    return {m.group(1) for m in TEMPLATE_REF_RE.finditer(text)} if isinstance(text, str) else set()
+
+
+def referenced_steps_by_field(step: WorkflowStep) -> dict[str, set[str]]:
+    """Every earlier step this step names, keyed by the field that names it."""
+    refs: dict[str, set[str]] = {}
     if step.inputs.step:
-        refs.add(step.inputs.step)
+        refs["inputs.step"] = {step.inputs.step}
+    if step.condition is not None:
+        refs["condition.step"] = {step.condition.step}
     params = step.params
     for key in ("include_outputs_from", "from_steps"):
-        for name in params.get(key) or []:
-            refs.add(str(name))
+        names = {str(n) for n in (params.get(key) or [])}
+        if names:
+            refs[f"params.{key}"] = names
     for key in ("instructions", "question"):
-        text = params.get(key)
-        if isinstance(text, str):
-            refs.update(m.group(1) for m in TEMPLATE_REF_RE.finditer(text))
+        names = _template_refs(params.get(key))
+        if names:
+            refs[f"params.{key}"] = names
+    return refs
+
+
+def _referenced_steps(step: WorkflowStep) -> set[str]:
+    """Every earlier step this step names, through its inputs, params, condition or templates."""
+    refs: set[str] = set()
+    for names in referenced_steps_by_field(step).values():
+        refs |= names
     return refs
 
 
@@ -777,16 +1032,47 @@ class WorkflowCreateRequest(BaseModel):
 
 
 class WorkflowUpdateRequest(BaseModel):
-    """Change the name, description or steps. Omitted fields keep their value."""
+    """Change the name, description or steps. Omitted fields keep their value.
+
+    A change to the steps records a new version; ``change_note`` is kept on it.
+    """
 
     name: str | None = Field(None, min_length=1, max_length=300)
     description: str | None = Field(None, max_length=2000)
     steps: list[WorkflowStep] | None = Field(None, min_length=1, max_length=50)
+    change_note: str | None = Field(None, max_length=500)
 
     @field_validator("steps")
     @classmethod
     def _steps_consistent(cls, v: list[WorkflowStep] | None) -> list[WorkflowStep] | None:
         return validate_workflow_steps(v) if v is not None else None
+
+
+class WorkflowValidateRequest(BaseModel):
+    """Steps as the editor holds them, checked without saving. Raw dicts, so
+    every step's problems are reported rather than the first one found."""
+
+    steps: list[dict[str, Any]] = Field(default_factory=list, max_length=50)
+
+
+class WorkflowStepIssue(BaseModel):
+    index: int  # -1 for a workflow-level problem
+    field: str
+    message: str
+
+
+class WorkflowValidateResponse(BaseModel):
+    valid: bool
+    issues: list[WorkflowStepIssue]
+
+
+class WorkflowDocumentRef(BaseModel):
+    """A document a workflow or run names, with the name the UI shows for it."""
+
+    id: str
+    filename: str | None = None
+    # False when the caller can no longer read it (left the matter, deleted).
+    accessible: bool = True
 
 
 class WorkflowSummary(BaseModel):
@@ -797,6 +1083,8 @@ class WorkflowSummary(BaseModel):
     owner_id: str
     role: str  # the caller's role: "owner" | "member"
     template_key: str | None = None
+    version: int = 1
+    archived_at: datetime | None = None
     step_count: int
     step_kinds: list[WorkflowStepKind] = Field(default_factory=list)
     run_count: int = 0
@@ -812,6 +1100,43 @@ class WorkflowListResponse(BaseModel):
 
 class WorkflowDetailResponse(WorkflowSummary):
     steps: list[WorkflowStep]
+    # Every document the steps name (fixed inputs, baselines, references).
+    documents: list[WorkflowDocumentRef] = Field(default_factory=list)
+
+
+class WorkflowDuplicateRequest(BaseModel):
+    name: str | None = Field(None, min_length=1, max_length=300)
+    matter_id: str | None = Field(None, max_length=36)
+
+
+class WorkflowVersionSummary(BaseModel):
+    version: int
+    name: str
+    description: str | None = None
+    step_count: int
+    step_names: list[str] = Field(default_factory=list)
+    created_by: str
+    created_at: datetime
+    change_note: str | None = None
+
+
+class WorkflowVersionDetail(WorkflowVersionSummary):
+    steps: list[WorkflowStep]
+
+
+class WorkflowVersionListResponse(BaseModel):
+    current: int
+    versions: list[WorkflowVersionSummary]
+
+
+class WorkflowRestoreRequest(BaseModel):
+    change_note: str | None = Field(None, max_length=500)
+
+
+class WorkflowDecisionRequest(BaseModel):
+    """Approve or reject an awaiting approval step."""
+
+    note: str | None = Field(None, max_length=2000)
 
 
 class WorkflowTemplate(BaseModel):
@@ -855,6 +1180,9 @@ class WorkflowStepRunResponse(BaseModel):
 class WorkflowRunSummary(BaseModel):
     id: str
     workflow_id: str
+    # The workflow's name at read time, for lists that span workflows.
+    workflow_name: str | None = None
+    workflow_version: int = 1
     runner_id: str
     matter_id: str | None = None
     status: str
@@ -864,6 +1192,10 @@ class WorkflowRunSummary(BaseModel):
     job_id: str | None = None
     error: str | None = None
     resumed_count: int = 0
+    # While awaiting approval: the step waiting and who may decide it.
+    awaiting_step: str | None = None
+    approver_ids: list[str] = Field(default_factory=list)
+    can_approve: bool = False
     created_at: datetime
     completed_at: datetime | None = None
 
@@ -876,6 +1208,8 @@ class WorkflowRunDetailResponse(WorkflowRunSummary):
     step_definitions: list[WorkflowStep]
     step_runs: list[WorkflowStepRunResponse]
     input_document_ids: list[str] = Field(default_factory=list)
+    # Names for every document the run read (inputs and documents the steps name).
+    document_refs: list[WorkflowDocumentRef] = Field(default_factory=list)
 
 
 class ChatSessionMessage(BaseModel):
@@ -1009,6 +1343,10 @@ class RAGSettings(BaseModel):
     # with every review/redline/draft as standing context.
     practice_area: str | None = Field(None, max_length=200)
     practice_profile: str | None = Field(None, max_length=20000)
+    # Email when a workflow run the user started (or must approve) completes,
+    # fails, waits for approval or is rejected. Only when the server has
+    # WORKFLOW_NOTIFICATIONS on and a mail sender configured.
+    workflow_email_notifications: bool = True
     # Custom prompts - if empty/None, uses defaults
     custom_system_prompt: str | None = Field(None, max_length=50000)
     custom_grounding_rules: str | None = Field(None, max_length=10000)

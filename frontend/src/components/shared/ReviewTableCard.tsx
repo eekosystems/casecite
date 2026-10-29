@@ -8,9 +8,11 @@ interface ReviewTableCardProps {
   styles: Record<string, string>;
 }
 
-/** One review table in the /review-tables list: name, scope size, last run. */
+/** One review table in the /review-tables list: name, scope size, review progress, last run. */
 export function ReviewTableCard({ table, onOpen, styles }: ReviewTableCardProps) {
   const lastRun = table.last_run_at ? new Date(table.last_run_at).toLocaleString() : null;
+  const capacity = table.document_count * table.field_count;
+  const pct = capacity ? Math.round((table.approved_count / capacity) * 100) : 0;
   return (
     <div
       className={styles.card}
@@ -35,6 +37,17 @@ export function ReviewTableCard({ table, onOpen, styles }: ReviewTableCardProps)
           <span>{table.field_count} field{table.field_count === 1 ? '' : 's'}</span>
           <span>{lastRun ? `Last run ${lastRun}` : 'Not run yet'}</span>
         </div>
+        {capacity > 0 && table.cell_count > 0 && (
+          <div className={styles.cardProgress} title={`${table.approved_count} of ${capacity} cells approved`}>
+            <div className={styles.cardProgressTrack} aria-hidden="true">
+              <div className={styles.cardProgressFill} style={{ width: `${pct}%` }} />
+            </div>
+            <span className={styles.cardProgressLabel}>
+              {pct}% reviewed
+              {table.flagged_count > 0 && <span className={styles.cardFlag}> · <Icon name="Flag" size={10} /> {table.flagged_count}</span>}
+            </span>
+          </div>
+        )}
       </div>
     </div>
   );

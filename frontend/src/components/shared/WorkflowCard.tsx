@@ -29,6 +29,8 @@ export function WorkflowCard({ workflow, onOpen, styles }: WorkflowCardProps) {
           <span className={`${styles.roleBadge} ${workflow.role === 'owner' ? styles.roleOwner : ''}`}>
             {workflow.role}
           </span>
+          <span className={styles.roleBadge} title="Current version of the steps">v{workflow.version}</span>
+          {workflow.archived_at && <span className={styles.roleBadge}>archived</span>}
         </div>
         {workflow.description && <div className={styles.cardDesc}>{workflow.description}</div>}
         <div className={styles.stepChain} aria-label={`${workflow.step_count} steps`}>
@@ -45,7 +47,7 @@ export function WorkflowCard({ workflow, onOpen, styles }: WorkflowCardProps) {
           <span>{workflow.run_count} run{workflow.run_count === 1 ? '' : 's'}</span>
           <span>
             {lastRun ? `Last run ${lastRun}` : 'Not run yet'}
-            {workflow.last_run_status ? ` · ${workflow.last_run_status}` : ''}
+            {workflow.last_run_status ? ` · ${workflow.last_run_status.replace(/_/g, ' ')}` : ''}
           </span>
         </div>
       </div>
