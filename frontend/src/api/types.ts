@@ -80,9 +80,6 @@ export interface ChatResponse {
   stats?: ChatStats;
   /** Persisted chat session this exchange belongs to (null if persistence failed). */
   session_id?: string | null;
-  /** Set when the message routed to the exhaustive authority mapper: poll the
-      job for an AuthorityMapChatResult. */
-  authority_map_job?: { job_id: string; documents: { id: string; name: string }[] } | null;
   [key: string]: unknown;
 }
 
@@ -143,28 +140,6 @@ export interface ChatSessionListResponse {
   sessions: ChatSessionSummary[];
 }
 
-/** One file's stored authority-map run, saved on the chat message that launched it. */
-export interface ChatAuthorityMapRun {
-  document_id: string | null;
-  document_name: string | null;
-  /** Open the full map with GET /authority-map/{run_id}. */
-  run_id: string | null;
-  summary: AuthorityMapResult['summary'];
-}
-
-/** The chat-triggered authority map as persisted on an assistant message. */
-export interface ChatAuthorityMapRecord {
-  job_id: string;
-  documents: { id: string; name: string }[];
-  status: 'running' | 'completed' | 'failed' | string;
-  /** Present once the job completed. */
-  runs?: ChatAuthorityMapRun[];
-  totals?: { files: number; propositions: number; authorities: number; verified: number };
-  coverage_notes?: string[];
-  /** Exception type when status is "failed". */
-  error?: string;
-}
-
 export interface ChatSessionMessage {
   id: string;
   role: 'user' | 'assistant';
@@ -172,8 +147,6 @@ export interface ChatSessionMessage {
   citations: Record<string, unknown>[];
   strategy: StrategyBriefResponse | null;
   stats: Record<string, unknown> | null;
-  /** Set on an assistant message that ran the exhaustive authority map. */
-  authority_map?: ChatAuthorityMapRecord | null;
   created_at: string;
 }
 
@@ -1095,24 +1068,27 @@ export interface RequestOptions extends RequestInit {
   _retried?: boolean;
 }
 
-interface AuthorityMappingReasoningStep {
+interface DocAnchorReasoningStep {
   type?: string | null;
   description?: string | null;
   evidence?: string | null;
 }
 
-interface AuthorityMappingReasoning {
-  steps?: AuthorityMappingReasoningStep[] | null;
+interface DocAnchorReasoning {
+  steps?: DocAnchorReasoningStep[] | null;
   application?: string | null;
 }
 
-export interface AuthorityMapping {
+/** A claim anchored to a character span of one of the user's documents, with the
+    verbatim-verified quote that supports it. Drawn in the opened-document view
+    and traceable from the citation modal. */
+export interface DocAnchor {
   id?: number;
   proposition: string;
   doc_quote: string | null;
   doc_span_start: number | null;
   doc_span_end: number | null;
-  source: 'courtlistener' | string;
+  source: 'internal' | 'courtlistener' | string;
   case_name: string | null;
   citation: string | null;
   source_ref: string | null;
@@ -1123,57 +1099,7 @@ export interface AuthorityMapping {
   verified: boolean;
   relevance: number;
   note: string | null;
-  reasoning?: AuthorityMappingReasoning | null;
-}
-
-/** What the authority mapper's bounds left out of one run (summary.coverage). */
-export interface AuthorityMapCoverage {
-  document_chars?: number;
-  document_chars_read?: number;
-  document_windows_read?: number;
-  document_windows_failed?: number;
-  document_truncated?: boolean;
-  propositions_identified?: number;
-  propositions_researched?: number;
-  propositions_limit?: number;
-  opinions_checked?: number;
-  opinions_partially_read?: number;
-}
-
-export interface AuthorityMapResult {
-  run_id: string;
-  document_name: string | null;
-  jurisdiction: string | null;
-  summary: {
-    propositions?: number;
-    authorities?: number;
-    verified?: number;
-    courtlistener?: number;
-    coverage?: AuthorityMapCoverage;
-  };
-  mappings: AuthorityMapping[];
-}
-
-export interface AuthorityMapJob {
-  job_id: string;
-  status: string; // pending | processing | completed | failed | cancelled
-  result?: AuthorityMapResult | null;
-  error?: string | null;
-}
-
-/** Result of a chat-triggered authority map across one or more scoped files. */
-export interface AuthorityMapChatResult {
-  files: (AuthorityMapResult & { document_id?: string | null })[];
-  totals: { files: number; propositions: number; authorities: number; verified: number };
-  /** One sentence per file the map did not cover in full — empty when all were. */
-  coverage_notes?: string[];
-}
-
-export interface AuthorityMapChatJob {
-  job_id: string;
-  status: string; // pending | processing | completed | failed | cancelled
-  result?: AuthorityMapChatResult | null;
-  error?: string | null;
+  reasoning?: DocAnchorReasoning | null;
 }
 
 /** GET /tools/cases/{id} — a case with its readable opinion text. */
@@ -1189,12 +1115,6 @@ export interface CaseDetail {
   opinion_text?: string;
   syllabus?: string;
   [k: string]: unknown;
-}
-
-export interface AuthorityMapPayload {
-  documentText: string;
-  documentName?: string | null;
-  jurisdiction?: string | null;
 }
 
 // ==================== Contract Analysis Types ====================
@@ -1692,17 +1612,10 @@ export interface ApiClient {
   importFromBoxPicker(files: unknown[]): Promise<ImportResponse>;
   importFromDropboxChooser(files: Array<{ name: string; url?: string; size?: number }>): Promise<ImportResponse>;
 
-  // Matter Strategy & Authority Map
-  submitAuthorityMap(payload: AuthorityMapPayload): Promise<{ job_id: string }>;
-  getAuthorityMapJob(jobId: string): Promise<AuthorityMapJob>;
-  getChatAuthorityMapJob(jobId: string): Promise<AuthorityMapChatJob>;
+  // Case law
   /** GET /tools/cases/{id}?kind= — pass 'opinion' for a citation's opinion_id,
       'cluster' for a search result id; omitted = cluster first, then opinion. */
   getCaseOpinion(opinionId: string, kind?: 'opinion' | 'cluster'): Promise<CaseDetail>;
-  /** GET /authority-map/{run_id} — a stored run with all of its mappings. */
-  getAuthorityMapRun(runId: string): Promise<AuthorityMapResult>;
-  /** Delete a stored authority-map run and its mappings (owner only). */
-  deleteAuthorityMap(runId: string): Promise<{ status: string; id: string }>;
 
   // Contract Analysis
   getContractJob(jobId: string): Promise<ContractAnalysisJob>;

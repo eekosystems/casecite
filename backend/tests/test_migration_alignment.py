@@ -26,7 +26,6 @@ from alembic.operations import Operations
 
 # The same imports migrations/env.py makes, so Base.metadata holds every table
 # the backstop's create_all would build.
-from app.models.authority_map import AuthorityMapping, AuthorityMapRun  # noqa: F401
 from app.models.db_models import Base
 
 _VERSIONS = Path(__file__).resolve().parents[1] / "migrations" / "versions"
@@ -179,14 +178,21 @@ class TestMigration009:
         downgrade must not assume its own ``idx_<table>_matter`` exists."""
         engine = create_all_engine
         migration = _load_migration("009")
-        for table in self._TABLES:
+        # authority_map_runs is in the migration's list but no longer in the
+        # models (the feature was removed; 018 drops the table), so a fresh
+        # build does not have it and 009 skips it.
+        built = set(sa.inspect(engine).get_table_names())
+        assert "authority_map_runs" not in built
+        tables = [t for t in self._TABLES if t in built]
+        assert len(tables) == len(self._TABLES) - 1
+        for table in tables:
             assert "matter_id" in _columns(engine, table)
             assert f"idx_{table}_matter" not in _indexes(engine, table)
 
         _run(engine, migration.upgrade)
         _run(engine, migration.downgrade)
 
-        for table in self._TABLES:
+        for table in tables:
             assert "matter_id" not in _columns(engine, table)
             assert not [
                 ix for ix in _indexes(engine, table).values() if "matter_id" in ix["column_names"]

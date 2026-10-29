@@ -129,7 +129,7 @@ class TestExtractText:
 
 
 class TestPermissionGate:
-    """Extraction/conversion need a document, contract or authority-map permission."""
+    """Extraction/conversion need a document or contract permission."""
 
     @pytest.mark.parametrize("endpoint", ["extract-text", "convert-to-pdf"])
     def test_user_without_any_workspace_permission_is_forbidden(self, client, endpoint):

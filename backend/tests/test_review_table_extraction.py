@@ -6,7 +6,12 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from app.models.review_tables import CELL_ERROR, CELL_EXTRACTED, CELL_NOT_FOUND, CELL_UNVERIFIED
-from app.services.review_tables.export import CITATIONS_SHEET, RESULTS_SHEET, render_csv, render_xlsx
+from app.services.review_tables.export import (
+    CITATIONS_SHEET,
+    RESULTS_SHEET,
+    render_csv,
+    render_xlsx,
+)
 from app.services.review_tables.extraction import (
     ExtractionError,
     build_prompt,
@@ -44,7 +49,9 @@ class TestSelectExcerpts:
         assert select_excerpts(CONTRACT, FIELDS, []) == [("document", CONTRACT)]
 
     def test_long_document_gets_preamble_tags_and_relevant_passages(self):
-        filler = "\n\n".join(f"Section {i}. Boilerplate about nothing in particular." for i in range(900))
+        filler = "\n\n".join(
+            f"Section {i}. Boilerplate about nothing in particular." for i in range(900)
+        )
         target = "INSURANCE. The Supplier shall maintain insurance coverage of USD 5,000,000."
         text = "PREAMBLE. " + filler + "\n\n" + target + "\n\n" + filler
         assert len(text) > 30_000
@@ -93,7 +100,9 @@ class TestExtractFields:
 
     @pytest.mark.asyncio
     async def test_missing_field_in_answer_is_not_found(self):
-        payload = {"fields": {"governing_law": {"value": "Delaware", "quote": "", "not_found": False}}}
+        payload = {
+            "fields": {"governing_law": {"value": "Delaware", "quote": "", "not_found": False}}
+        }
         result = await extract_fields(_client_with(payload), CONTRACT, FIELDS, model="m")
         assert set(result) == {"governing_law", "effective_date", "liability_cap"}
         assert result["effective_date"].status == CELL_NOT_FOUND
@@ -192,7 +201,12 @@ class TestExport:
         assert results["C3"].value == "error"
 
         rows = list(citations.iter_rows(min_row=2, values_only=True))
-        assert rows[0][:4] == ("a.pdf", "Governing law", "Delaware", "governed by the laws of the State of Delaware")
+        assert rows[0][:4] == (
+            "a.pdf",
+            "Governing law",
+            "Delaware",
+            "governed by the laws of the State of Delaware",
+        )
         assert rows[0][4:8] == (90, 135, "yes", "verified")
         assert rows[1][6:8] == ("no", "unverified")
         assert rows[2][7:9] == ("error", "index unavailable")
@@ -202,4 +216,7 @@ class TestExport:
         lines = text.strip().splitlines()
         assert lines[0].startswith("Document,Field,Value,Quote,Span start")
         assert len(lines) == 1 + len(self.DOCS) * len(self.FIELDS)
-        assert "a.pdf,Governing law,Delaware,governed by the laws of the State of Delaware,90,135,yes,verified," in text
+        assert (
+            "a.pdf,Governing law,Delaware,governed by the laws of the State of Delaware,90,135,yes,verified,"
+            in text
+        )

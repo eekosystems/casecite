@@ -3,8 +3,7 @@
  *
  * Citations live in React state inside useResearchState (the Sources panel).
  * The hook registers its merge handler here — the same pattern as the shared
- * navigate reference in utils/router.ts — so stores (e.g. authorityMapStore)
- * can surface citations into the Sources panel without touching React state.
+ * navigate reference in utils/router.ts — so stores can surface citations into the Sources panel without touching React state.
  */
 import type { Citation } from '../types/research';
 

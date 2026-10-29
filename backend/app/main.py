@@ -25,7 +25,6 @@ from app.middleware.middleware_config import configure_middleware
 from app.routers import (
     audit,
     auth,
-    authority_map,
     branding,
     chat,
     chat_sessions,
@@ -474,7 +473,6 @@ app.include_router(mfa.router, prefix=settings.api_prefix)
 
 # AI-powered feature routers
 app.include_router(contract_analysis.router, prefix=settings.api_prefix)
-app.include_router(authority_map.router, prefix=settings.api_prefix)
 app.include_router(integrations.router, prefix=settings.api_prefix)
 app.include_router(users.router, prefix=settings.api_prefix)
 app.include_router(audit.router, prefix=settings.api_prefix)

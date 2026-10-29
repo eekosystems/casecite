@@ -21,9 +21,9 @@ import uuid
 from typing import Any
 
 from app.models.schemas import Citation, CitationLogic, CitationStatus, ReasoningStep
-from app.services.authority_mapper.service import find_quote_offset
 from app.services.llm_clients import make_openai, openai_chat, utility_model
 from app.services.provider_policy import enforce_openai_client
+from app.services.quote_verify import find_quote_offset
 from app.services.rag.generation import chosen_provider_text, strip_json_fences
 from app.services.rag.prompt_safety import UNTRUSTED_CONTENT_RULE, untrusted_block
 

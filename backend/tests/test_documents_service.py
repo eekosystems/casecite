@@ -198,7 +198,7 @@ class TestDocumentService:
         assert result is True
         assert "d1" not in svc.documents
         mock_rag.delete_document.assert_called_once_with("d1")
-        # Analyses and authority maps derived from the document go with it.
+        # Analyses derived from the document go with it.
         derived.assert_awaited_once_with(["d1"])
 
     @pytest.mark.asyncio

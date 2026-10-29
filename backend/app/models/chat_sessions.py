@@ -45,10 +45,6 @@ class ChatMessageDB(Base):
     citations = Column(JSON, default=list)
     strategy = Column(JSON, nullable=True)
     stats = Column(JSON, nullable=True)
-    # Set on an assistant message that launched the exhaustive authority map:
-    # the job, the scoped documents and — once the job finishes — the stored
-    # run ids and totals, so the map can be reopened from the session.
-    authority_map = Column(JSON, nullable=True)
     created_at = Column(DateTime, nullable=False)
 
     __table_args__ = (Index("idx_chat_message_session", "session_id"),)

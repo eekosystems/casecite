@@ -4,11 +4,11 @@ import { useUIStore } from '../stores/uiStore';
 import { useMattersStore, documentInMatter } from '../stores/mattersStore';
 import { useRagDocsStore } from '../stores/ragDocsStore';
 import { registerReset } from '../stores/resetRegistry';
-import { generateId, parseUtcDate, mappingToCitation, fetchDocumentPdfUrl } from '../utils';
+import { generateId, parseUtcDate, fetchDocumentPdfUrl } from '../utils';
 import { parseCitations } from '../utils/citationParser';
 import logger from '../utils/logger';
 import type { ChatMessage, Citation, DocumentFilter, ChatStats } from '../types';
-import type { ChatSessionSummary, ChatSessionMessage, StrategyBriefResponse, AuthorityMapChatResult, AuthorityMapping } from '../api/types';
+import type { ChatSessionSummary, ChatSessionMessage, StrategyBriefResponse, DocAnchor } from '../api/types';
 import type { DocAnnotation } from '../components/shared/AnnotatedDocument';
 import { setCitationsSink } from '../utils/citationsBridge';
 import { conversationTitle, downloadConversation } from '../utils/conversationExport';
@@ -32,7 +32,7 @@ function effectiveDocFilter(picked: DocumentFilter | null): DocumentFilter | nul
   };
 }
 
-/** Flatten a Matter Strategy message (brief / authority map included) for export. */
+/** Flatten a Matter Strategy message (brief included) for export. */
 function researchMessageToExport(msg: ChatMessage): ConversationExportMessage {
   if (msg.type === 'user') return { role: 'user', text: msg.content };
   const parts: string[] = [];
@@ -47,10 +47,6 @@ function researchMessageToExport(msg: ChatMessage): ConversationExportMessage {
     section('Strengths', b.strengths);
     section('Weaknesses', b.weaknesses);
     section('Next steps', b.next_steps);
-  } else if (msg.authorityMap) {
-    const t = msg.authorityMap.totals;
-    parts.push(`Authority map: ${t.propositions} propositions, ${t.authorities} authorities, ${t.verified} verified across ${t.files} file(s).`);
-    if (msg.content) parts.push(msg.content);
   } else {
     parts.push(msg.content);
   }
@@ -73,25 +69,6 @@ export interface OpenDoc {
   loading: boolean;
   /** Object URL of the file rendered as PDF (native formatting), when available. */
   fileUrl: string | null;
-}
-
-/** Poll a chat-triggered authority-map job to completion (~20 min budget —
-    it reads every scoped file and verifies each authority against the real
-    opinion text). */
-async function pollAuthorityMapChatJob(jobId: string, signal: AbortSignal): Promise<AuthorityMapChatResult> {
-  for (let attempt = 0; attempt < 400; attempt++) {
-    if (signal.aborted) throw new DOMException('Cancelled', 'AbortError');
-    const job = await api.getChatAuthorityMapJob(jobId);
-    if (job.status === 'completed') {
-      if (!job.result) throw new Error('The authority map returned no result.');
-      return job.result;
-    }
-    if (job.status === 'failed' || job.status === 'cancelled') {
-      throw new Error(job.error || 'Authority mapping failed.');
-    }
-    await new Promise((r) => setTimeout(r, 3000));
-  }
-  throw new Error('Timed out waiting for the authority map.');
 }
 
 /** Map a persisted session message's stats JSON into the ChatMessage stats shape. */
@@ -136,7 +113,7 @@ export function useResearchState({ addToast, activeMode, setActiveMode }: { addT
   const [selectedCitation, setSelectedCitation] = useState<Citation | null>(null);
   const [allCitations, setAllCitations] = useState<Citation[]>([]);
 
-  // Stores (e.g. authorityMapStore) surface citations into the Sources panel
+  // Stores surface citations into the Sources panel
   // through this sink — registered like the shared navigate reference in
   // utils/router.ts. Merges by id so a re-run never duplicates rows.
   useEffect(() => {
@@ -181,7 +158,7 @@ export function useResearchState({ addToast, activeMode, setActiveMode }: { addT
 
   // Open document viewers: files opened from the workspace render as a
   // full-screen split view (1 = full, 2 = 50/50, 4 = quartered) with
-  // case-law anchors from authority-map results.
+  // the conversation's verified claims anchored inline.
   const [openDocs, setOpenDocs] = useState<OpenDoc[]>([]);
 
   const openDocument = useCallback(async (docId: string, filename: string) => {
@@ -256,17 +233,12 @@ export function useResearchState({ addToast, activeMode, setActiveMode }: { addT
   }), []);
 
   // Anchors per document, grouped by span — the shape the annotated document
-  // renderer uses. Two feeds: authority-map mappings (case law per
-  // proposition) and claim-grounded chat citations (the answer's claims with
+  // renderer uses: the claim-grounded chat citations (the answer's claims with
   // verbatim-verified quotes), so an opened file shows every verified anchor
   // from the conversation.
   const docAnnotations = useMemo(() => {
-    const mappingsByDoc: Record<string, AuthorityMapping[]> = {};
+    const mappingsByDoc: Record<string, DocAnchor[]> = {};
     for (const msg of messages) {
-      for (const f of msg.authorityMap?.files ?? []) {
-        if (!f.document_id) continue;
-        (mappingsByDoc[f.document_id] ||= []).push(...f.mappings);
-      }
       for (const c of msg.citations ?? []) {
         if (!c.document_id || c.docSpanStart == null || c.docSpanEnd == null) continue;
         (mappingsByDoc[c.document_id] ||= []).push({
@@ -353,57 +325,6 @@ export function useResearchState({ addToast, activeMode, setActiveMode }: { addT
         sessionId: currentSessionId,
       }, controller.signal);
 
-      // Chat-triggered authority map: the backend submitted a background job.
-      // Show its acknowledgement, poll the job, then post the audit result as
-      // its own message with every authority in the Sources panel.
-      if (response.authority_map_job?.job_id) {
-        const jobInfo = response.authority_map_job;
-        setMessages((prev: ChatMessage[]) => [...prev, {
-          id: response.id || generateId(),
-          type: 'assistant' as const,
-          content: response.content || 'Mapping supporting case law…',
-          timestamp: new Date(),
-          citations: [],
-          mode: activeMode,
-        }]);
-        if (response.session_id) setCurrentSessionId(response.session_id);
-        setProcessingStage(
-          `Mapping case law across ${jobInfo.documents.length} file${jobInfo.documents.length === 1 ? '' : 's'}…`
-        );
-        const mapResult = await pollAuthorityMapChatJob(jobInfo.job_id, controller.signal);
-        const mapMsgId = generateId();
-        const mapCitations: Citation[] = [];
-        mapResult.files.forEach((f, fi) => {
-          [...f.mappings]
-            .sort((a, b) => Number(b.verified) - Number(a.verified))
-            .forEach((m, i) => mapCitations.push({
-              ...mappingToCitation(m, i, `am${fi}`),
-              messageId: mapMsgId,
-              sourceQuery: query,
-            }));
-        });
-        const t = mapResult.totals;
-        const resultMsg: ChatMessage = {
-          id: mapMsgId,
-          type: 'assistant' as const,
-          content: `Authority map complete: ${t.verified} verified authorit${t.verified === 1 ? 'y' : 'ies'} across ${t.propositions} proposition${t.propositions === 1 ? '' : 's'} in ${t.files} file${t.files === 1 ? '' : 's'}. Every authority is in the Sources panel — click one to review the verified quote.`,
-          timestamp: new Date(),
-          citations: mapCitations,
-          mode: activeMode,
-          authorityMap: mapResult,
-          stats: {
-            docsSearched: t.files,
-            chunksRetrieved: 0,
-            processingTime: ((Date.now() - startTime) / 1000).toFixed(0) + 's',
-            caseLawSearched: t.authorities,
-            caseLawIncluded: t.verified,
-          },
-        };
-        setMessages((prev: ChatMessage[]) => [...prev, resultMsg]);
-        setAllCitations((prev: Citation[]) => [...prev, ...mapCitations]);
-        return;
-      }
-
       const processingTime = ((Date.now() - startTime) / 1000).toFixed(2);
 
       const msgId = response.id || generateId();
@@ -472,7 +393,7 @@ export function useResearchState({ addToast, activeMode, setActiveMode }: { addT
     }
   }, [inputValue, isProcessing, activeMode, mainDocFilter, currentSessionId, addToast, loadChatSessions]);
 
-  // Stop waiting for the in-flight answer (or authority-map job).
+  // Stop waiting for the in-flight answer.
   const handleCancel = useCallback(() => {
     abortRef.current?.abort();
   }, []);
@@ -505,9 +426,6 @@ export function useResearchState({ addToast, activeMode, setActiveMode }: { addT
           citations,
           mode: 'research',
           strategy: (m.strategy as StrategyBriefResponse | null) ?? undefined,
-          // A chat-triggered authority map is stored compactly; the card
-          // reopens each run from its run_id.
-          authorityMapRecord: m.authority_map ?? undefined,
           stats: mapStoredStats(m.stats, citations.length),
         };
       });
@@ -541,8 +459,8 @@ export function useResearchState({ addToast, activeMode, setActiveMode }: { addT
   }, [currentSessionId, addToast]);
 
   // Clear session (start a new conversation — the server thread is kept in History)
-  // Download the conversation as Word / PDF / Markdown — strategy briefs and
-  // authority maps are flattened to text; citations travel as sources.
+  // Download the conversation as Word / PDF / Markdown — strategy briefs are
+  // flattened to text; citations travel as sources.
   const handleExportConversation = useCallback(async (format: ConversationExportFormat) => {
     if (exportingConversation) return;
     const firstQuestion = messages.find((m) => m.type === 'user')?.content;

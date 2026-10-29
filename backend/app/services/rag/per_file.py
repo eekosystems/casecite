@@ -8,7 +8,7 @@ share one context window and a verbose file crowds out the rest.
 This path gives EVERY scoped file its own context window: one map pass per
 file (in parallel) answers the question for that file alone with exact
 quotes, then a single reduce pass synthesizes the final answer with per-file
-attribution. Same discipline as the authority mapper: hard file cap, quotes
+attribution. Same discipline as the strategy brief: hard file cap, quotes
 come from the documents, and any failure falls back to the normal RAG answer
 rather than breaking chat.
 """
@@ -21,10 +21,10 @@ import logging
 from typing import Any
 
 from app.config import settings
-from app.services.authority_mapper.service import find_quote_offset
 from app.services.documents import document_service
 from app.services.llm_clients import chat_model, make_openai, openai_chat
 from app.services.provider_policy import enforce_openai_client
+from app.services.quote_verify import find_quote_offset
 from app.services.rag.case_law_guard import redact_unverified_case_law
 from app.services.rag.claim_grounding import MIN_CONTENT_RATIO, content_ratio, line_of, tidy_span
 from app.services.rag.generation import chosen_provider_text, provider_of_model, strip_json_fences

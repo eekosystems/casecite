@@ -145,7 +145,7 @@ Layout: `src/api` (HTTP client and response types), `src/auth/deviceFlow.ts`
 - Footnotes need WordApi 1.5 (Word 2021 / Microsoft 365). Older hosts get a
   "Sources" list under the answer instead.
 - Research answers are inserted as plain paragraphs; the web app's rich
-  citation chips and the authority map are not available in the pane.
+  citation chips are not available in the pane.
 - The pane uses the firm's server-level key or the key saved in the user's
   web Settings; keys cannot be entered in the pane.
 - No Azure AD single sign-on inside the pane; sign-in always goes through the

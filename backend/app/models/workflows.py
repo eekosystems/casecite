@@ -79,7 +79,9 @@ class WorkflowRun(Base):
     job_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     # How many times the run has been resumed from a failed step.
-    resumed_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    resumed_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

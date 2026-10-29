@@ -15,7 +15,7 @@ import './workflows';
 import './settings';
 import './connectors';
 import './pickers';
-import './authority-map';
+import './cases';
 import './contracts';
 import './integrations';
 import './users';

@@ -133,7 +133,13 @@ class TestCompareContracts:
     async def test_clause_list_capped_at_40(self):
         payload = {
             "clauses": [
-                {"topic": f"Topic {i}", "status": "changed", "summary": "x", "quote_a": "", "quote_b": ""}
+                {
+                    "topic": f"Topic {i}",
+                    "status": "changed",
+                    "summary": "x",
+                    "quote_a": "",
+                    "quote_b": "",
+                }
                 for i in range(45)
             ],
             "overall": "Many changes.",

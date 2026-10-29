@@ -222,9 +222,6 @@ class ChatResponse(BaseModel):
     timestamp: datetime
     # Populated when the message routed to the full-coverage strategy brief.
     strategy: dict | None = None
-    # Populated when the message routed to the exhaustive authority mapper:
-    # the audit runs as a background job the client polls via /jobs/{job_id}.
-    authority_map_job: dict | None = None
     # Persisted chat session this exchange was appended to (None if persistence
     # failed — persistence is best-effort and never blocks the response).
     session_id: str | None = None
@@ -890,12 +887,6 @@ class ChatSessionMessage(BaseModel):
     citations: list[dict] = []
     strategy: dict | None = None
     stats: dict | None = None
-    # Present on an assistant message that ran the exhaustive authority map:
-    # {"job_id", "documents": [{id, name}], "status": "running"|"completed"|
-    # "failed", and when completed "runs": [{document_id, document_name,
-    # run_id, summary}], "totals", "coverage_notes"} — run_id opens the stored
-    # map via GET /authority-map/{run_id}.
-    authority_map: dict | None = None
     created_at: datetime
 
 

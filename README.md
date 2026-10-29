@@ -6,7 +6,7 @@ CaseCite is an **open-source, self-hosted** legal research platform. Upload your
 
 ## What it does
 
-Ten tools behind one login, all reading from the same document corpus.
+Nine tools behind one login, all reading from the same document corpus.
 
 | | |
 |---|---|
@@ -18,7 +18,6 @@ Ten tools behind one login, all reading from the same document corpus.
 | **Drafting** (`/drafting`) | Draft a document grounded in up to four documents you pick from the Knowledge Base, with server-side text extraction and PDF conversion. Set a target length for long documents (30-page agreements): you review a section plan first, then every section is drafted in its own context window against the full references and the whole is reconciled. Revisions to long drafts are scoped to the sections they touch. |
 | **Matters** (`/matters`) | One workspace per client engagement: the documents, research chats and contract analyses filed under it, who can see them, and an activity feed from the audit trail. Set a matter as *active* in the header and Research, Contracts and Drafting scope themselves to it. Owners invite colleagues, file documents in bulk, and hand a matter over when someone leaves. |
 | **Case view** (`/case/:id`) | Open a CourtListener opinion and chat with it directly. |
-| **Authority map** (`/case-citations`) | Map the authorities cited across documents you select. |
 | **Judge intel** (`/judge-intel`) | Judge analytics from CourtListener. |
 | **Legal tools** (`/tools`) | Case lookup, citation check (a scan of citing opinions for negative-treatment language — not a Shepard's/KeyCite substitute), precedents, dockets, oral arguments, and case-law trends. |
 

@@ -221,31 +221,6 @@ describe('useResearchState', () => {
       expect(defaultProps.setActiveMode).toHaveBeenCalledWith('research');
     });
 
-    it('restores the stored authority-map record on its message', async () => {
-      const record = {
-        job_id: 'job-1',
-        documents: [{ id: 'doc-1', name: 'Motion.pdf' }],
-        status: 'completed',
-        runs: [{ document_id: 'doc-1', document_name: 'Motion.pdf', run_id: 'run-1', summary: { verified: 2, authorities: 3, propositions: 4 } }],
-        totals: { files: 1, propositions: 4, authorities: 3, verified: 2 },
-      };
-      (api.getChatSession as any).mockResolvedValue({
-        ...sessionDetail,
-        messages: [
-          sessionDetail.messages[0],
-          { ...sessionDetail.messages[1], citations: [], authority_map: record },
-        ],
-      });
-
-      const { result } = renderHook(() => useResearchState(defaultProps));
-      await act(async () => {
-        await result.current.loadSession('sess-42');
-      });
-
-      expect(result.current.messages[1].authorityMapRecord).toEqual(record);
-      expect(result.current.messages[1].authorityMap).toBeUndefined();
-    });
-
     it('surfaces a toast when the session cannot be loaded', async () => {
       (api.getChatSession as any).mockRejectedValue(new Error('Not found'));
 

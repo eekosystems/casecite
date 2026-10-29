@@ -27,7 +27,9 @@ def _no_rate_limit():
 
 
 def _user(uid: str, email: str) -> User:
-    return User(id=uid, email=email, name=uid, roles=[UserRole.ATTORNEY], last_login=datetime.now(UTC))
+    return User(
+        id=uid, email=email, name=uid, roles=[UserRole.ATTORNEY], last_login=datetime.now(UTC)
+    )
 
 
 def _headers(user: User) -> dict:
@@ -54,8 +56,16 @@ def _insert_db_user(uid: str, email: str, name: str) -> None:
         con.execute(
             "INSERT INTO users (id, email, name, password_hash, roles, is_active, "
             "email_verified, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (uid, email, name, "x", json.dumps(["attorney"]), 1, 1,
-             datetime.now(UTC).replace(tzinfo=None).isoformat()),
+            (
+                uid,
+                email,
+                name,
+                "x",
+                json.dumps(["attorney"]),
+                1,
+                1,
+                datetime.now(UTC).replace(tzinfo=None).isoformat(),
+            ),
         )
         con.commit()
     finally:
@@ -107,7 +117,9 @@ def test_matter_lifecycle_create_invite_access_remove(client):
     assert invited.json()["member_count"] == 2
 
     # The colleague can now see the matter; the stranger still cannot.
-    assert client.get(f"/api/v1/matters/{matter_id}", headers=_headers(colleague)).status_code == 200
+    assert (
+        client.get(f"/api/v1/matters/{matter_id}", headers=_headers(colleague)).status_code == 200
+    )
     assert client.get(f"/api/v1/matters/{matter_id}", headers=_headers(stranger)).status_code == 404
 
     # Non-owner cannot invite or remove (owner-only), and it 404s (no existence leak).
@@ -127,7 +139,9 @@ def test_matter_lifecycle_create_invite_access_remove(client):
     assert removed.status_code == 200
     assert colleague_id not in {m["user_id"] for m in removed.json()["members"]}
     # Access revoked.
-    assert client.get(f"/api/v1/matters/{matter_id}", headers=_headers(colleague)).status_code == 404
+    assert (
+        client.get(f"/api/v1/matters/{matter_id}", headers=_headers(colleague)).status_code == 404
+    )
 
 
 def test_invite_does_not_reveal_whether_an_account_exists(client, audit_events):
@@ -174,9 +188,13 @@ def test_invite_does_not_reveal_whether_an_account_exists(client, audit_events):
 def test_delete_matter_owner_only(client):
     owner = _user(f"mo3-{uuid.uuid4().hex[:8]}", f"mo3-{uuid.uuid4().hex[:8]}@casecite.legal")
     stranger = _user(f"ms3-{uuid.uuid4().hex[:8]}", f"ms3-{uuid.uuid4().hex[:8]}@casecite.legal")
-    matter_id = client.post("/api/v1/matters", headers=_headers(owner), json={"name": "X"}).json()["id"]
+    matter_id = client.post("/api/v1/matters", headers=_headers(owner), json={"name": "X"}).json()[
+        "id"
+    ]
 
-    assert client.delete(f"/api/v1/matters/{matter_id}", headers=_headers(stranger)).status_code == 404
+    assert (
+        client.delete(f"/api/v1/matters/{matter_id}", headers=_headers(stranger)).status_code == 404
+    )
     assert client.delete(f"/api/v1/matters/{matter_id}", headers=_headers(owner)).status_code == 200
     assert client.get(f"/api/v1/matters/{matter_id}", headers=_headers(owner)).status_code == 404
 

@@ -213,7 +213,9 @@ def test_move_documents_into_matter_and_back_to_personal(client, audit_events):
     assert resp.json()["moved"] == [doc_a, doc_b]
     assert document_service.documents[doc_a].matter_id == matter_id
     assert document_service.documents[doc_b].matter_id == matter_id
-    moved_events = [e for e in audit_events if e["details"].get("action") == "document_moved_to_matter"]
+    moved_events = [
+        e for e in audit_events if e["details"].get("action") == "document_moved_to_matter"
+    ]
     assert {e["resource_id"] for e in moved_events} == {doc_a, doc_b}
     assert any(e["details"].get("action") == "matter_documents_moved" for e in audit_events)
 

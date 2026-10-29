@@ -104,7 +104,7 @@ def build_reasoning_prompt(query: str, answer: str, refs: list[dict[str, str]]) 
 def normalize_reasoning_steps(raw: Any) -> list[dict[str, str | None]]:
     """Normalize one citation's LLM reasoning steps.
 
-    Same discipline as authority_mapper's ``_clean_reasoning``: type capped at
+    Same discipline as the strategy brief's reasoning cleanup: type capped at
     40 chars, steps without a description dropped, evidence optional.
     """
     steps: list[dict[str, str | None]] = []

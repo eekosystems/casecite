@@ -27,23 +27,23 @@ class TestHeuristicRoute:
         intent, _ = heuristic_route("What are our strongest arguments in this matter?")
         assert intent == "strategy"
 
-    def test_all_case_law_for_a_file_is_authority_map(self):
-        # "ALL the case law" anchored to the user's own file(s) is the
-        # exhaustive per-proposition audit (the merged Case Citations engine),
-        # not a strategy synthesis.
+    def test_all_case_law_for_a_file_is_strategy(self):
+        # "ALL the case law" anchored to the user's own file(s) is a strategy
+        # ask: the brief reads every scoped document and attaches verified
+        # authority to each point it derives.
         assert heuristic_route(
             "Look in the Johnson file and find me all relevant case law to support my case"
-        ) == ("authority_map", True)
+        ) == ("strategy", True)
 
-    def test_all_case_law_for_selected_files_is_authority_map(self):
+    def test_all_case_law_for_selected_files_is_strategy(self):
         assert heuristic_route(
             "Read all six of these files and give me all of the case law relevant to them"
-        ) == ("authority_map", True)
+        ) == ("strategy", True)
 
-    def test_all_case_law_on_a_topic_is_not_authority_map(self):
+    def test_all_case_law_on_a_topic_is_not_strategy(self):
         # No document anchor — a pure research lookup, never a document audit.
         intent, _ = heuristic_route("Give me all the case law on DWI stops")
-        assert intent != "authority_map"
+        assert intent == "research"
 
     def test_pull_case_law_supporting_our_position_is_strategy_with_case_law(self):
         assert heuristic_route("Pull case law supporting our position") == ("strategy", True)
@@ -83,14 +83,16 @@ class TestHeuristicRoute:
 
 class TestParseRoutePayload:
     def test_valid_payload_passes_through(self):
-        assert parse_route_payload(
-            '{"intent": "strategy", "use_case_law": true}', "whatever"
-        ) == ("strategy", True)
+        assert parse_route_payload('{"intent": "strategy", "use_case_law": true}', "whatever") == (
+            "strategy",
+            True,
+        )
 
     def test_research_intent_is_accepted(self):
-        assert parse_route_payload(
-            '{"intent": "research", "use_case_law": true}', "whatever"
-        ) == ("research", True)
+        assert parse_route_payload('{"intent": "research", "use_case_law": true}', "whatever") == (
+            "research",
+            True,
+        )
 
     def test_garbage_falls_back_to_heuristic(self):
         assert parse_route_payload("not json", "find case law to support my case") == (
@@ -112,17 +114,21 @@ class TestSearchQueryDistillation:
         assert distill_search_query("find me case law for a dwi") == "dwi"
 
     def test_keeps_doctrine_terms(self):
-        assert distill_search_query(
-            "pull precedents about qualified immunity excessive force"
-        ) == "qualified immunity excessive force"
+        assert (
+            distill_search_query("pull precedents about qualified immunity excessive force")
+            == "qualified immunity excessive force"
+        )
 
     def test_returns_none_when_nothing_substantive_remains(self):
         assert distill_search_query("find me some case law") is None
 
     def test_parse_search_query_uses_classifier_value(self):
-        assert parse_search_query(
-            '{"search_query": "DWI warrantless blood draw"}', "find me case law for a dwi"
-        ) == "DWI warrantless blood draw"
+        assert (
+            parse_search_query(
+                '{"search_query": "DWI warrantless blood draw"}', "find me case law for a dwi"
+            )
+            == "DWI warrantless blood draw"
+        )
 
     def test_parse_search_query_falls_back_to_distillation(self):
         assert parse_search_query("not json", "find me case law for a dwi") == "dwi"

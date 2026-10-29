@@ -109,7 +109,6 @@ services/
     prompts.py, prompt_safety.py
   contract_analysis/      # Analysis, redlines, drafting, long drafting
   clause_intel/           # Clause taxonomy and classification
-  authority_mapper/       # Authorities cited across documents
   judge_intel/            # CourtListener judge data + metrics
   legal_tools/            # Case lookup, dockets, citation check
   connectors/             # Drive, OneDrive, Box, Dropbox, Filevine, Clio; iManage and NetDocuments
@@ -172,7 +171,6 @@ The primary database (PostgreSQL in production, SQLite in development) holds:
 | Chat & workspace | chat_sessions, chat_messages, workspace_sessions |
 | Contract intelligence | contract_analysis_runs, contract_parties, contract_obligations, contract_deadlines, contract_defined_terms, contract_type_requirements |
 | Clause intelligence | clause_canonicals, clause_deviations, clause_jurisdiction_rules, clause_tag_findings |
-| Authority mapping | authority_map_runs, authority_mappings |
 | Branding | branding_config |
 | Audit | audit_logs (a queryable mirror; the JSONL files are the record) |
 
@@ -200,8 +198,8 @@ found by the keyword step.
 
 When the provider allowlist is enabled, every embedding call and every LLM call
 goes through its check (`services/provider_policy.py`): research chat and its
-helper passes, contract analysis, drafting, authority mapping, strategy,
-clause intelligence and case-law research.
+helper passes, contract analysis, drafting, strategy, clause intelligence,
+tabular review, deep research, workflows and case-law research.
 
 ### Embedding Providers
 

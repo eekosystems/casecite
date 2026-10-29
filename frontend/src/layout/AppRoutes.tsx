@@ -11,7 +11,6 @@ const JudgeIntelView = React.lazy(() => import('../views/JudgeIntelView'));
 const CaseView = React.lazy(() => import('../views/CaseView'));
 const ResearchView = React.lazy(() => import('../views/ResearchView'));
 const ToolsView = React.lazy(() => import('../views/ToolsView'));
-const AuthorityMapView = React.lazy(() => import('../views/AuthorityMapView'));
 const ContractsView = React.lazy(() => import('../views/ContractsView'));
 const DraftingView = React.lazy(() => import('../views/DraftingView'));
 const MattersView = React.lazy(() => import('../views/MattersView'));
@@ -72,7 +71,6 @@ export function AppRoutes() {
         <Route path="/case" element={<CaseView />} />
         <Route path="/tools/:toolId" element={<ToolsView />} />
         <Route path="/tools" element={<ToolsView />} />
-        <Route path="/case-citations" element={<AuthorityMapView />} />
         <Route path="/contracts" element={<ContractsView />} />
         <Route path="/drafting" element={<DraftingView />} />
         <Route path="/matters/:id" element={<MatterWorkspaceView />} />

@@ -323,7 +323,7 @@ export const UsersTab = ({ styles }: UsersTabProps) => {
                   </div>
                   <p className={styles.dangerText}>
                     This destroys {u.email}&apos;s uploaded documents and their search index, their
-                    conversations, contract analyses, authority maps, saved API keys and connector
+                    conversations, contract analyses, saved API keys and connector
                     connections, and every matter they own. Nothing is transferred to another user and
                     it cannot be undone. If the firm must keep this work product, <strong>deactivate</strong> the
                     account instead — that blocks sign-in and keeps the data. Export first if you need a record.

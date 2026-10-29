@@ -1,7 +1,7 @@
 {
   "(root)": 1,
-  "routers": 199,
-  "services": 132,
+  "routers": 196,
+  "services": 130,
   "services/clause_intel": 11,
   "services/connectors": 15,
   "services/contract_analysis": 10,

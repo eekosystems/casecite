@@ -29,13 +29,12 @@ def test_tenant_scope_accepts_user_matter_and_nested():
     assert _has_tenant_scope({"user_id": "u1"}) is True
     assert _has_tenant_scope({"matter_id": {"$in": ["m1"]}}) is True
     # Shared-matter search shape: $or of owner + matters.
-    assert _has_tenant_scope(
-        {"$or": [{"user_id": "u1"}, {"matter_id": {"$in": ["m1", "m2"]}}]}
-    ) is True
+    assert (
+        _has_tenant_scope({"$or": [{"user_id": "u1"}, {"matter_id": {"$in": ["m1", "m2"]}}]})
+        is True
+    )
     # Document-scoped shape: $and of doc + owner.
-    assert _has_tenant_scope(
-        {"$and": [{"document_id": "d1"}, {"user_id": "u1"}]}
-    ) is True
+    assert _has_tenant_scope({"$and": [{"document_id": "d1"}, {"user_id": "u1"}]}) is True
 
 
 def test_tenant_scope_rejects_missing_scope():
@@ -154,10 +153,7 @@ async def test_list_documents_includes_shared_matter_docs_only_for_members(svc):
     svc.documents["shared"] = _doc("shared", owner="alice", matter_id="m-shared")
     svc.documents["private-alice"] = _doc("private-alice", owner="alice", matter_id=None)
 
-    ids = {
-        d.id
-        for d in await svc.list_documents("bob", accessible_matter_ids={"m-shared"})
-    }
+    ids = {d.id for d in await svc.list_documents("bob", accessible_matter_ids={"m-shared"})}
     assert ids == {"own", "shared"}  # bob's own + the shared-matter doc, never alice's private one
 
 

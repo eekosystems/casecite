@@ -794,8 +794,7 @@ class DocumentService:
         """Delete a document, scoped to the caller's tenant (owner or matter member).
 
         Removes everything derived from it as well: its vectors, and the
-        contract analyses and authority maps run on it (which hold verbatim
-        quotes of the text). Raises ``DocumentDeletionError`` — leaving the
+        contract analyses run on it (which hold verbatim quotes of the text). Raises ``DocumentDeletionError`` — leaving the
         document in place so the delete can be retried — when the vectors or
         derived rows cannot be removed; a document must never disappear from
         the list while its content stays searchable.
@@ -855,8 +854,8 @@ class DocumentService:
         """Delete analysis output derived from the given documents.
 
         Contract-analysis runs (with their parties, obligations, deadlines,
-        defined terms, clause findings and deviations) and authority-map runs
-        (with their mappings) quote the source text verbatim and have no
+        defined terms, clause findings and deviations) quote the source text
+        verbatim and have no
         foreign key to cascade from, so they are removed explicitly — children
         before their parent runs.
         """
@@ -867,7 +866,6 @@ class DocumentService:
         from sqlalchemy.exc import SQLAlchemyError
 
         from app.database import get_db_context
-        from app.models.authority_map import AuthorityMapping, AuthorityMapRun
         from app.models.clause_intel import (
             ClauseDeviationFinding,
             ClauseTagFinding,
@@ -905,25 +903,6 @@ class DocumentService:
                         await db.execute(sa_delete(child).where(child.analysis_id.in_(run_ids)))
                     await db.execute(
                         sa_delete(ContractAnalysisRun).where(ContractAnalysisRun.id.in_(run_ids))
-                    )
-
-                map_run_ids = (
-                    (
-                        await db.execute(
-                            select(AuthorityMapRun.id).where(
-                                AuthorityMapRun.document_id.in_(document_ids)
-                            )
-                        )
-                    )
-                    .scalars()
-                    .all()
-                )
-                if map_run_ids:
-                    await db.execute(
-                        sa_delete(AuthorityMapping).where(AuthorityMapping.run_id.in_(map_run_ids))
-                    )
-                    await db.execute(
-                        sa_delete(AuthorityMapRun).where(AuthorityMapRun.id.in_(map_run_ids))
                     )
         except SQLAlchemyError as e:
             logger.error(f"Derived-data deletion failed for {len(document_ids)} document(s): {e}")

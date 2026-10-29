@@ -27,7 +27,7 @@ from app.models.base import Base
 
 # owner_id / user_id are stored as plain strings (no FK to users), matching the
 # convention used by the other user-scoped content tables (chat_sessions,
-# contract_analysis_runs, authority_map_runs). Authenticated users can exist
+# contract_analysis_runs). Authenticated users can exist
 # without a users row (demo and SSO-only accounts, see get_current_user), and a
 # FK would reject their matters. User deletion purges these rows explicitly.
 

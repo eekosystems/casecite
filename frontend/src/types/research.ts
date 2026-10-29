@@ -73,10 +73,5 @@ export interface ChatMessage {
   isError?: boolean;
   /** Structured matter-strategy brief; rendered instead of plain content. */
   strategy?: import('../api/types').StrategyBriefResponse;
-  /** Exhaustive authority-map result (chat-triggered Case Citations audit). */
-  authorityMap?: import('../api/types').AuthorityMapChatResult;
-  /** The compact stored record of a chat-triggered map, restored from History
-      (the full result lives behind each run's `run_id`). */
-  authorityMapRecord?: import('../api/types').ChatAuthorityMapRecord;
 }
 

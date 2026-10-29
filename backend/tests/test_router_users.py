@@ -448,7 +448,6 @@ class TestExport:
             "settings",
             "chat_sessions",
             "contract_analyses",
-            "authority_maps",
             "workspace_sessions",
             "matters",
         ):

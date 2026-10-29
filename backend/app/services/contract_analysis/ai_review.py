@@ -14,9 +14,9 @@ import json
 import logging
 from typing import Any
 
-from app.services.authority_mapper.service import find_quote_offset
 from app.services.contract_analysis.instructions import bounded_instructions
 from app.services.llm_clients import openai_chat, utility_model
+from app.services.quote_verify import find_quote_offset
 from app.services.rag.prompt_safety import UNTRUSTED_CONTENT_RULE, untrusted_block
 
 logger = logging.getLogger(__name__)

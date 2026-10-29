@@ -7,7 +7,7 @@ import pytest
 from app.services.contract_analysis.key_terms import _collect_excerpts, extract_key_terms
 
 CONTRACT = (
-    "This Agreement is effective as of January 5, 2026 (the \"Effective Date\").\n"
+    'This Agreement is effective as of January 5, 2026 (the "Effective Date").\n'
     "GOVERNING LAW. This Agreement shall be governed by the laws of the State of Delaware.\n"
     "LIMITATION OF LIABILITY. Liability is capped at the fees paid in the twelve months "
     "preceding the claim.\n"
@@ -78,5 +78,8 @@ class TestExtractKeyTerms:
     async def test_llm_failure_is_never_fatal(self):
         client = MagicMock()
         client.chat.completions.create = AsyncMock(side_effect=ConnectionError("down"))
-        with patch("app.services.contract_analysis.key_terms.openai_chat", side_effect=ConnectionError("down")):
+        with patch(
+            "app.services.contract_analysis.key_terms.openai_chat",
+            side_effect=ConnectionError("down"),
+        ):
             assert await extract_key_terms(client, CONTRACT, []) == {}

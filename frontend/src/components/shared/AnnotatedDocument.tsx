@@ -1,18 +1,18 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Icon } from './Icon';
-import type { AuthorityMapping } from '../../api/types';
+import type { DocAnchor } from '../../api/types';
 import s from './AnnotatedDocument.module.css';
 
 export interface DocAnnotation {
   start: number;
   end: number;
-  mappings: AuthorityMapping[];
+  mappings: DocAnchor[];
 }
 
 interface AnnotatedDocumentProps {
   text: string;
   annotations: DocAnnotation[];
-  onVerify: (m: AuthorityMapping) => void;
+  onVerify: (m: DocAnchor) => void;
   /** Scroll to and flash the annotation at this char offset; seq retriggers. */
   jumpToSpan?: { start: number; seq: number } | null;
 }
@@ -64,7 +64,7 @@ export function AnnotatedDocument({ text, annotations, onVerify, jumpToSpan }: A
                   <Icon name={m.verified ? 'ShieldCheck' : 'ShieldAlert'} size={11} />
                   {m.verified ? 'Verified' : 'Unverified'}
                 </span>
-                <span className={s.src}>CourtListener</span>
+                <span className={s.src}>{m.source === 'internal' ? 'Your documents' : 'CourtListener'}</span>
               </span>
               <span className={s.citeName}>{m.case_name || m.citation || 'Authority'}</span>
               {m.citation && <span className={s.citeRef}>{m.citation}</span>}

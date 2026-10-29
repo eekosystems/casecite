@@ -891,7 +891,7 @@ def apply_courtlistener_token(token: str | None) -> None:
 
     There are three CourtListener-backed services sharing one client base
     (``courtlistener_client``), each instance caching the token in its own
-    ``headers``: ``courtlistener_service`` (validation, authority map,
+    ``headers``: ``courtlistener_service`` (validation,
     RAG), ``legal_tools`` (case search, precedents, dockets, oral args, trends),
     and ``judge_intel`` (judge search/profiles). They must all be updated
     together or some Legal Tools work while others raise "token required".

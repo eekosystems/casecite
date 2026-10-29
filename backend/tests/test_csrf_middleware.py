@@ -208,7 +208,6 @@ class TestCSRFMiddlewareIntegration:
             response = await middleware.dispatch(request, AsyncMock())
         assert response.status_code == 403
 
-
     async def test_middleware_skips_validation_without_auth_cookies(self):
         """A bearer-token POST with no session cookie is not a CSRF vector.
 

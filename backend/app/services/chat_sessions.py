@@ -66,7 +66,6 @@ def _serialize_message(row: ChatMessageDB) -> dict:
         "citations": row.citations or [],
         "strategy": row.strategy,
         "stats": row.stats,
-        "authority_map": row.authority_map,
         "created_at": row.created_at,
     }
 
@@ -109,7 +108,6 @@ async def append_message(
     strategy: dict | None = None,
     stats: dict | None = None,
     accessible_matter_ids: set[str] | None = None,
-    authority_map: dict | None = None,
 ) -> dict:
     """Append a message to a session the caller may access (owner or matter member).
 
@@ -130,40 +128,10 @@ async def append_message(
             citations=citations or [],
             strategy=strategy,
             stats=stats,
-            authority_map=authority_map,
             created_at=now,
         )
         db.add(row)
         session.updated_at = now
-        await db.flush()
-        return _serialize_message(row)
-
-
-async def set_message_authority_map(
-    message_id: str,
-    user_id: str,
-    authority_map: dict,
-    accessible_matter_ids: set[str] | None = None,
-) -> dict | None:
-    """Store (or replace) the authority-map record on one assistant message.
-
-    Used when the background authority-map job finishes after the message was
-    persisted. Scoped like every other write: the message's session must be
-    one the caller may access. Returns the updated message, or None if no
-    such message is reachable.
-    """
-    async with get_db_context() as db:
-        row = (
-            (await db.execute(select(ChatMessageDB).where(ChatMessageDB.id == message_id)))
-            .scalars()
-            .first()
-        )
-        if row is None:
-            return None
-        session = await _get_owned_session(db, row.session_id, user_id, accessible_matter_ids)
-        if session is None:
-            return None
-        row.authority_map = authority_map
         await db.flush()
         return _serialize_message(row)
 

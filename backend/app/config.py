@@ -619,8 +619,6 @@ class Settings(BaseSettings):
     # cap the windows per item. Whatever a cap leaves unread is reported in the
     # result (partially_read / coverage), never silently skipped.
     research_max_windows_per_opinion: int = 6  # x 80k chars
-    authority_map_max_document_windows: int = 8  # x 60k chars
-    authority_map_max_opinion_windows: int = 4  # x 60k chars
 
     # Data-at-rest acknowledgement. Uploaded originals are app-encrypted
     # (AES-256-GCM), but DERIVED privileged text — vector chunks in the Chroma

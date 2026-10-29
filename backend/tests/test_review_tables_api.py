@@ -55,7 +55,11 @@ def _answer(doc_text: str = CONTRACT) -> dict:
     return {
         "fields": {
             "governing_law": {"value": "Delaware", "quote": QUOTE, "not_found": False},
-            "effective_date": {"value": "2026-01-05", "quote": "not in the text", "not_found": False},
+            "effective_date": {
+                "value": "2026-01-05",
+                "quote": "not in the text",
+                "not_found": False,
+            },
         }
     }
 
@@ -131,12 +135,16 @@ def test_matter_table_defaults_to_the_matter_documents_and_is_shared(client):
     as_member = client.get(f"/api/v1/review-tables/{table['id']}", headers=headers(member))
     assert as_member.status_code == 200
     assert as_member.json()["role"] == "member"
-    assert client.get("/api/v1/review-tables", headers=headers(member)).json()["tables"][0]["id"] == (
-        table["id"]
+    assert (
+        client.get("/api/v1/review-tables", headers=headers(member)).json()["tables"][0]["id"]
+        == (table["id"])
     )
 
     for user in (stranger,):
-        assert client.get(f"/api/v1/review-tables/{table['id']}", headers=headers(user)).status_code == 404
+        assert (
+            client.get(f"/api/v1/review-tables/{table['id']}", headers=headers(user)).status_code
+            == 404
+        )
         assert client.get("/api/v1/review-tables", headers=headers(user)).json()["tables"] == []
 
     # A matter the caller does not belong to cannot be named at all.
@@ -163,9 +171,14 @@ def test_update_is_owner_only_and_drops_cells_of_removed_fields(client, audit_ev
     assert db_count(ReviewCell, ReviewCell.table_id == tid) == 2
 
     # A member can read but not edit: 404, not 403.
-    resp = client.patch(f"/api/v1/review-tables/{tid}", headers=headers(member), json={"name": "Hijack"})
+    resp = client.patch(
+        f"/api/v1/review-tables/{tid}", headers=headers(member), json={"name": "Hijack"}
+    )
     assert resp.status_code == 404
-    assert client.patch(f"/api/v1/review-tables/{tid}", headers=headers(owner), json={}).status_code == 400
+    assert (
+        client.patch(f"/api/v1/review-tables/{tid}", headers=headers(owner), json={}).status_code
+        == 400
+    )
 
     resp = client.patch(
         f"/api/v1/review-tables/{tid}",
@@ -185,7 +198,9 @@ def test_update_is_owner_only_and_drops_cells_of_removed_fields(client, audit_ev
     )
 
     # Dropping the document drops its cells too.
-    resp = client.patch(f"/api/v1/review-tables/{tid}", headers=headers(owner), json={"document_ids": []})
+    resp = client.patch(
+        f"/api/v1/review-tables/{tid}", headers=headers(owner), json={"document_ids": []}
+    )
     assert resp.status_code == 200
     assert resp.json()["documents"] == [] and resp.json()["cells"] == []
     assert db_count(ReviewCell, ReviewCell.table_id == tid) == 0
@@ -200,7 +215,9 @@ def test_delete_is_owner_only_and_removes_cells(client, audit_events):
     assert db_count(ReviewCell, ReviewCell.table_id == tid) == 2
 
     for user in (member, stranger):
-        assert client.delete(f"/api/v1/review-tables/{tid}", headers=headers(user)).status_code == 404
+        assert (
+            client.delete(f"/api/v1/review-tables/{tid}", headers=headers(user)).status_code == 404
+        )
     resp = client.delete(f"/api/v1/review-tables/{tid}", headers=headers(owner))
     assert resp.status_code == 200 and resp.json() == {"status": "deleted", "id": tid}
     assert client.get(f"/api/v1/review-tables/{tid}", headers=headers(owner)).status_code == 404
@@ -234,7 +251,9 @@ def test_estimate_counts_only_readable_documents(client):
 # --------------------------------------------------------------------------- run
 
 
-def _run_to_completion(client, user, tid: str, body: dict | None = None, answer: dict | None = None):
+def _run_to_completion(
+    client, user, tid: str, body: dict | None = None, answer: dict | None = None
+):
     """POST a run with the model and document text faked; return (started, job)."""
     fake_chat = AsyncMock(return_value=_fake_model_response(answer or _answer()))
     with (
@@ -242,7 +261,9 @@ def _run_to_completion(client, user, tid: str, body: dict | None = None, answer:
         patch.object(review_table_service, "document_text", AsyncMock(return_value=CONTRACT)),
         patch("app.services.review_tables.extraction.openai_chat", fake_chat),
     ):
-        started = client.post(f"/api/v1/review-tables/{tid}/run", headers=headers(user), json=body or {})
+        started = client.post(
+            f"/api/v1/review-tables/{tid}/run", headers=headers(user), json=body or {}
+        )
         assert started.status_code == 202, started.text
         job = _poll(client, user, started.json()["job_id"])
     return started.json(), job, fake_chat
@@ -274,7 +295,9 @@ def test_run_writes_verified_and_unverified_cells_and_reports_progress(client, a
 
     actions = [e["details"].get("action") for e in audit_events]
     assert "review_table_run_started" in actions and "review_table_run_completed" in actions
-    completed = next(e for e in audit_events if e["details"].get("action") == "review_table_run_completed")
+    completed = next(
+        e for e in audit_events if e["details"].get("action") == "review_table_run_completed"
+    )
     assert completed["details"]["cells"] == 4
     assert "Delaware" not in json.dumps(completed["details"])  # ids and counts only
 
@@ -293,7 +316,11 @@ def test_rerun_scoped_to_one_cell_only_touches_that_cell(client):
         }
     }
     started, job, fake_chat = _run_to_completion(
-        client, owner, tid, body={"document_ids": [d1], "field_keys": ["effective_date"]}, answer=changed
+        client,
+        owner,
+        tid,
+        body={"document_ids": [d1], "field_keys": ["effective_date"]},
+        answer=changed,
     )
     assert started["documents"] == 1 and started["fields"] == 1
     assert fake_chat.await_count == 1
@@ -314,11 +341,15 @@ def test_run_rejects_ids_outside_the_table_and_requires_a_model(client):
     tid = _create(client, owner, document_ids=[doc])["id"]
     with patch.object(ReviewTableService, "_llm_client", return_value=MagicMock()):
         resp = client.post(
-            f"/api/v1/review-tables/{tid}/run", headers=headers(owner), json={"document_ids": ["nope"]}
+            f"/api/v1/review-tables/{tid}/run",
+            headers=headers(owner),
+            json={"document_ids": ["nope"]},
         )
         assert resp.status_code == 400
         resp = client.post(
-            f"/api/v1/review-tables/{tid}/run", headers=headers(owner), json={"field_keys": ["nope"]}
+            f"/api/v1/review-tables/{tid}/run",
+            headers=headers(owner),
+            json={"field_keys": ["nope"]},
         )
         assert resp.status_code == 400
     with patch.object(ReviewTableService, "_llm_client", side_effect=ValueError("No key")):
@@ -338,7 +369,12 @@ def test_member_can_run_a_shared_table_but_a_stranger_cannot(client):
     tid = _create(client, owner, matter_id=matter_id, document_ids=[doc])["id"]
 
     with patch.object(ReviewTableService, "_llm_client", return_value=MagicMock()):
-        assert client.post(f"/api/v1/review-tables/{tid}/run", headers=headers(stranger), json={}).status_code == 404
+        assert (
+            client.post(
+                f"/api/v1/review-tables/{tid}/run", headers=headers(stranger), json={}
+            ).status_code
+            == 404
+        )
     _started, job, _chat = _run_to_completion(client, member, tid)
     assert job["status"] == "completed" and job["result"]["extracted"] == 1
 
@@ -427,5 +463,13 @@ def test_csv_export_and_access_rules(client):
     assert len(lines) == 3
     assert lines[1].startswith("lease.pdf,Governing law,Delaware,")
 
-    assert client.get(f"/api/v1/review-tables/{tid}/export", headers=headers(stranger)).status_code == 404
-    assert client.get(f"/api/v1/review-tables/{tid}/export?format=pdf", headers=headers(owner)).status_code == 422
+    assert (
+        client.get(f"/api/v1/review-tables/{tid}/export", headers=headers(stranger)).status_code
+        == 404
+    )
+    assert (
+        client.get(
+            f"/api/v1/review-tables/{tid}/export?format=pdf", headers=headers(owner)
+        ).status_code
+        == 422
+    )

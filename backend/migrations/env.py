@@ -29,7 +29,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from app.database import DATABASE_URL
 
 # Import models defined outside db_models.py so Alembic autogenerate discovers them
-from app.models.authority_map import AuthorityMapping, AuthorityMapRun  # noqa: F401
 from app.models.db_models import Base
 from app.services.judge_intel import JudgeCacheDB  # noqa: F401
 

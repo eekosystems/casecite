@@ -7,7 +7,7 @@ The incidents these guard against:
 - a failed re-upload costing the user the copy they already had;
 - a rebuild dropping a document's matter tag, or leaving it INDEXED with no
   vectors behind it;
-- contract analyses and authority maps (verbatim quotes) outliving the document
+- contract analyses (verbatim quotes) outliving the document
   they were derived from.
 """
 
@@ -389,8 +389,7 @@ class TestReindex:
 class TestDerivedDataDeletion:
     @pytest.mark.asyncio
     async def test_runs_and_children_for_the_document_are_deleted(self, tmp_path):
-        """Real tables: analyses and authority maps go; other documents' stay."""
-        from app.models.authority_map import AuthorityMapping, AuthorityMapRun
+        """Real tables: analyses go; other documents' stay."""
         from app.models.clause_intel import ClauseTagFinding, ContractAnalysisRun
         from app.models.contract_analysis import ContractParty
         from sqlalchemy import func, select
@@ -403,8 +402,6 @@ class TestDerivedDataDeletion:
                 ContractAnalysisRun,
                 ContractParty,
                 ClauseTagFinding,
-                AuthorityMapRun,
-                AuthorityMapping,
             )
         ]
         from app.models.clause_intel import ClauseDeviationFinding
@@ -446,12 +443,6 @@ class TestDerivedDataDeletion:
                         detection_method="defined",
                     )
                 )
-                db.add(AuthorityMapRun(id=f"map-{run_id}", user_id="u1", document_id=doc_id))
-                db.add(
-                    AuthorityMapping(
-                        run_id=f"map-{run_id}", proposition="p", source="courtlistener"
-                    )
-                )
             await db.commit()
 
         from contextlib import asynccontextmanager
@@ -473,8 +464,6 @@ class TestDerivedDataDeletion:
 
             assert await ids(ContractAnalysisRun.id) == {"run-kept"}
             assert await ids(ContractParty.analysis_id) == {"run-kept"}
-            assert await ids(AuthorityMapRun.id) == {"map-run-kept"}
-            assert await ids(AuthorityMapping.run_id) == {"map-run-kept"}
             assert (await db.execute(select(func.count()).select_from(ContractParty))).scalar() == 1
         await engine.dispose()
 

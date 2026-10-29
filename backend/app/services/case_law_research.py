@@ -29,9 +29,9 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from app.config import settings
-from app.services.authority_mapper.service import find_quote_offset
 from app.services.courtlistener import courtlistener_service
 from app.services.llm_clients import openai_chat, utility_model
+from app.services.quote_verify import find_quote_offset
 
 # app.services.rag imports this module (rag.service uses research_authorities),
 # so nothing from that package is imported at module level here: the functions

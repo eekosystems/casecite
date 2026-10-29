@@ -70,7 +70,7 @@ application, and no script is fetched from a CDN on page load.
   the request, not the model name. **Coverage:** it is enforced on every
   embedding call and every LLM call — research chat (answer generation, query
   routing, per-file answers, claim grounding, citation reasoning), contract
-  analysis, drafting, authority mapping, strategy briefs, clause intelligence,
+  analysis, drafting, strategy briefs, clause intelligence,
   case-law research and document summaries. It is an application-level check;
   pair it with an egress allowlist if you need a control that does not depend
   on the application. The variable name is historical: this is an allowlist,

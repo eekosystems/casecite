@@ -1,11 +1,7 @@
 import { api, API_BASE_URL } from './client';
-import type { ChatResponse, ChatQueryOptions, AuthorityMapChatJob, ConversationExportPayload } from './types';
+import type { ChatResponse, ChatQueryOptions, ConversationExportPayload } from './types';
 
 Object.assign(api, {
-  async getChatAuthorityMapJob(jobId: string): Promise<AuthorityMapChatJob> {
-    return api.request(`/jobs/${jobId}`);
-  },
-
   async exportConversation(payload: ConversationExportPayload): Promise<Blob> {
     const resp = await api.authFetch(`${API_BASE_URL}/chat/export`, {
       method: 'POST',

@@ -451,14 +451,13 @@ async def export_user_data(
     Included: profile; document metadata and folders; saved settings (playbook,
     practice profile, custom prompts); chat sessions with their messages;
     contract analyses with their parties, obligations, deadlines, defined terms
-    and clause findings; authority-map runs with their mappings; workspace
+    and clause findings; workspace
     sessions; matters the user owns and matters they are a member of.
 
     Not included: the uploaded files themselves (download those per document),
     stored API keys and connector tokens (secrets), and audit-log entries (use
     the audit export).
     """
-    from app.models.authority_map import AuthorityMapping, AuthorityMapRun
     from app.models.chat_sessions import ChatMessageDB, ChatSessionDB
     from app.models.clause_intel import (
         ClauseDeviationFinding,
@@ -503,11 +502,6 @@ async def export_user_data(
             children[key] = [_row(r) for r in await _rows(model, model.analysis_id == run.id)]
         contract_analyses.append({**_row(run), **children})
 
-    authority_maps = []
-    for run in await _rows(AuthorityMapRun, AuthorityMapRun.user_id == user_id):
-        mappings = await _rows(AuthorityMapping, AuthorityMapping.run_id == run.id)
-        authority_maps.append({**_row(run), "mappings": [_row(m) for m in mappings]})
-
     workspace_sessions = [
         _row(w) for w in await _rows(WorkspaceSessionDB, WorkspaceSessionDB.user_id == user_id)
     ]
@@ -531,7 +525,6 @@ async def export_user_data(
         "settings": load_user_settings(user_id).model_dump(mode="json"),
         "chat_sessions": chat_sessions,
         "contract_analyses": contract_analyses,
-        "authority_maps": authority_maps,
         "workspace_sessions": workspace_sessions,
         "matters": {
             "owned": [_row(m) for m in owned],
@@ -550,7 +543,6 @@ async def export_user_data(
             "action": "user_data_export",
             "chat_sessions": len(chat_sessions),
             "contract_analyses": len(contract_analyses),
-            "authority_maps": len(authority_maps),
             "workspace_sessions": len(workspace_sessions),
         },
     )
@@ -625,12 +617,11 @@ async def delete_user(
 
     # Purge user-owned rows whose tables carry user_id as a plain column with no
     # ON DELETE CASCADE to users — deleting the users row alone would orphan this
-    # privileged content (chat threads, contract analyses, authority maps).
+    # privileged content (chat threads, contract analyses).
     # Children keyed by analysis_id/run_id are removed before their parent runs;
     # chat_messages cascade from chat_sessions via a real FK.
     from sqlalchemy import delete as sa_delete
 
-    from app.models.authority_map import AuthorityMapping, AuthorityMapRun
     from app.models.chat_sessions import ChatSessionDB
     from app.models.clause_intel import (
         ClauseDeviationFinding,
@@ -664,15 +655,6 @@ async def delete_user(
         ):
             await db.execute(sa_delete(child).where(child.analysis_id.in_(run_ids)))
         await db.execute(sa_delete(ContractAnalysisRun).where(ContractAnalysisRun.id.in_(run_ids)))
-
-    am_run_ids = (
-        (await db.execute(select(AuthorityMapRun.id).where(AuthorityMapRun.user_id == user_id)))
-        .scalars()
-        .all()
-    )
-    if am_run_ids:
-        await db.execute(sa_delete(AuthorityMapping).where(AuthorityMapping.run_id.in_(am_run_ids)))
-        await db.execute(sa_delete(AuthorityMapRun).where(AuthorityMapRun.id.in_(am_run_ids)))
 
     await db.execute(sa_delete(ChatSessionDB).where(ChatSessionDB.user_id == user_id))
 

@@ -36,7 +36,7 @@ System-wide reference data (the clause taxonomy, jurisdiction rules, the cached 
 
 - **Simple and auditable.** Every data path follows the same pattern: extract `user_id` from JWT, pass to service, filter query. A reviewer can trace the isolation chain in minutes.
 - **No infrastructure complexity.** One database, one connection pool, one migration path. No tenant provisioning workflow.
-- **Explicit deletion.** Deleting a user purges their documents, vectors, stored keys, connector tokens, chats, analyses, authority maps and owned matters in application code (`routers/users.py`). Only some tables have database-level cascades (chat messages, matter members, workspace sessions), so a new user-data table must be added to that purge path — the database will not do it.
+- **Explicit deletion.** Deleting a user purges their documents, vectors, stored keys, connector tokens, chats, analyses and owned matters in application code (`routers/users.py`). Only some tables have database-level cascades (chat messages, matter members, workspace sessions), so a new user-data table must be added to that purge path — the database will not do it.
 - **Fast onboarding.** New users are a single row insert. No schema creation, no database provisioning, no DNS configuration.
 - **Works with both SQLite (dev) and PostgreSQL (prod)** without database-specific isolation features.
 

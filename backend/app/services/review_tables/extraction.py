@@ -28,7 +28,6 @@ from app.models.review_tables import (
     CELL_NOT_FOUND,
     CELL_UNVERIFIED,
 )
-from app.services.authority_mapper.service import find_quote_offset
 from app.services.contract_analysis.key_terms import (
     EXCERPT_CHARS,
     PREAMBLE_CHARS,
@@ -36,6 +35,7 @@ from app.services.contract_analysis.key_terms import (
 )
 from app.services.contract_analysis.long_drafting import _chunk_text, _relevance, _terms
 from app.services.llm_clients import openai_chat
+from app.services.quote_verify import find_quote_offset
 from app.services.rag.prompt_safety import UNTRUSTED_CONTENT_RULE, untrusted_block
 
 logger = logging.getLogger(__name__)

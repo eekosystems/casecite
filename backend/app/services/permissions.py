@@ -87,12 +87,6 @@ PERMISSIONS: list[dict[str, str]] = [
         "description": "Build judge profiles, analytics, and strategy briefs",
         "group": "Analysis",
     },
-    {
-        "key": "authority_map.use",
-        "label": "Authority mapping",
-        "description": "Cite-check filings and map propositions to authority",
-        "group": "Analysis",
-    },
     # ── Administration ───────────────────────────────────────────────
     {
         "key": "admin.users",

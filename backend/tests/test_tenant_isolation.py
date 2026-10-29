@@ -3,7 +3,7 @@ Tenant Isolation Tests
 
 Verifies over the real HTTP API that one user cannot reach another user's
 data: documents (list, tree, metadata, content, file, move, delete), contract
-analyses, authority maps, workspace sessions, chat sessions, background jobs
+analyses, workspace sessions, chat sessions, background jobs
 and RAG settings. Every cross-user test seeds a REAL object owned by User A and
 asserts User B is refused and the object survives.
 """
@@ -13,7 +13,6 @@ from datetime import UTC, datetime
 from unittest.mock import patch
 
 import pytest
-from app.models.authority_map import AuthorityMapping, AuthorityMapRun
 from app.models.clause_intel import ContractAnalysisRun
 from app.models.tracking import WorkspaceSessionDB
 from app.services.auth import User, UserRole
@@ -144,31 +143,6 @@ class TestContractAnalysisIsolation:
         resp = getattr(client, method)(url, headers=HEADERS_B, **kwargs)
         assert resp.status_code == 404
         assert db_count(ContractAnalysisRun, ContractAnalysisRun.id == analysis_a) == 1
-
-
-@pytest.mark.usefixtures("no_rate_limit")
-class TestAuthorityMapIsolation:
-    """An authority-map run is visible to its owner only."""
-
-    @pytest.fixture
-    def run_a(self):
-        run_id = uuid.uuid4().hex
-        db_add(
-            AuthorityMapRun(id=run_id, user_id=USER_A.id, document_name="brief.docx"),
-            AuthorityMapping(run_id=run_id, proposition="P", source="courtlistener"),
-        )
-        return run_id
-
-    def test_owner_can_read(self, client: TestClient, run_a):
-        resp = client.get(f"/api/v1/authority-map/{run_a}", headers=HEADERS_A)
-        assert resp.status_code == 200
-        assert len(resp.json()["mappings"]) == 1
-
-    def test_other_user_cannot_read_or_delete(self, client: TestClient, run_a):
-        assert client.get(f"/api/v1/authority-map/{run_a}", headers=HEADERS_B).status_code == 404
-        assert client.delete(f"/api/v1/authority-map/{run_a}", headers=HEADERS_B).status_code == 404
-        assert db_count(AuthorityMapRun, AuthorityMapRun.id == run_a) == 1
-        assert db_count(AuthorityMapping, AuthorityMapping.run_id == run_a) == 1
 
 
 @pytest.mark.usefixtures("no_rate_limit")

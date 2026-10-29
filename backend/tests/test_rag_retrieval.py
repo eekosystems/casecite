@@ -1145,57 +1145,6 @@ class TestCaseLawWithoutAScore:
         assert "relevance rated 0.90" in self._texts(citation)
 
 
-class TestAuthorityMapCoverageNotes:
-    """The authority map says what its bounds left out."""
-
-    def test_fully_covered_files_produce_no_notes(self):
-        from app.routers.chat import _authority_map_coverage_notes
-
-        files = [
-            {
-                "document_name": "brief.pdf",
-                "summary": {
-                    "coverage": {
-                        "document_chars": 9000,
-                        "document_chars_read": 9000,
-                        "document_truncated": False,
-                        "document_windows_failed": 0,
-                        "propositions_identified": 4,
-                        "propositions_researched": 4,
-                        "opinions_partially_read": 0,
-                    }
-                },
-            },
-            {"document_name": "old.pdf", "summary": {}},
-        ]
-        assert _authority_map_coverage_notes(files) == []
-
-    def test_gaps_are_spelled_out_per_file(self):
-        from app.routers.chat import _authority_map_coverage_notes
-
-        files = [
-            {
-                "document_name": "long-brief.pdf",
-                "summary": {
-                    "coverage": {
-                        "document_chars": 250000,
-                        "document_chars_read": 120000,
-                        "document_truncated": True,
-                        "document_windows_failed": 1,
-                        "propositions_identified": 30,
-                        "propositions_researched": 12,
-                        "opinions_partially_read": 2,
-                    }
-                },
-            }
-        ]
-        assert _authority_map_coverage_notes(files) == [
-            "long-brief.pdf: 120,000 of 250,000 characters were read; 1 section(s) could "
-            "not be analysed; 12 of 30 propositions were researched; 2 opinion(s) were "
-            "only partly read."
-        ]
-
-
 class TestKeyPhrasesFromQuery:
     """Query words are user text: regex metacharacters in them must not crash
     citation building after the answer has been generated."""

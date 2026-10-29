@@ -1,13 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { useResearch } from '../contexts/ResearchContext';
 import { useAuthStore } from '../stores/authStore';
-import { useAuthorityMapStore } from '../stores/authorityMapStore';
 import { useApp } from '../contexts/AppContext'; // fileInputRef only
 import { ANALYSIS_MODES } from '../constants/analysisModes';
-import { groupCitationsBySource, claimLabel, mappingToCitation } from '../utils';
+import { groupCitationsBySource, claimLabel, anchorToCitation } from '../utils';
 import type { ChatMessage } from '../types';
 import s from './ResearchView.module.css';
-import { Icon, StrategyBriefCard, FloatingChatDock, AuthorityMapCard, AuthorityMapRecordCard, MatterFileWorkspace, AnnotatedDocument, PdfDocumentViewer, AssistantAvatar, MessageMarkdown, AiNotice, DeepResearchPanel } from '../components';
+import { Icon, StrategyBriefCard, FloatingChatDock, MatterFileWorkspace, AnnotatedDocument, PdfDocumentViewer, AssistantAvatar, MessageMarkdown, AiNotice, DeepResearchPanel } from '../components';
 import { useDeepResearchStore } from '../stores/deepResearchStore';
 
 // Static constants only (no components, no rendering functions).
@@ -99,8 +98,8 @@ function ResearchView() {
             <div className={s.messagesWrap}>
               {docScreen && openDocs.length > 0 ? (
                 /* Full-screen reading view: 1 doc = full width, 2 = 50/50,
-                   3-4 = quartered. Case law from authority maps is anchored
-                   inline — click a highlight for the verification popup. */
+                   3-4 = quartered. The conversation's verified claims are
+                   anchored inline — click a highlight for the verification popup. */
                 <div className={s.docScreen}>
                   <div className={s.docScreenBar}>
                     <button className={s.docBackBtn} onClick={() => setDocScreen(false)}>
@@ -157,7 +156,7 @@ function ResearchView() {
                             <AnnotatedDocument
                               text={d.text}
                               annotations={docAnnotations[d.id] || []}
-                              onVerify={(m) => setSelectedCitation(mappingToCitation(m, 0, `doc-${d.id}`))}
+                              onVerify={(m) => setSelectedCitation(anchorToCitation(m, 0, `doc-${d.id}`))}
                               jumpToSpan={pendingDocJump?.docId === d.id
                                 ? { start: pendingDocJump.start, seq: pendingDocJump.seq }
                                 : null}
@@ -177,9 +176,9 @@ function ResearchView() {
                   <div className={s.workspaceHead}>
                     <h3 className={s.workspaceTitle}>Matter Strategy</h3>
                     <p className={s.workspaceSub}>
-                      Pick a folder or file to scope the chat — ask questions, get a strategy
-                      brief, or say &ldquo;give me all the case law for this file&rdquo; for a full
-                      verified authority map.
+                      Pick a folder or file to scope the chat — ask questions, or get a strategy
+                      brief with verified case law for every point (&ldquo;give me all the case law
+                      for this file&rdquo;).
                     </p>
                   </div>
                   {openDocs.length > 0 && (
@@ -244,22 +243,7 @@ function ResearchView() {
                         onCitationClick={setSelectedCitation}
                         styles={s}
                       />
-                    )}
-                    {msg.authorityMap && (
-                      <AuthorityMapCard
-                        result={msg.authorityMap}
-                        onCitationSelect={setSelectedCitation}
-                      />
-                    )}
-                    {msg.authorityMapRecord && !msg.authorityMap && (
-                      <AuthorityMapRecordCard
-                        record={msg.authorityMapRecord}
-                        onOpenRun={(runId, run) => useAuthorityMapStore.getState().openRun(runId, {
-                          documentId: run.document_id, documentName: run.document_name,
-                        })}
-                      />
-                    )}
-                    {!msg.strategy && !msg.authorityMap && !msg.authorityMapRecord && (
+                    )}                    {!msg.strategy && (
                       <MessageMarkdown text={msg.content} />
                     )}
                     {msg.citations && msg.citations.length > 0 && (
@@ -288,8 +272,8 @@ function ResearchView() {
                         </div>
                       </div>
                     )}
-                    {/* The brief and authority-map cards carry their own notice */}
-                    {!msg.strategy && !msg.authorityMap && !msg.authorityMapRecord && <AiNotice />}
+                    {/* The brief card carries its own notice */}
+                    {!msg.strategy && <AiNotice />}
                     <span className={s.timestamp}>{msg.timestamp.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'})}</span>
                       </>
                     )}

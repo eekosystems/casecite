@@ -10,9 +10,9 @@ vi.mock('./client', () => {
 });
 
 import { api } from './client';
-import './authority-map';
+import './cases';
 
-describe('api/authority-map', () => {
+describe('api/cases', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     (api.request as any).mockResolvedValue({});
@@ -29,10 +29,5 @@ describe('api/authority-map', () => {
   it('getCaseOpinion leaves the kind to the server when not given', async () => {
     await (api as any).getCaseOpinion('123');
     expect(api.request).toHaveBeenCalledWith('/tools/cases/123');
-  });
-
-  it('getAuthorityMapRun fetches a stored run by id', async () => {
-    await (api as any).getAuthorityMapRun('run/1');
-    expect(api.request).toHaveBeenCalledWith('/authority-map/run%2F1');
   });
 });

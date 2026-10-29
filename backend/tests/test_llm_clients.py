@@ -57,7 +57,7 @@ class TestMakeOpenAI:
 
 class TestProviderAllowlist:
     """openai_chat / openai_chat_sync are the single exit for every
-    OpenAI-compatible chat call (contract analysis, drafting, authority map,
+    OpenAI-compatible chat call (contract analysis, drafting,
     strategy, clause intelligence, document summaries, research chat), so the
     provider allowlist is enforced here."""
 

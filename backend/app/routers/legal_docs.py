@@ -28,9 +28,9 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/legal-docs", tags=["legal-documents"])
 
-# Extraction and conversion feed the document viewer, Contracts and Case
-# Citations, so any one of those capabilities is enough to call them.
-_FILE_TOOL_PERMISSIONS = ("documents.view", "contracts.use", "authority_map.use")
+# Extraction and conversion feed the document viewer and Contracts, so either
+# of those capabilities is enough to call them.
+_FILE_TOOL_PERMISSIONS = ("documents.view", "contracts.use")
 
 
 @router.get("/courts")
@@ -64,7 +64,7 @@ async def extract_text_from_file(
 ) -> dict:
     """Extract text content from an uploaded file (PDF, DOCX, DOC, TXT, RTF, MD).
 
-    Requires a document, contract or authority-map permission. The upload is run
+    Requires a document or contract permission. The upload is run
     through the shared allowlist + per-type size cap + magic-byte check before
     it reaches the (expensive, OCR-capable) extraction pipeline, which runs in a
     worker thread so one large file cannot stall the event loop. A file that
@@ -170,7 +170,7 @@ async def convert_to_pdf(
 ):
     """Convert an uploaded document to PDF for the visual viewer.
 
-    Requires a document, contract or authority-map permission. PDFs pass
+    Requires a document or contract permission. PDFs pass
     through; DOCX and text/markdown are rendered with reportlab in a worker
     thread. The upload is validated (allowlist + per-type size cap + magic
     bytes) before any parsing/rendering.

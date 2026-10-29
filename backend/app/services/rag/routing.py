@@ -67,10 +67,11 @@ _AUTHORITY_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
-# Exhaustive authority-mapping asks: "ALL the case law" / "map the citations" /
-# "authority for everything" — an audit of the documents themselves, not a
-# topic lookup or a strategy synthesis.
-_AUTHORITY_MAP_PATTERN = re.compile(
+# Exhaustive authority asks about the scoped files themselves: "ALL the case
+# law for this file" / "map the citations" / "authority for everything". These
+# are strategy asks — the brief reads every scoped document and attaches
+# quote-verified authority to each point it derives.
+_EXHAUSTIVE_AUTHORITY_PATTERN = re.compile(
     r"\b(?:all|every|each)\b.{0,50}\b(?:case ?law|authorit(?:y|ies)|precedents?|citations?)\b"
     r"|\bmap\b.{0,30}\b(?:case ?law|authorit(?:y|ies)|citations?)\b"
     r"|\b(?:case ?law|authorit(?:y|ies))\b.{0,40}\b(?:everything|entire|whole)\b",
@@ -132,8 +133,8 @@ def distill_search_query(query: str) -> str | None:
 
 def heuristic_route(query: str) -> tuple[str, bool]:
     """Keyword-based fallback classification: (intent, use_case_law)."""
-    if _AUTHORITY_MAP_PATTERN.search(query) and _DOC_TARGET_PATTERN.search(query):
-        return "authority_map", True
+    if _EXHAUSTIVE_AUTHORITY_PATTERN.search(query) and _DOC_TARGET_PATTERN.search(query):
+        return "strategy", True
     if _STRATEGY_PATTERN.search(query):
         return "strategy", bool(_AUTHORITY_PATTERN.search(query))
     if _FIND_AUTHORITY_PATTERN.search(query):
@@ -150,7 +151,9 @@ def parse_route_payload(raw: str | None, query: str) -> tuple[str, bool]:
     if not isinstance(data, dict):
         return heuristic_route(query)
     intent = str(data.get("intent") or "").strip().lower()
-    if intent not in ("ask", "research", "strategy", "authority_map"):
+    if intent == "authority_map":  # retired label: the brief does that job now
+        intent = "strategy"
+    if intent not in ("ask", "research", "strategy"):
         return heuristic_route(query)
     return intent, bool(data.get("use_case_law"))
 
@@ -183,9 +186,9 @@ async def route_query(
     classifier call to that provider instead of the OpenAI-compatible client.
 
     intent: "ask" (grounded Q&A), "research" (outside-authority lookup, do not
-    read the documents), "strategy" (full-coverage matter brief), or
-    "authority_map" (exhaustive per-proposition case-law audit of the scoped
-    file(s) — handled by the authority mapper, not the RAG pipeline).
+    read the documents), or "strategy" (full-coverage matter brief, which also
+    covers "all the case law for these files": the brief attaches quote-verified
+    authority to every point it derives from the scoped documents).
     use_case_law: whether outside authority would materially help the answer.
     search_query: distilled keywords for a case-law keyword search — the raw
     message is NEVER a usable search term.
@@ -196,16 +199,15 @@ async def route_query(
     prompt = (
         "Classify this message from a lawyer working across their own document "
         "collection.\n\n"
-        '- intent "authority_map": they want exhaustive supporting case law mapped '
-        "for their selected file(s) or folder AS A WHOLE — an audit of the documents "
-        'themselves (e.g. "give me all the case law for this file", "all the case law '
-        'relevant to these six files", "map the citations in this brief", "find '
-        'authority for everything in this document"). use_case_law true.\n'
         '- intent "strategy": they want strategic synthesis across THEIR matter — '
         "position, arguments, strengths/weaknesses, recommendations, a plan. "
         "Requests to find/pull case law or precedent supporting THEIR case, "
         'position, or client are intent "strategy" (they require reading the '
-        "whole matter and deriving the position first), with use_case_law true.\n"
+        "whole matter and deriving the position first), with use_case_law true. "
+        "So are asks for exhaustive supporting case law for their selected "
+        'file(s) or folder as a whole (e.g. "give me all the case law for this '
+        'file", "map the citations in this brief", "find authority for everything '
+        'in this document"): use_case_law true.\n'
         '- intent "research": a pure legal-research lookup — case law, precedent, '
         "or statutes about a topic, offense, or doctrine, NOT tied to their own "
         'matter (e.g. "find me case law on DWI stops"). Their documents are '
@@ -224,7 +226,7 @@ async def route_query(
         'legal topic, offense, or doctrine for a keyword search (e.g. "DWI '
         'driving while intoxicated suppression") — never request filler like '
         '"find me case law"; null otherwise.\n\n'
-        'Return STRICT JSON: {"intent":"ask"|"research"|"strategy"|"authority_map",'
+        'Return STRICT JSON: {"intent":"ask"|"research"|"strategy",'
         '"use_case_law":true|false,"per_file":true|false,"search_query":"..."|null}\n\n'
         f"MESSAGE:\n{query[:2000]}"
     )
