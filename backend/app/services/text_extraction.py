@@ -133,6 +133,9 @@ class ExtractionResult:
     error: str = ""
     warnings: list[str] = field(default_factory=list)
     truncated: bool = False
+    # Where each page begins in ``text``: [(char_offset, page_number), ...] in
+    # ascending order (PDFs only). Lets chunks and citations name their page.
+    page_starts: list[tuple[int, int]] = field(default_factory=list)
 
 
 class TextExtractionService:
@@ -140,6 +143,37 @@ class TextExtractionService:
 
     # Minimum chars on a page before OCR is attempted
     OCR_THRESHOLD = 50
+    # A page mostly covered by images is a scan even when it carries a short
+    # text layer (a header, a Bates stamp, a page number): OCR it when its
+    # text is under this many chars.
+    SCANNED_PAGE_TEXT_LIMIT = 600
+    SCANNED_PAGE_IMAGE_COVERAGE = 0.5
+
+    @classmethod
+    def _needs_ocr(cls, page_text: str, image_coverage: float = 0.0) -> bool:
+        chars = len(page_text.strip())
+        if chars < cls.OCR_THRESHOLD:
+            return True
+        return (
+            image_coverage >= cls.SCANNED_PAGE_IMAGE_COVERAGE
+            and chars < cls.SCANNED_PAGE_TEXT_LIMIT
+        )
+
+    @staticmethod
+    def _image_coverage(page) -> float:
+        """Share of a pdfplumber page's area covered by images (0..1)."""
+        try:
+            width, height = float(page.width), float(page.height)
+            if width <= 0 or height <= 0:
+                return 0.0
+            covered = 0.0
+            for img in page.images or []:
+                w = max(0.0, min(float(img["x1"]), width) - max(float(img["x0"]), 0.0))
+                h = max(0.0, min(float(img["bottom"]), height) - max(float(img["top"]), 0.0))
+                covered += w * h
+            return min(1.0, covered / (width * height))
+        except (KeyError, TypeError, ValueError, AttributeError):
+            return 0.0
 
     def extract(
         self,
@@ -350,7 +384,7 @@ class TextExtractionService:
     def _extract_pdf_pdfplumber(self, content: bytes) -> ExtractionResult:
         """Table-aware extraction using pdfplumber."""
         all_tables: list[str] = []
-        page_texts: list[str] = []
+        page_texts: list[tuple[int, str]] = []
         page_count = 0
         ocr = _OcrSession(content)
 
@@ -361,12 +395,13 @@ class TextExtractionService:
                 for page in pdf.pages[:_MAX_PDF_PAGES]:
                     page_text = self._extract_pdfplumber_page(page, all_tables)
 
-                    # OCR fallback for sparse pages
-                    if len(page_text.strip()) < self.OCR_THRESHOLD:
+                    # OCR fallback for sparse pages and for scans with a
+                    # short text layer
+                    if self._needs_ocr(page_text, self._image_coverage(page)):
                         page_text = ocr.improve(page.page_number - 1, page_text)
 
                     if page_text.strip():
-                        page_texts.append(page_text)
+                        page_texts.append((page.page_number, page_text))
 
         except Exception as e:  # pdfminer raises PDFSyntaxError and friends
             logger.error(f"pdfplumber extraction failed: {type(e).__name__}: {e}")
@@ -384,14 +419,29 @@ class TextExtractionService:
 
     @staticmethod
     def _pdf_result(
-        page_texts: list[str], tables: list[str], page_count: int, ocr: "_OcrSession"
+        page_texts: list[tuple[int, str]], tables: list[str], page_count: int, ocr: "_OcrSession"
     ) -> ExtractionResult:
-        """Assemble a PDF result, recording anything the caps left unread."""
+        """Assemble a PDF result, recording anything the caps left unread.
+
+        ``page_texts`` is ``[(page_number, text), ...]``; pages with no text
+        are absent, so page numbers are carried rather than inferred.
+        """
+        separator = "\n\n"
+        parts: list[str] = []
+        page_starts: list[tuple[int, int]] = []
+        offset = 0
+        for page_number, page_text in page_texts:
+            if parts:
+                offset += len(separator)
+            page_starts.append((offset, page_number))
+            parts.append(page_text)
+            offset += len(page_text)
         result = ExtractionResult(
-            text="\n\n".join(page_texts),
+            text=separator.join(parts),
             tables=tables,
             page_count=page_count,
             ocr_used=ocr.used,
+            page_starts=page_starts,
         )
         if page_count > _MAX_PDF_PAGES:
             result.truncated = True
@@ -507,7 +557,7 @@ class TextExtractionService:
 
     def _extract_pdf_pypdf(self, content: bytes) -> ExtractionResult:
         """Basic PDF extraction via pypdf (no table awareness)."""
-        page_texts = []
+        page_texts: list[tuple[int, str]] = []
         page_count = 0
         ocr = _OcrSession(content)
 
@@ -523,11 +573,11 @@ class TextExtractionService:
                 page_text = reader.pages[i].extract_text() or ""
 
                 # OCR fallback for sparse pages
-                if len(page_text.strip()) < self.OCR_THRESHOLD:
+                if self._needs_ocr(page_text):
                     page_text = ocr.improve(i, page_text)
 
                 if page_text.strip():
-                    page_texts.append(page_text)
+                    page_texts.append((i + 1, page_text))
 
         except ExtractionError:
             raise

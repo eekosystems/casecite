@@ -123,3 +123,25 @@ def test_annotate_falls_back_to_chunk_only():
     c = _citation("doc.pdf", "passage", chunk_index=0)
     annotate_source_locations([c], [{"metadata": {}}])
     assert "chunk #1" in c.notes
+
+
+def test_merge_keeps_each_phrasings_order_over_raw_similarity():
+    """Regression: the merge re-sorted by raw similarity, discarding the
+    keyword-fused / reranked order every per-query list arrives in."""
+
+    def r(chunk, sim):
+        return {
+            "text": chunk,
+            "similarity": sim,
+            "metadata": {"document_id": "d", "chunk_index": chunk},
+        }
+
+    # Both phrasings rank chunk 1 first (e.g. an exact clause-number match
+    # that embeds poorly); chunk 9 embeds close to one paraphrase only.
+    original = [r(1, 0.41), r(2, 0.55)]
+    paraphrase = [r(1, 0.43), r(2, 0.52), r(9, 0.90)]
+    merged = merge_search_results([original, paraphrase], top_k=10)
+
+    assert [m["metadata"]["chunk_index"] for m in merged] == [1, 2, 9]
+    assert merged[0]["similarity"] == 0.43  # best similarity kept for display
+    assert merged[0]["merge_score"] > merged[2]["merge_score"]

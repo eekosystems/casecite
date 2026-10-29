@@ -18,6 +18,12 @@ from app.models.schemas import (
     RAGSettings,
 )
 from app.services.case_law_research import research_authorities
+from app.services.chunking import (
+    CHUNKER_VERSION,
+    chunk_document,
+    document_context,
+    embedding_text,
+)
 from app.services.embeddings import embedding_service
 from app.services.rag.case_law_guard import redact_unverified_case_law
 from app.services.rag.citation_reasoning import enrich_citations_with_reasoning
@@ -26,7 +32,7 @@ from app.services.rag.citations import (
     build_document_citations,
     extract_cited_cases,
 )
-from app.services.rag.claim_grounding import ground_answer_claims
+from app.services.rag.claim_grounding import ground_answer
 from app.services.rag.enhancements import (
     annotate_source_locations,
     compress_context_results,
@@ -41,12 +47,18 @@ from app.services.rag.generation import (
 )
 from app.services.rag.intent import detect_query_intent
 from app.services.rag.prompt_safety import UNTRUSTED_CONTENT_RULE
-from app.services.rag.prompts import get_default_grounding_rules, get_system_prompt
+from app.services.rag.prompts import (
+    DOCUMENT_READING_RULES,
+    get_default_grounding_rules,
+    get_system_prompt,
+)
 from app.services.rag.search import (
     SearchUnavailableError,
+    case_law_search_filters,
     search_case_law,
     search_documents,
 )
+from app.services.search import search_service
 from app.services.vectordb import get_vector_db
 
 if TYPE_CHECKING:
@@ -142,8 +154,10 @@ class VectorWriteError(RuntimeError):
 
 
 class RAGService:
-    def __init__(self):
-        self.vector_db = get_vector_db()
+    def __init__(self, vector_db=None):
+        """``vector_db`` overrides the configured store (the eval harness indexes
+        into an isolated one); by default the process-wide store is used."""
+        self.vector_db = vector_db if vector_db is not None else get_vector_db()
         # Both clients carry settings.api_timeout and bounded retries; the
         # OpenAI one goes through the shared factory so OPENAI_BASE_URL /
         # the admin endpoint override apply here too.
@@ -174,19 +188,40 @@ class RAGService:
         folder_path: str = None,
         user_id: str = "",
         matter_id: str | None = None,
+        page_starts: list[tuple[int, int]] | None = None,
     ) -> list[dict[str, Any]]:
         """Chunk and embed a document; returns the records to store (may be empty).
 
         This is the step that can fail on a provider error. It writes nothing,
         so callers can finish it before touching what is already stored.
+
+        With structured chunking (the default) each chunk records its section
+        path, character span and pages (``page_starts`` from the extractor),
+        and is embedded together with a one-line document context (title and
+        parties) so a clause is findable by the agreement it belongs to; the
+        stored chunk text stays verbatim.
         """
         if self.vector_db is None:
             raise RuntimeError("Vector database not available. Check DB configuration and logs.")
-        chunks = embedding_service.chunk_text(text)
+        structured = settings.chunking_strategy == "structured"
+        if structured:
+            chunks = chunk_document(
+                text,
+                chunk_size=settings.chunk_size,
+                chunk_overlap=settings.chunk_overlap,
+                count_tokens=embedding_service.count_tokens,
+                page_starts=page_starts,
+            )
+        else:
+            chunks = embedding_service.chunk_text(text)
         if not chunks:
             return []
 
-        chunk_texts = [c["text"] for c in chunks]
+        context = document_context(text, filename) if structured else ""
+        if structured and settings.contextual_chunk_headers:
+            chunk_texts = [embedding_text(c, filename, context) for c in chunks]
+        else:
+            chunk_texts = [c["text"] for c in chunks]
         embeddings = await embedding_service.embed_texts(chunk_texts, user_keys=user_keys)
 
         if not folder_path and metadata:
@@ -230,6 +265,16 @@ class RAGService:
             chunk_doc.pop("matter_id", None)
             if matter_id:
                 chunk_doc["matter_id"] = matter_id
+            # Where the chunk sits — set after the metadata spread so caller
+            # metadata cannot misstate a passage's location.
+            chunk_doc["chunker"] = CHUNKER_VERSION if structured else "fixed-v1"
+            for key in ("section", "char_start", "char_end", "page_start", "page_end"):
+                chunk_doc.pop(key, None)
+                if chunk.get(key) not in (None, ""):
+                    chunk_doc[key] = chunk[key]
+            chunk_doc.pop("doc_context", None)
+            if context:
+                chunk_doc["doc_context"] = context
             documents.append(chunk_doc)
         return documents
 
@@ -245,6 +290,7 @@ class RAGService:
         folder_path: str = None,
         user_id: str = "",
         matter_id: str | None = None,
+        page_starts: list[tuple[int, int]] | None = None,
     ) -> int:
         """Index a document by chunking and embedding it."""
         documents = await self._build_chunk_documents(
@@ -258,6 +304,7 @@ class RAGService:
             folder_path=folder_path,
             user_id=user_id,
             matter_id=matter_id,
+            page_starts=page_starts,
         )
         if not documents:
             return 0
@@ -451,6 +498,7 @@ class RAGService:
             anthropic_client=anthropic_client,
             gemini_model=gemini_model,
             start_time=start_time,
+            matter_ids=matter_ids,
         )
 
     async def _answer_with_sources(
@@ -471,6 +519,7 @@ class RAGService:
         anthropic_client: AsyncAnthropic | None,
         gemini_model: Any,
         start_time: float,
+        matter_ids: list[str] | None = None,
     ) -> dict[str, Any]:
         """Generate the grounded answer from retrieved sources and assemble its citations and stats."""
         system_prompt, user_prompt, query_intent = self._build_prompts(
@@ -498,7 +547,7 @@ class RAGService:
 
         content = _redact_unverified_references(content, case_law_results, search_results)
 
-        citations, cited_cases = await _build_answer_citations(
+        citations, cited_cases, grounding_notice = await _build_answer_citations(
             content=content,
             query=query,
             mode=mode,
@@ -509,7 +558,12 @@ class RAGService:
             user_id=user_id,
             user_keys=user_keys,
             model=model,
+            matter_ids=matter_ids,
         )
+        if grounding_notice:
+            # Statements the source check could not confirm are shown with the
+            # answer, not only inside citation details a reader may never open.
+            content = f"{content.rstrip()}\n\n{grounding_notice}"
 
         processing_time = time.time() - start_time
 
@@ -860,6 +914,8 @@ Question: {_sanitize_prompt_input(query)}
 {context}
 === END ===
 
+{DOCUMENT_READING_RULES}
+
 Answer directly and concisely. Reference the source document."""
         else:
             case_law_instruction = ""
@@ -892,7 +948,9 @@ Query: {_sanitize_prompt_input(query)}
 === END OF CONTEXT ===
 {case_law_instruction}
 
-{grounding_rules}"""
+{grounding_rules}
+
+{DOCUMENT_READING_RULES}"""
 
     def _log_debug_context(self, search_results, case_law_results, context):
         """Log debug info about search results and context."""
@@ -940,9 +998,17 @@ async def _search_case_law_within_budget(
     user_keys: Optional["UserAPIKeys"],
     model: str,
 ) -> list[dict[str, Any]]:
-    """Find case law for the question under a hard time budget, degrading to no results on failure."""
+    """Find case law for the question under a hard time budget, degrading to no results on failure.
+
+    Explicit ``court:`` / ``jurisdiction:`` / ``after:`` / ``before:`` filters
+    typed in the question restrict the CourtListener search itself, on both
+    the deep and the snippet path.
+    """
     if not include_case_law:
         return []
+    parsed = search_service.parse_query(query)
+    courts = [*parsed.courts, *parsed.jurisdictions]
+    filters = case_law_search_filters(courts, parsed.date_from, parsed.date_to)
     # Search CourtListener for case law. The keyword term is the distilled
     # topic (never the raw message) and every hit is judged against the
     # question before it can be cited. Hard time budget: full-opinion
@@ -963,6 +1029,7 @@ async def _search_case_law_within_budget(
                     search_query=case_law_query,
                     client=openai_client,
                     limit=case_law_limit,
+                    search_filters=filters,
                 ),
                 timeout=140.0,
             )
@@ -980,6 +1047,9 @@ async def _search_case_law_within_budget(
                 search_case_law(
                     case_law_query or query,
                     limit=case_law_limit,
+                    date_from=parsed.date_from,
+                    date_to=parsed.date_to,
+                    courts=courts,
                     question=query,
                     user_keys=user_keys,
                     model=model,
@@ -1046,8 +1116,14 @@ async def _build_answer_citations(
     user_id: str,
     user_keys: Optional["UserAPIKeys"],
     model: str,
-) -> tuple[list[Citation], list[dict[str, Any]]]:
-    """Build, verify and enrich the document and case-law citations for an answer."""
+    matter_ids: list[str] | None = None,
+) -> tuple[list[Citation], list[dict[str, Any]], str | None]:
+    """Build, verify and enrich the document and case-law citations for an answer.
+
+    Returns ``(citations, cited_cases, notice)``; ``notice`` lists the answer's
+    statements the source check could not fully confirm (None when there are
+    none or the check did not run).
+    """
     # Build citations
     cited_cases = extract_cited_cases(content, case_law_results) if case_law_results else []
     citations = build_document_citations(search_results, query, mode)
@@ -1064,19 +1140,27 @@ async def _build_answer_citations(
     # pinned to a char span in its source file. Replaces chunk-provenance
     # citations whenever it succeeds; any failure keeps the chunk ones.
     grounded = None
+    grounding = None
     if include_documents and search_results:
         try:
-            grounded = await ground_answer_claims(
+            grounding = await ground_answer(
                 query=query,
                 answer=content,
                 search_results=search_results,
                 user_id=user_id,
                 user_keys=user_keys,
                 model=model,
+                # Retrieval searched the caller's shared matters; grounding
+                # must be able to read those same files or it silently drops
+                # a colleague's document from verification.
+                accessible_matter_ids=set(matter_ids) if matter_ids else None,
+                # The support check is the stronger form of citation verification.
+                check_support=effective_settings.citation_verification,
             )
         except Exception as e:  # grounding is best-effort
             logger.warning(f"Claim grounding failed, keeping chunk citations: {e}")
-    if grounded:
+    if grounding and grounding.citations:
+        grounded = grounding.citations
         citations = grounded
 
     case_law_citations = build_case_law_citations(
@@ -1093,7 +1177,7 @@ async def _build_answer_citations(
         user_keys=user_keys,
         model=model,
     )
-    return citations, cited_cases
+    return citations, cited_cases, (grounding.notice() if grounding else None)
 
 
 async def _count_docs_searched(

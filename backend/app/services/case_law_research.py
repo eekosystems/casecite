@@ -428,6 +428,7 @@ async def research_authorities(
     search_query: str | None,
     client,
     limit: int = 5,
+    search_filters: dict[str, Any] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, int]]:
     """Full deep-research pass: concepts -> search -> full reads -> verified quotes.
 
@@ -435,7 +436,12 @@ async def research_authorities(
     ``_read_and_judge``); status carries per-reason drop counters, plus
     ``partially_read`` for opinions too long to judge in full. Never raises —
     an empty list with counters is the worst case.
+
+    ``search_filters`` are extra ``search_opinions`` keyword arguments (court
+    ids, filing-date window, citation floor) — see
+    ``app.services.rag.search.case_law_search_filters``.
     """
+    opinion_filters = {"cited_gt": 2, **(search_filters or {})}
     status = {
         "concepts": 0,
         "opinions_read": 0,
@@ -458,7 +464,7 @@ async def research_authorities(
     for target in targets:
         try:
             opinions = await courtlistener_service.search_opinions(
-                query=target["query"], limit=CANDIDATES_PER_CONCEPT, cited_gt=2
+                query=target["query"], limit=CANDIDATES_PER_CONCEPT, **opinion_filters
             )
         except Exception as e:  # per-concept, other concepts continue
             logger.warning(f"Case-law research search failed ({target['query']!r}): {e}")

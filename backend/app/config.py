@@ -458,6 +458,14 @@ class Settings(BaseSettings):
     # RAG Settings - Enterprise Configuration
     chunk_size: int = 512
     chunk_overlap: int = 128
+    # "structured": split at articles, sections, clauses and schedules, record
+    # each chunk's section path, character span and pages. "fixed": the
+    # legacy fixed token windows. Applies to documents indexed from now on;
+    # re-index a document to re-chunk it.
+    chunking_strategy: str = "structured"
+    # Embed each structured chunk with a one-line document context (title,
+    # parties) and its section path. The stored chunk text stays verbatim.
+    contextual_chunk_headers: bool = True
     top_k: int = 10
     # Cosine-similarity floor for retrieval. SCALE IS MODEL-DEPENDENT: with
     # text-embedding-3-* a relevant chunk typically scores 0.30-0.50, so a
@@ -469,11 +477,32 @@ class Settings(BaseSettings):
     # package is installed (it is not in requirements.txt). Without it this
     # flag has no effect: results keep their similarity / keyword-blended order.
     rerank_enabled: bool = True
+    # Which reranker runs when reranking is enabled: "local" (cross-encoder,
+    # needs the optional sentence-transformers package), "cohere" (hosted
+    # Rerank API: candidate passages are sent to Cohere, which must be in
+    # APPROVED_AI_PROVIDERS), or "none".
+    reranker_provider: str = "local"
+    reranker_model: str = "rerank-v3.5"
+    reranker_timeout: float = 15.0
     rerank_top_k: int = 20  # Candidate pool size for keyword rescoring / reranking
-    # "Hybrid" = BM25 keyword rescoring of the vector-search candidates (there
-    # is no separate keyword index).
+    # "Hybrid" = vector search and a full-corpus keyword search (SQLite FTS5,
+    # BM25) run independently and are merged by reciprocal rank fusion, so a
+    # passage the vector search ranks low can still be found by its exact
+    # words. If the keyword index is unavailable, hybrid falls back to BM25
+    # rescoring of the vector candidates only.
     hybrid_search_enabled: bool = True
-    keyword_weight: float = 0.3  # Weight of the BM25 score in the blended ranking
+    lexical_search_enabled: bool = True
+    # Keyword index file; default: lexical_index.sqlite3 beside the Chroma dir.
+    lexical_index_path: str | None = None
+    # Candidates each retriever contributes before fusion (at least top_k).
+    hybrid_candidate_pool: int = 30
+    # Weight of the keyword ranking relative to the vector ranking in the fusion.
+    hybrid_keyword_weight: float = 1.0
+    # Reciprocal rank fusion constant: lower values favour each list's top ranks.
+    # 10 measured best on evals/ (both offline embedding modes); recheck with
+    # the hosted embedding model before changing it.
+    hybrid_rrf_k: int = 10
+    keyword_weight: float = 0.3  # BM25 weight in the rescoring-only fallback
 
     # API Resilience Settings
     api_retry_attempts: int = 3

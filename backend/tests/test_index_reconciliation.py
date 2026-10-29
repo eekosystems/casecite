@@ -55,7 +55,7 @@ class TestReconcileIndex:
         with patch("app.services.documents.rag_service", rag):
             stats = await service.reconcile_index()
 
-        assert stats == {"checked": 1, "reindexed": 0, "failed": 0}
+        assert stats == {"checked": 1, "reindexed": 0, "failed": 0, "keyword_backfilled": 0}
         assert service.documents["a"].status == DocumentStatus.INDEXED
         service._save_index.assert_not_called()
 
@@ -84,7 +84,7 @@ class TestReconcileIndex:
             mock_settings.upload_dir = str(tmp_path)
             stats = await service.reconcile_index()
 
-        assert stats == {"checked": 1, "reindexed": 1, "failed": 0}
+        assert stats == {"checked": 1, "reindexed": 1, "failed": 0, "keyword_backfilled": 0}
         assert doc.status == DocumentStatus.INDEXED
         assert doc.chunk_count == 5
         rag.index_document.assert_awaited_once()
@@ -106,7 +106,7 @@ class TestReconcileIndex:
             mock_settings.upload_dir = str(tmp_path)
             stats = await service.reconcile_index()
 
-        assert stats == {"checked": 1, "reindexed": 0, "failed": 1}
+        assert stats == {"checked": 1, "reindexed": 0, "failed": 1, "keyword_backfilled": 0}
         assert doc.status == DocumentStatus.FAILED
         assert "re-upload" in doc.metadata["error"].lower()
 
@@ -119,7 +119,7 @@ class TestReconcileIndex:
         with patch("app.services.documents.rag_service", rag):
             stats = await service.reconcile_index()
 
-        assert stats == {"checked": 0, "reindexed": 0, "failed": 0}
+        assert stats == {"checked": 0, "reindexed": 0, "failed": 0, "keyword_backfilled": 0}
         rag.vector_db.has_document.assert_not_awaited()
 
     @pytest.mark.asyncio
@@ -127,7 +127,7 @@ class TestReconcileIndex:
         service = _service_with_docs([_doc("a")])
         with patch("app.services.documents.rag_service", None):
             stats = await service.reconcile_index()
-        assert stats == {"checked": 0, "reindexed": 0, "failed": 0}
+        assert stats == {"checked": 0, "reindexed": 0, "failed": 0, "keyword_backfilled": 0}
 
 
 class TestSearchUnavailable:

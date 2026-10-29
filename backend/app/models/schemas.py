@@ -182,6 +182,17 @@ class Citation(BaseModel):
     verified: bool | None = None
     doc_span_start: int | None = None
     doc_span_end: int | None = None
+    # Where the passage sits in its document, when the indexer recorded it
+    # (structured chunking): section path and the pages it spans (PDFs).
+    section: str | None = None
+    page_start: int | None = None
+    page_end: int | None = None
+    # Claim-grounded citations: whether the quoted passage, read in context,
+    # supports the claim — "supported", "partial" (a condition or exception
+    # is missing), "contradicted" or "unsupported" — and what is missing.
+    # None when the support check did not run.
+    support: str | None = None
+    support_note: str | None = None
 
 
 class ChatStats(BaseModel):

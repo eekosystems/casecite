@@ -1,0 +1,64 @@
+ASSET PURCHASE AGREEMENT
+
+This Asset Purchase Agreement (this "Agreement") is dated as of August 4, 2025 among Kestrel Industrial Holdings, Inc., a Delaware corporation ("Buyer"), Ridgeline Fabrication LLC, a Colorado limited liability company ("Seller"), and Marcus Bell, the sole member of Seller ("Member").
+
+ARTICLE 1
+PURCHASE AND SALE
+
+1.1 Purchased Assets. At the Closing, Seller shall sell to Buyer all of Seller's right, title and interest in the equipment, inventory, customer contracts, intellectual property and goodwill of Seller's metal fabrication business (the "Purchased Assets"), free and clear of all liens other than permitted liens.
+
+1.2 Excluded Liabilities. Buyer does not assume any liability of Seller other than obligations arising after the Closing under the assigned customer contracts.
+
+ARTICLE 2
+PURCHASE PRICE
+
+2.1 Purchase Price. The purchase price for the Purchased Assets is Twelve Million Dollars ($12,000,000.00) (the "Purchase Price"), subject to adjustment under Section 2.3.
+
+2.2 Escrow. At the Closing, Buyer shall deposit One Million Two Hundred Thousand Dollars ($1,200,000.00) of the Purchase Price with the escrow agent (the "Indemnity Escrow") to secure Seller's obligations under Article 9. The Indemnity Escrow shall be released to Seller eighteen (18) months after the Closing Date, less the amount of any pending claims.
+
+2.3 Working Capital Adjustment. The Purchase Price shall be increased or decreased dollar for dollar by the amount by which closing working capital exceeds or falls short of the target working capital of Two Million One Hundred Thousand Dollars ($2,100,000.00).
+
+ARTICLE 3
+REPRESENTATIONS AND WARRANTIES OF SELLER
+
+3.1 Organization and Authority. Seller is duly organized and has full power to enter into this Agreement.
+
+3.2 Title. Seller has good and marketable title to the Purchased Assets.
+
+3.3 Financial Statements. The financial statements of the business delivered to Buyer are complete and correct in all material respects.
+
+3.4 Environmental Matters. The business has been operated in material compliance with environmental laws, and Seller has not received any notice of environmental violation in the past five (5) years.
+
+3.5 Taxes. Seller has filed all tax returns and paid all taxes due relating to the business.
+
+ARTICLE 9
+INDEMNIFICATION
+
+9.1 Survival. The representations and warranties of Seller survive the Closing until eighteen (18) months after the Closing Date, except that the Fundamental Representations survive until six (6) years after the Closing Date. "Fundamental Representations" means the representations in Sections 3.1 (Organization and Authority), 3.2 (Title) and 3.5 (Taxes).
+
+9.2 Indemnification by Seller and Member. Seller and Member, jointly and severally, shall indemnify Buyer against all Losses arising from (a) any breach of a representation or warranty of Seller, (b) any breach of a covenant of Seller or Member, and (c) any Excluded Liability.
+
+9.3 Deductible. Seller and Member are not liable under Section 9.2(a) until the aggregate Losses exceed one percent (1%) of the Purchase Price (the "Deductible"), and then only for Losses in excess of the Deductible.
+
+9.4 Cap. The aggregate liability of Seller and Member under Section 9.2(a) shall not exceed fifteen percent (15%) of the Purchase Price.
+
+9.5 Exceptions. The Deductible and the Cap do not apply to Losses arising from fraud or from a breach of a Fundamental Representation, which are limited only to the Purchase Price.
+
+9.6 Materiality Scrape. For purposes of calculating Losses, any materiality qualifier in a representation or warranty is disregarded.
+
+9.7 Reliance. The rights of Buyer to indemnification are not affected by any investigation conducted by or on behalf of Buyer, or by any knowledge acquired or capable of being acquired by Buyer at any time, whether before or after the Closing, regarding the accuracy of any representation or warranty.
+
+9.8 Exclusive Remedy. Except for claims of fraud and for specific performance or injunctive relief, this Article 9 is the exclusive remedy of the parties for any claim arising out of this Agreement.
+
+ARTICLE 10
+GENERAL
+
+10.1 Governing Law. This Agreement is governed by the laws of the State of Colorado.
+
+KESTREL INDUSTRIAL HOLDINGS, INC.
+By: Joanne Whitfield, President
+
+RIDGELINE FABRICATION LLC
+By: Marcus Bell, Member
+
+MARCUS BELL

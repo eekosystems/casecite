@@ -27,7 +27,8 @@ evaluating the product — what does **not** exist yet.
 - Retention policies and legal hold for documents and chats (today, only audit logs have retention)
 - In-place `SECRET_KEY` rotation with re-encryption of stored documents
 - Per-user usage metering and quotas for server-level provider keys
-- A reranking stage for retrieval (today: vector search with keyword rescoring)
+- Benchmark rerankers on the accuracy benchmark (Cohere Rerank and a local cross-encoder are wired in; neither is on by default, and no legal-domain reranker has been tried)
+- Grow the accuracy benchmark (`backend/evals/`) from the synthetic starter set to attorney-written questions over real-world documents
 - Preserve run-level formatting from the source .docx in redline exports
 
 ## Future

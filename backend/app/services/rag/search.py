@@ -2,17 +2,22 @@
 
 import json
 import logging
+import math
+from datetime import date, datetime
 from typing import TYPE_CHECKING, Any, Optional
 
 from app.config import settings
 from app.services.courtlistener import courtlistener_service
+from app.services.courtlistener_client import resolve_court_ids
 from app.services.embeddings import embedding_service
 from app.services.llm_clients import make_openai, openai_chat, utility_model
 from app.services.provider_policy import enforce_openai_client
 from app.services.rag.generation import chosen_provider_text, strip_json_fences
 from app.services.rag.prompt_safety import UNTRUSTED_CONTENT_RULE, untrusted_block
+from app.services.reranking import rerank as rerank_candidates
+from app.services.reranking import reranker_available
 from app.services.resilience import CircuitBreakerOpen, retry_with_backoff
-from app.services.search import cross_encoder_available, search_service
+from app.services.search import search_service
 
 if TYPE_CHECKING:
     from app.services.user_keys import UserAPIKeys
@@ -194,6 +199,115 @@ async def _search_selected_documents(
     return sorted(chosen.values(), key=lambda r: r.get("similarity", 0), reverse=True)[:top_k]
 
 
+def _spread_across_documents(
+    ranked: list[dict[str, Any]], document_ids: list[str], top_k: int
+) -> list[dict[str, Any]]:
+    """Keep every selected file's share of a fused ranking (see above).
+
+    Half the budget goes to each file's best passages, the rest to the best
+    passages overall, preserving the fused order.
+    """
+    n_docs = len(document_ids)
+    if n_docs <= 1 or n_docs > top_k:
+        return ranked[:top_k]
+    floor = max(1, top_k // (2 * n_docs))
+    taken: dict[str, int] = {}
+    chosen: set[str] = set()
+    for r in ranked:
+        did = _doc_id(r)
+        if did in document_ids and taken.get(did, 0) < floor:
+            taken[did] = taken.get(did, 0) + 1
+            chosen.add(r["id"])
+    for r in ranked:
+        if len(chosen) >= top_k:
+            break
+        chosen.add(r["id"])
+    return [r for r in ranked if r["id"] in chosen][:top_k]
+
+
+# Reciprocal rank fusion constant (Cormack et al., 2009). Larger values flatten
+# the advantage of the very top ranks; 60 is the customary default.
+RRF_K = 60
+
+
+def reciprocal_rank_fusion(
+    ranked_lists: list[list[dict[str, Any]]],
+    k: int = RRF_K,
+    weights: list[float] | None = None,
+) -> list[dict[str, Any]]:
+    """Merge independently ranked result lists by summed weight / (k + rank).
+
+    A passage found by both retrievers keeps every field from both (the
+    vector hit's similarity, the keyword hit's BM25 score). Each result gets
+    ``fusion_score`` and ``retrieved_by``. Ranks, not raw scores, are fused:
+    cosine similarity and BM25 live on unrelated scales.
+    """
+    weights = weights or [1.0] * len(ranked_lists)
+    fused: dict[str, dict[str, Any]] = {}
+    scores: dict[str, float] = {}
+    sources: dict[str, list[str]] = {}
+    for weight, results in zip(weights, ranked_lists, strict=True):
+        for rank, r in enumerate(results, start=1):
+            key = r["id"]
+            scores[key] = scores.get(key, 0.0) + weight / (k + rank)
+            source = "keyword" if "lexical_rank" in r else "vector"
+            sources.setdefault(key, [])
+            if source not in sources[key]:
+                sources[key].append(source)
+            if key in fused:
+                for field, value in r.items():
+                    fused[key].setdefault(field, value)
+            else:
+                fused[key] = dict(r)
+    ordered = sorted(fused.values(), key=lambda r: scores[r["id"]], reverse=True)
+    for r in ordered:
+        r["fusion_score"] = scores[r["id"]]
+        # The reranker's no-model path and downstream sorting read this key.
+        r["hybrid_score"] = scores[r["id"]]
+        r["retrieved_by"] = sources[r["id"]]
+    return ordered
+
+
+def _cosine(a: list[float], b: list[float]) -> float:
+    dot = sum(x * y for x, y in zip(a, b, strict=False))
+    na = math.sqrt(sum(x * x for x in a))
+    nb = math.sqrt(sum(y * y for y in b))
+    return dot / (na * nb) if na and nb else 0.0
+
+
+async def _keyword_candidates(
+    vector_db,
+    text: str,
+    phrases: list[str],
+    limit: int,
+    search_filter: dict | None,
+    query_embedding: list[float],
+) -> list[dict[str, Any]] | None:
+    """Full-corpus keyword hits within ``search_filter``, or None when unavailable.
+
+    Each hit gets its true cosine similarity to the query from its stored
+    vector, so thresholds, citations and confidence read the same measured
+    quantity for every passage. A hit with no stored vector is a stale
+    keyword entry (its document is gone from the vector store) and is dropped.
+    """
+    from app.services.vectordb import VectorDBBase
+
+    if not isinstance(vector_db, VectorDBBase):
+        return None
+    hits = await vector_db.keyword_search(text, limit, search_filter, phrases)
+    if not hits:
+        return hits
+    vectors = await vector_db.get_embeddings([h["id"] for h in hits])
+    kept = []
+    for h in hits:
+        vector = vectors.get(h["id"])
+        if vector is None:
+            continue
+        h["similarity"] = _cosine(query_embedding, vector)
+        kept.append(h)
+    return kept
+
+
 async def search_documents(
     vector_db,
     query: str,
@@ -206,9 +320,10 @@ async def search_documents(
     document_ids: list[str] | None = None,
     user_id: str = "",
     matter_ids: list[str] | None = None,
+    use_lexical: bool | None = None,
 ) -> list[dict[str, Any]]:
     """
-    Semantic search over the caller's documents.
+    Hybrid search over the caller's documents.
 
     - The question is embedded as typed. Explicit search syntax only —
       uppercase AND/OR/NOT, ``-term``, known ``field:value`` filters — is
@@ -217,8 +332,12 @@ async def search_documents(
       caller may see; a list restricts retrieval to those documents (spread
       across them); an EMPTY list returns nothing — a scope that matched no
       documents must never widen to the whole knowledge base.
-    - "Hybrid" rescoring blends BM25 over the vector candidates into the
-      ranking. Cross-encoder reranking applies only when
+    - Hybrid: vector search and a full-corpus keyword search (BM25 over the
+      keyword index) run independently over the same scope and are merged by
+      reciprocal rank fusion, so a passage can be found by its exact words
+      even when the vector search ranks it low. ``use_lexical=False`` (or an
+      unavailable keyword index) falls back to BM25 rescoring of the vector
+      candidates. Cross-encoder reranking applies only when
       sentence-transformers is installed.
     - Tenant isolation: every query carries a user_id / matter_id filter.
 
@@ -227,9 +346,14 @@ async def search_documents(
     top_k = top_k or settings.top_k
     similarity_threshold = similarity_threshold or settings.similarity_threshold
     use_hybrid = use_hybrid if use_hybrid is not None else settings.hybrid_search_enabled
+    use_lexical = bool(use_hybrid) and (
+        use_lexical if use_lexical is not None else settings.lexical_search_enabled
+    )
     use_reranking = use_reranking if use_reranking is not None else settings.rerank_enabled
-    # The flag alone does nothing without the optional model package.
-    use_reranking = bool(use_reranking) and cross_encoder_available()
+    # The flag alone does nothing without a usable reranker backend (the
+    # optional local model package, or a hosted reranker with a key).
+    use_reranking = bool(use_reranking) and reranker_available(user_keys)
+    pool = max(top_k, settings.hybrid_candidate_pool)
 
     if document_ids is not None and not document_ids:
         logger.info("[Search] Scope resolved to zero documents; returning no results")
@@ -246,26 +370,74 @@ async def search_documents(
     scope = tenant_scope(user_id, matter_ids)
     extra_filter = _and(*({k: v} for k, v in filter.items())) if filter else None
 
+    keyword: list[dict[str, Any]] | None = None
     if document_ids:
         # Explicit selection: retrieve within those files and keep what was
         # found — the user chose the files, so a low score is not a reason to
         # discard their passages. Weak matches are flagged, not dropped.
         results = await _search_selected_documents(
-            vector_db, query_embedding, document_ids, top_k, scope, extra_filter
+            vector_db,
+            query_embedding,
+            document_ids,
+            pool if use_lexical else top_k,
+            scope,
+            extra_filter,
         )
+        if use_lexical:
+            keyword = await _keyword_candidates(
+                vector_db,
+                semantic_query,
+                parsed_query.phrases,
+                pool,
+                _and(scope, {"document_id": {"$in": list(document_ids)}}, extra_filter),
+                query_embedding,
+            )
+        if keyword is not None:
+            results = _spread_across_documents(
+                reciprocal_rank_fusion(
+                    [results, keyword],
+                    k=settings.hybrid_rrf_k,
+                    weights=[1.0, settings.hybrid_keyword_weight],
+                ),
+                document_ids,
+                top_k,
+            )
+        elif use_lexical:
+            # Keyword index unavailable: the larger pool must still leave
+            # every selected file its share at the final size.
+            results = _spread_across_documents(results, document_ids, top_k)
         for r in results:
             if r["similarity"] < similarity_threshold:
                 r.setdefault("metadata", {})["below_threshold"] = True
         filtered_results = results
     else:
-        # Retrieve a wider candidate pool when it will be rescored.
-        initial_top_k = (
-            max(top_k, settings.rerank_top_k) if (use_hybrid or use_reranking) else top_k
-        )
+        # Retrieve a wider candidate pool when it will be fused or rescored.
+        if use_lexical:
+            initial_top_k = pool
+        elif use_hybrid or use_reranking:
+            initial_top_k = max(top_k, settings.rerank_top_k)
+        else:
+            initial_top_k = top_k
         results = await _vector_search(
             vector_db, query_embedding, initial_top_k, _and(scope, extra_filter)
         )
         logger.debug(f"[Search] Vector DB returned {len(results)} results before threshold filter")
+        if use_lexical:
+            keyword = await _keyword_candidates(
+                vector_db,
+                semantic_query,
+                parsed_query.phrases,
+                pool,
+                _and(scope, extra_filter),
+                query_embedding,
+            )
+        if keyword is not None:
+            results = reciprocal_rank_fusion(
+                [results, keyword],
+                k=settings.hybrid_rrf_k,
+                weights=[1.0, settings.hybrid_keyword_weight],
+            )
+            logger.debug(f"[Search] Fused with {len(keyword)} keyword hits -> {len(results)}")
 
         # Filter by similarity threshold
         filtered_results = [r for r in results if r["similarity"] >= similarity_threshold]
@@ -287,11 +459,27 @@ async def search_documents(
             for r in filtered_results:
                 r.setdefault("metadata", {})["below_threshold"] = True
 
-    # Keyword rescoring / optional reranking of the candidates
-    if use_hybrid or use_reranking:
-        filtered_results = await search_service.search(
-            query, filtered_results, apply_filters=False, rerank=use_reranking, top_k=top_k
-        )
+    if keyword is not None:
+        # Already in fused order; the configured reranker (if any) refines it.
+        if use_reranking:
+            filtered_results = await rerank_candidates(
+                semantic_query, filtered_results, top_k, user_keys
+            )
+    elif use_hybrid or use_reranking:
+        # Fallback: keyword rescoring of the vector candidates, then the
+        # configured reranker (if any)
+        if use_hybrid:
+            filtered_results = await search_service.search(
+                query,
+                filtered_results,
+                apply_filters=False,
+                rerank=False,
+                top_k=max(top_k, len(filtered_results)),
+            )
+        if use_reranking:
+            filtered_results = await rerank_candidates(
+                semantic_query, filtered_results, top_k, user_keys
+            )
 
     # Apply explicit query filters (date, court, type, excluded terms)
     filtered_results = search_service.apply_filters(filtered_results, parsed_query)
@@ -350,11 +538,50 @@ async def get_document_chunks_directly(
     return results[:limit]
 
 
+# Broad (unfiltered) searches keep a small citation floor so the handful of
+# results is not filled with unpublished trial orders. A search the user has
+# narrowed by court or date drops it: within a court or a recent window the
+# newest authority is often the most important, and it has had no time to be
+# cited yet.
+UNFILTERED_MIN_CITATIONS = 2
+
+
+def _as_date(value: str | date | None) -> date | None:
+    if value is None or isinstance(value, date):
+        return value
+    try:
+        return datetime.fromisoformat(str(value).strip()[:10]).date()
+    except ValueError:
+        return None
+
+
+def case_law_search_filters(
+    courts: list[str] | None = None,
+    date_from: str | date | None = None,
+    date_to: str | date | None = None,
+) -> dict[str, Any]:
+    """Keyword arguments for ``search_opinions`` from the user's filters.
+
+    Courts are resolved to CourtListener ids (unknown names are dropped, not
+    sent); dates accept ISO strings or ``date`` objects.
+    """
+    court_ids = resolve_court_ids(courts)
+    after = _as_date(date_from)
+    before = _as_date(date_to)
+    narrowed = bool(court_ids or after or before)
+    return {
+        "court_ids": court_ids or None,
+        "date_after": after,
+        "date_before": before,
+        "cited_gt": None if narrowed else UNFILTERED_MIN_CITATIONS,
+    }
+
+
 async def search_case_law(
     query: str,
     limit: int = 5,
-    date_from: str | None = None,
-    date_to: str | None = None,
+    date_from: str | date | None = None,
+    date_to: str | date | None = None,
     courts: list[str] | None = None,
     question: str | None = None,
     user_keys: Optional["UserAPIKeys"] = None,
@@ -372,13 +599,17 @@ async def search_case_law(
     genuinely relevant cases survive — each with an honest 0-1 relevance and
     a short case summary in ``metadata.case_summary``. A keyword hit is not a
     citation.
+
+    ``courts`` / ``date_from`` / ``date_to`` restrict the CourtListener search
+    itself (see :func:`case_law_search_filters`).
     """
+    filters = case_law_search_filters(courts, date_from, date_to)
 
     async def _search():
         opinions = await courtlistener_service.search_opinions(
             query=query,
             limit=limit,
-            cited_gt=2,
+            **filters,
         )
         return opinions
 

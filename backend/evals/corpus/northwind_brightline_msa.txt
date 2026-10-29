@@ -1,0 +1,132 @@
+MASTER SERVICES AGREEMENT
+
+This Master Services Agreement (this "Agreement") is entered into as of March 1, 2025 (the "Effective Date") by and between Northwind Analytics, Inc., a Delaware corporation ("Provider"), and Brightline Health Partners, LLC, a Delaware limited liability company ("Customer"). Provider and Customer are each a "Party" and together the "Parties."
+
+RECITALS
+
+Provider operates a clinical data analytics platform. Customer operates a network of outpatient clinics and wishes to engage Provider to host, process and analyze clinical and operational data on the terms set out below.
+
+ARTICLE 1
+DEFINITIONS
+
+1.1 "Affiliate" means any entity that directly or indirectly controls, is controlled by, or is under common control with a Party, where "control" means ownership of more than fifty percent (50%) of the voting interests of the entity.
+
+1.2 "Confidential Information" means all non-public information disclosed by one Party to the other in connection with this Agreement that is marked confidential or that a reasonable person would understand to be confidential, including Customer Data.
+
+1.3 "Customer Data" means all data, including protected health information, that Customer or its users submit to the Services.
+
+1.4 "Fees" means the subscription and professional services fees set out in each Order Form.
+
+1.5 "Initial Term" means the period of thirty-six (36) months beginning on the Effective Date.
+
+1.6 "Liquidity Event" means (a) a merger or consolidation of Customer in which the holders of Customer's voting securities immediately before the transaction hold less than fifty percent (50%) of the voting power of the surviving entity; (b) a sale, lease or other disposition of all or substantially all of Customer's assets; or (c) the acquisition by any person or group of more than fifty percent (50%) of Customer's outstanding voting securities.
+
+1.7 "Material Breach" means a breach of this Agreement that deprives the non-breaching Party of a substantial part of the benefit it reasonably expected under this Agreement, including any failure by Customer to pay undisputed Fees when due.
+
+1.8 "Order Form" means an ordering document executed by both Parties that references this Agreement.
+
+1.9 "Security Incident" means any unauthorized access to, or acquisition, use or disclosure of, Customer Data in Provider's possession or control.
+
+1.10 "Uptime Commitment" means availability of the production Services of at least 99.5% in each calendar month, excluding scheduled maintenance announced at least forty-eight (48) hours in advance.
+
+ARTICLE 2
+SERVICES
+
+2.1 Provision of Services. Provider shall make the Services described in each Order Form available to Customer during the term of that Order Form in accordance with this Agreement and the documentation.
+
+2.2 Customer Responsibilities. Customer is responsible for the accuracy of Customer Data and for obtaining all consents required to submit Customer Data to the Services.
+
+2.3 Subcontractors. Provider may use subcontractors to perform the Services, provided that Provider remains responsible for their performance and that each subcontractor with access to Customer Data is bound by written obligations at least as protective as this Agreement.
+
+ARTICLE 3
+FEES AND PAYMENT
+
+3.1 Fees. Customer shall pay the Fees set out in each Order Form. Except as expressly stated in this Agreement, Fees are non-cancellable and non-refundable.
+
+3.2 Invoicing and Payment. Provider shall invoice Fees annually in advance. Customer shall pay each undisputed invoice within thirty (30) days of the invoice date.
+
+3.3 Late Payment. Undisputed amounts not paid when due accrue interest at the rate of one percent (1.0%) per month, or the maximum rate permitted by law if lower, from the due date until paid.
+
+3.4 Acceleration. Upon the occurrence of a Liquidity Event, all Fees payable for the remainder of the Initial Term shall become immediately due and payable, regardless of whether the associated Services have been performed.
+
+3.5 Taxes. Fees exclude taxes. Customer shall pay all sales, use and similar taxes arising from the Services, other than taxes on Provider's net income.
+
+ARTICLE 4
+SERVICE LEVELS
+
+4.1 Uptime. Provider shall meet the Uptime Commitment.
+
+4.2 Service Credits. For each full one-half percent (0.5%) by which availability in a month falls below the Uptime Commitment, Customer is entitled to a credit equal to five percent (5%) of the monthly Fees for the affected Services, up to a maximum of thirty percent (30%) of those monthly Fees.
+
+4.3 Exclusive Remedy; Chronic Failure. Service credits are Customer's sole and exclusive remedy for a failure to meet the Uptime Commitment, except that if Provider fails to meet the Uptime Commitment in three (3) consecutive calendar months, Customer may terminate the affected Order Form on written notice given within thirty (30) days after the third such month and receive a refund of prepaid Fees for the terminated period.
+
+ARTICLE 5
+TERM AND TERMINATION
+
+5.1 Term. This Agreement begins on the Effective Date and continues for the Initial Term. Thereafter it renews automatically for successive renewal terms of twelve (12) months each unless either Party gives written notice of non-renewal at least ninety (90) days before the end of the then-current term.
+
+5.2 Termination for Cause. Either Party may terminate this Agreement upon thirty (30) days' written notice to the other Party if the other Party commits a Material Breach, provided that the breaching Party fails to cure such Material Breach within the thirty (30) day notice period.
+
+5.3 Termination for Convenience. Beginning twelve (12) months after the Effective Date, Customer may terminate this Agreement for convenience upon one hundred twenty (120) days' written notice, subject to payment of an early termination fee equal to fifty percent (50%) of the Fees that would have been payable for the remainder of the Initial Term.
+
+5.4 Effect of Termination. Upon termination or expiration, Provider shall make Customer Data available for export for sixty (60) days and shall then delete it, except as required by law.
+
+ARTICLE 6
+CONFIDENTIALITY
+
+6.1 Obligations. The receiving Party shall use Confidential Information only to perform its obligations or exercise its rights under this Agreement and shall protect it with at least reasonable care.
+
+6.2 Exclusions. Confidential Information does not include information that is or becomes public through no fault of the receiving Party, was known to the receiving Party without restriction before disclosure, or is independently developed without use of the disclosing Party's Confidential Information.
+
+ARTICLE 7
+DATA PROTECTION
+
+7.1 Business Associate Agreement. The Parties shall enter into the business associate agreement attached as Exhibit C, which governs Provider's handling of protected health information.
+
+7.2 Security Incidents. Provider shall notify Customer of a Security Incident without undue delay and in any event within seventy-two (72) hours after Provider becomes aware of it, and shall provide information reasonably requested by Customer to meet its notification obligations.
+
+ARTICLE 8
+WARRANTIES
+
+8.1 Performance. Provider warrants that the Services will perform materially in accordance with the documentation. Customer's remedy for breach of this warranty is re-performance or, if Provider cannot re-perform within thirty (30) days, termination of the affected Order Form and a refund of prepaid Fees for the remaining period.
+
+8.2 Disclaimer. Except as expressly provided in this Agreement, the Services are provided "as is" and Provider disclaims all implied warranties, including merchantability and fitness for a particular purpose.
+
+ARTICLE 9
+INDEMNIFICATION
+
+9.1 By Provider. Provider shall defend Customer against any third-party claim alleging that the Services infringe a United States patent, copyright or trademark, and shall pay damages finally awarded.
+
+9.2 By Customer. Customer shall defend Provider against any third-party claim arising from Customer Data or from Customer's use of the Services in violation of law.
+
+9.3 Procedure. The indemnified Party shall give prompt notice of the claim, allow the indemnifying Party sole control of the defense and settlement, and provide reasonable cooperation.
+
+ARTICLE 10
+LIMITATION OF LIABILITY
+
+10.1 Exclusion of Damages. Neither Party is liable for any indirect, incidental, special, consequential or punitive damages, or for lost profits or revenues.
+
+10.2 Cap. Each Party's aggregate liability arising out of or related to this Agreement shall not exceed the Fees paid or payable by Customer in the twelve (12) months preceding the event giving rise to the claim.
+
+10.3 Exceptions. The limitations in Sections 10.1 and 10.2 do not apply to (a) a Party's indemnification obligations under Article 9, (b) a Party's breach of Article 6 (Confidentiality), or (c) a Party's gross negligence or willful misconduct.
+
+ARTICLE 11
+GENERAL
+
+11.1 Governing Law. This Agreement is governed by the laws of the State of Delaware, without regard to its conflict of laws rules.
+
+11.2 Assignment. Neither Party may assign this Agreement without the prior written consent of the other Party, except that either Party may assign this Agreement without consent to an Affiliate or to a successor in connection with a Liquidity Event or a sale of substantially all of its business, upon written notice to the other Party.
+
+11.3 Notices. (a) All notices under this Agreement must be in writing. (b) A notice is deemed given when delivered personally, one business day after deposit with a nationally recognized overnight courier, or when sent by email with confirmation of transmission. (c) Notices of breach or of termination must be sent by both email and overnight courier and addressed to the General Counsel of the receiving Party.
+
+11.4 Non-Solicitation. During the term and for twelve (12) months afterwards, neither Party shall solicit for employment any employee of the other Party who was involved in the Services, except through general advertisements not targeted at such employees.
+
+11.5 Entire Agreement. This Agreement, together with the Order Forms and exhibits, is the entire agreement of the Parties on its subject matter and supersedes all prior agreements.
+
+IN WITNESS WHEREOF, the Parties have executed this Agreement as of the Effective Date.
+
+NORTHWIND ANALYTICS, INC.
+By: Daniel Okafor, Chief Executive Officer
+
+BRIGHTLINE HEALTH PARTNERS, LLC
+By: Maria Esposito, President

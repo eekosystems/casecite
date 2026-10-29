@@ -173,6 +173,7 @@ async def per_file_answer(
     user_id: str,
     user_keys=None,
     model: str | None = None,
+    accessible_matter_ids: set[str] | None = None,
 ) -> dict[str, Any] | None:
     """Map-reduce answer across the scoped files, or None to fall back to RAG.
 
@@ -182,6 +183,10 @@ async def per_file_answer(
     ``model`` is the user's chosen chat model. A Claude/Gemini choice runs the
     map and reduce passes on that provider; otherwise they run on the
     OpenAI-compatible client with the instance chat model.
+
+    ``accessible_matter_ids`` are the shared matters the caller belongs to; a
+    file a colleague filed under one of them is readable here as it is in
+    retrieval.
     """
     # Full file text goes to whichever provider runs these passes, so honour
     # the user's choice: only fall back to the OpenAI-compatible client when
@@ -213,9 +218,9 @@ async def per_file_answer(
     files: list[dict[str, Any]] = []
     missing: list[str] = []
     for doc_id in document_ids[:PER_FILE_MAX_FILES]:
-        loaded = await document_service.get_document_text(doc_id, user_id)
+        loaded = await document_service.get_document_text(doc_id, user_id, accessible_matter_ids)
         if not loaded or not loaded[1].strip():
-            doc = await document_service.get_document(doc_id, user_id)
+            doc = await document_service.get_document(doc_id, user_id, accessible_matter_ids)
             missing.append(doc.filename if doc else doc_id)
             continue
         filename, text = loaded

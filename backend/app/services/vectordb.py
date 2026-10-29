@@ -20,8 +20,18 @@ except (ImportError, ModuleNotFoundError, AttributeError):
 
 
 from app.config import settings
+from app.services.lexical_index import LexicalIndex, UnsupportedFilter, open_lexical_index
 
 logger = logging.getLogger(__name__)
+
+
+def default_lexical_path(chroma_path: str | None = None) -> str:
+    """Where the keyword index lives: the configured path, else beside the store."""
+    configured = settings.lexical_index_path
+    if chroma_path is None and isinstance(configured, str) and configured.strip():
+        return configured
+    base = os.path.dirname(os.path.abspath(chroma_path or settings.chroma_persist_dir))
+    return os.path.join(base, "lexical_index.sqlite3")
 
 
 class VectorStoreCorruptError(Exception):
@@ -35,6 +45,65 @@ class VectorStoreCorruptError(Exception):
 
 
 class VectorDBBase(ABC):
+    # Keyword index mirroring this store (None when unavailable). Every write
+    # path keeps it in step; see app.services.lexical_index.
+    lexical: LexicalIndex | None = None
+
+    def _mirror(self, action: str, fn) -> None:
+        """Apply a write to the keyword index; a failure there never fails the store write."""
+        lexical = getattr(self, "lexical", None)
+        if lexical is None:
+            return
+        try:
+            fn(lexical)
+        except Exception as e:  # sqlite3 errors, disk full: search degrades to vector-only
+            logger.error(f"Keyword index {action} failed ({type(e).__name__}: {e})")
+
+    async def keyword_search(
+        self,
+        query: str,
+        top_k: int,
+        filter: dict | None,
+        phrases: list[str] | None = None,
+    ) -> list[dict[str, Any]] | None:
+        """BM25 keyword search over every chunk in scope, or None when unavailable.
+
+        None (no index, or a filter the index cannot express exactly) tells the
+        caller to rank by vector similarity alone; an empty list means the
+        index was searched and nothing matched.
+        """
+        lexical: LexicalIndex | None = getattr(self, "lexical", None)
+        if lexical is None:
+            return None
+        try:
+            return lexical.search(query, filter, limit=top_k, phrases=phrases or ())
+        except UnsupportedFilter as e:
+            logger.info(f"Keyword search skipped: {e}")
+            return None
+        except sqlite3.Error as e:
+            logger.error(f"Keyword search failed ({e}); ranking by vector similarity only")
+            return None
+
+    async def get_embeddings(self, ids: list[str]) -> dict[str, list[float]]:
+        """Stored vectors by chunk id (ids not in the store are absent). Default: none."""
+        return {}
+
+    async def sync_lexical_document(self, document_id: str, user_id: str) -> bool:
+        """Copy a document's stored chunks into the keyword index if it has none.
+
+        For stores indexed before the keyword index existed: the chunk text is
+        already in the vector store, so nothing is re-extracted or re-embedded.
+        Returns True when chunks were copied.
+        """
+        lexical: LexicalIndex | None = getattr(self, "lexical", None)
+        if lexical is None or lexical.has_document(document_id):
+            return False
+        chunks = await self.get_document_chunks(document_id, {"user_id": user_id}, limit=10_000)
+        if not chunks:
+            return False
+        self._mirror("backfill", lambda lx: lx.add(chunks))
+        return lexical.has_document(document_id)
+
     @abstractmethod
     async def add_documents(self, documents: list[dict[str, Any]]) -> list[str]:
         pass
@@ -91,6 +160,23 @@ class VectorDBBase(ABC):
         return False
 
 
+# Where a chunk sits in its document (set by the structured chunker). Stored
+# only when present: vector stores reject None-valued metadata.
+STRUCTURE_FIELDS = (
+    "section",
+    "char_start",
+    "char_end",
+    "page_start",
+    "page_end",
+    "chunker",
+    "doc_context",
+)
+
+
+def _structure_metadata(doc: dict[str, Any]) -> dict[str, Any]:
+    return {k: doc[k] for k in STRUCTURE_FIELDS if doc.get(k) not in (None, "")}
+
+
 def _has_tenant_scope(filter: dict | None) -> bool:
     """True when the filter pins a tenant scope — user_id or matter_id.
 
@@ -113,8 +199,13 @@ def _has_tenant_scope(filter: dict | None) -> bool:
 
 
 class ChromaDB(VectorDBBase):
-    def __init__(self):
-        chroma_path = settings.chroma_persist_dir
+    def __init__(self, path: str | None = None, lexical_path: str | None = None):
+        """Open (or create) the store at ``path``; default ``settings.chroma_persist_dir``.
+
+        The keyword index opens at ``lexical_path`` (default: beside the store).
+        """
+        chroma_path = path or settings.chroma_persist_dir
+        store_was_reset = False
         # Ensure the directory exists and is writable
         os.makedirs(chroma_path, exist_ok=True)
         if not os.access(chroma_path, os.W_OK):
@@ -169,7 +260,14 @@ class ChromaDB(VectorDBBase):
                 except OSError as rm_err:
                     logger.error(f"Cannot remove {fpath}: {rm_err}")
             self._open(chroma_path)
+            store_was_reset = True
             logger.info("ChromaDB re-initialized successfully with fresh database.")
+
+        self.lexical = open_lexical_index(lexical_path or default_lexical_path(path))
+        if store_was_reset:
+            # The vector store starts empty; keyword entries for documents
+            # that then fail to re-index must not stay searchable.
+            self._mirror("reset", lambda lx: lx.clear())
 
     def _open(self, chroma_path: str) -> None:
         self.client = chromadb.PersistentClient(
@@ -233,10 +331,18 @@ class ChromaDB(VectorDBBase):
             # the chunk is tagged to a matter. Untagged chunks stay owner-scoped.
             if doc.get("matter_id"):
                 meta["matter_id"] = doc["matter_id"]
+            meta.update(_structure_metadata(doc))
             metadatas.append(meta)
             texts.append(doc.get("text", ""))
 
         self.collection.add(ids=ids, embeddings=embeddings, metadatas=metadatas, documents=texts)
+        self._mirror(
+            "add",
+            lambda lx: lx.add(
+                {"id": i, "text": t, "metadata": m}
+                for i, t, m in zip(ids, texts, metadatas, strict=True)
+            ),
+        )
 
         return ids
 
@@ -323,17 +429,37 @@ class ChromaDB(VectorDBBase):
         """Delete documents by ID."""
         try:
             self.collection.delete(ids=ids)
-            return True
         except (chromadb.errors.ChromaError, ValueError):
             return False
+        self._mirror("delete", lambda lx: lx.delete_ids(ids))
+        return True
 
     async def delete_by_document(self, document_id: str) -> bool:
         """Delete all chunks for a document."""
         try:
             self.collection.delete(where={"document_id": document_id})
-            return True
         except (chromadb.errors.ChromaError, ValueError):
             return False
+        self._mirror("delete", lambda lx: lx.delete_document(document_id))
+        return True
+
+    async def get_embeddings(self, ids: list[str]) -> dict[str, list[float]]:
+        """Stored vectors for ``ids`` (ids not in the store are omitted)."""
+        if not ids:
+            return {}
+        try:
+            got = self.collection.get(ids=list(ids), include=["embeddings"])
+        except (chromadb.errors.ChromaError, ValueError, sqlite3.Error) as e:
+            logger.warning(f"Could not read stored embeddings: {e}")
+            return {}
+        vectors = got.get("embeddings")
+        if vectors is None:
+            return {}
+        return {
+            chunk_id: [float(x) for x in vectors[i]]
+            for i, chunk_id in enumerate(got.get("ids") or [])
+            if i < len(vectors)
+        }
 
     async def update_document_matter(self, document_id: str, matter_id: str | None) -> bool:
         """Rewrite the matter tag on every chunk of a document (see base class)."""
@@ -353,6 +479,7 @@ class ChromaDB(VectorDBBase):
                 updated["matter_id"] = matter_id or ""
                 metadatas.append(updated)
             self.collection.update(ids=ids, metadatas=metadatas)
+            self._mirror("re-tag", lambda lx: lx.update_matter(document_id, matter_id))
             return True
         except (
             chromadb.errors.ChromaError,
@@ -440,6 +567,7 @@ class PineconeDB(VectorDBBase):
 
         self.index = self.pc.Index(settings.pinecone_index_name)
         self._dimension: int | None = None
+        self.lexical = open_lexical_index(default_lexical_path())
 
     def _probe_vector(self) -> list[float]:
         """A constant non-zero vector for filter-only lookups.
@@ -521,6 +649,7 @@ class PineconeDB(VectorDBBase):
             }
             if doc.get("matter_id"):
                 pine_meta["matter_id"] = doc["matter_id"]
+            pine_meta.update(_structure_metadata(doc))
             vectors.append({"id": doc_id, "values": doc["embedding"], "metadata": pine_meta})
 
         # Batch upsert
@@ -529,6 +658,19 @@ class PineconeDB(VectorDBBase):
             batch = vectors[i : i + batch_size]
             self.index.upsert(vectors=batch)
 
+        # The keyword index keeps the full chunk text (Pinecone's copy is
+        # bounded by its metadata limit).
+        self._mirror(
+            "add",
+            lambda lx: lx.add(
+                {
+                    "id": v["id"],
+                    "text": doc.get("text", ""),
+                    "metadata": {k: val for k, val in v["metadata"].items() if k != "text"},
+                }
+                for v, doc in zip(vectors, documents, strict=True)
+            ),
+        )
         return ids
 
     async def search(
@@ -564,17 +706,38 @@ class PineconeDB(VectorDBBase):
         """Delete documents by ID."""
         try:
             self.index.delete(ids=ids)
-            return True
         except (PineconeException, ConnectionError, ValueError):
             return False
+        self._mirror("delete", lambda lx: lx.delete_ids(ids))
+        return True
 
     async def delete_by_document(self, document_id: str) -> bool:
         """Delete all chunks for a document."""
         try:
             self.index.delete(filter={"document_id": document_id})
-            return True
         except (PineconeException, ConnectionError, ValueError):
             return False
+        self._mirror("delete", lambda lx: lx.delete_document(document_id))
+        return True
+
+    async def get_embeddings(self, ids: list[str]) -> dict[str, list[float]]:
+        """Stored vectors for ``ids`` (ids not in the index are omitted)."""
+        if not ids:
+            return {}
+        try:
+            fetched = self.index.fetch(ids=list(ids))
+        except (PineconeException, ConnectionError, ValueError, AttributeError) as e:
+            logger.warning(f"Could not read stored embeddings: {e}")
+            return {}
+        vectors = getattr(fetched, "vectors", None) or {}
+        out: dict[str, list[float]] = {}
+        for chunk_id, vector in vectors.items():
+            values = getattr(vector, "values", None)
+            if values is None and isinstance(vector, dict):
+                values = vector.get("values")
+            if values:
+                out[chunk_id] = [float(x) for x in values]
+        return out
 
     async def update_document_matter(self, document_id: str, matter_id: str | None) -> bool:
         """Rewrite the matter tag on every chunk of a document (see base class)."""
@@ -589,6 +752,7 @@ class PineconeDB(VectorDBBase):
                 # set_metadata merges, so the tag is overwritten in place; the
                 # empty string matches no matter id (owner-only), as in Chroma.
                 self.index.update(id=match.id, set_metadata={"matter_id": matter_id or ""})
+            self._mirror("re-tag", lambda lx: lx.update_matter(document_id, matter_id))
             return True
         except (PineconeException, ConnectionError, ValueError, AttributeError) as e:
             logger.error(f"Could not re-tag chunks of document {document_id}: {e}")

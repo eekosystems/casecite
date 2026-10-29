@@ -116,6 +116,36 @@ def extract_key_phrases(text: str, query: str) -> list[str]:
     return list(set(phrases))[:8]
 
 
+def describe_location(metadata: dict[str, Any]) -> str:
+    """Human-readable location of a chunk: section and page(s), when known."""
+    parts = []
+    section = metadata.get("section")
+    if section:
+        parts.append(str(section))
+    start, end = metadata.get("page_start"), metadata.get("page_end")
+    if start and end and end != start:
+        parts.append(f"pages {start}-{end}")
+    elif start:
+        parts.append(f"page {start}")
+    return ", ".join(parts)
+
+
+def _retrieval_description(result: dict[str, Any], filename: str, similarity: float) -> str:
+    """How the passage was found — by meaning, by its exact words, or both."""
+    by = result.get("retrieved_by") or ["vector"]
+    if "keyword" in by and "vector" in by:
+        return (
+            f"Found in '{filename}' by both meaning ({similarity:.1%} vector "
+            "similarity) and the question's exact words"
+        )
+    if "keyword" in by:
+        return (
+            f"Found in '{filename}' by the question's exact words "
+            f"({similarity:.1%} vector similarity)"
+        )
+    return f"Found semantic match in '{filename}' with {similarity:.1%} vector similarity"
+
+
 def build_document_citations(
     search_results: list[dict[str, Any]],
     query: str,
@@ -154,12 +184,16 @@ def build_document_citations(
                 ),
                 ReasoningStep(
                     type="Semantic Matching",
-                    description=f"Found semantic match in '{filename}' with {similarity:.1%} vector similarity",
+                    description=_retrieval_description(result, filename, similarity),
                     evidence=f'Matched passage begins: "{passage_preview}{"..." if len(passage_text) > 150 else ""}"',
                 ),
                 ReasoningStep(
                     type="Content Analysis",
-                    description=f"Identified relevant content in chunk #{metadata.get('chunk_index', 0) + 1} of document",
+                    description=(
+                        f"Located in {location}"
+                        if (location := describe_location(metadata))
+                        else f"Identified relevant content in chunk #{metadata.get('chunk_index', 0) + 1} of document"
+                    ),
                     evidence=f"Key phrases found: {', '.join(key_phrases[:5]) if key_phrases else 'General topical relevance'}",
                 ),
                 ReasoningStep(
@@ -173,14 +207,22 @@ def build_document_citations(
                 query_intent=f"User seeking information about: {query[:100]}",
                 matching_criteria=f"Vector similarity: {similarity:.3f} | Document type: {metadata.get('doc_type', 'document')} | Source: {metadata.get('source', 'local')}",
                 application=(
-                    f"Retrieved from '{filename}' because it is semantically similar to "
-                    f"the question (score {similarity:.2f}). This records why the passage "
+                    f"Retrieved from '{filename}' because it "
+                    + (
+                        "contains the question's words"
+                        if "keyword" in (result.get("retrieved_by") or [])
+                        else "is semantically similar to the question"
+                    )
+                    + f" (similarity {similarity:.2f}). This records why the passage "
                     "was retrieved; it is not a finding that the passage answers the question."
                 ),
             ),
             document_id=metadata.get("document_id"),
             url=metadata.get("url"),
             was_cited_by_ai=True,
+            section=metadata.get("section") or None,
+            page_start=metadata.get("page_start") or None,
+            page_end=metadata.get("page_end") or None,
         )
         citations.append(citation)
 

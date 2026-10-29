@@ -1,0 +1,1056 @@
+{
+  "version": 1,
+  "description": "Starter benchmark over the synthetic corpus in evals/corpus plus generated look-alike agreements (evals/distractors.py). Each question lists the passages that prove the answer (evidence), facts a correct answer must state (must_include: every inner list is a set of acceptable alternatives, at least one of which must appear; alternatives match whole words, case-insensitively, and a trailing * marks a stem such as accelerat*), statements a correct answer must not make (must_not_include), and a reference answer for the optional model-graded pass. expect_abstain marks questions the documents do not answer.",
+  "questions": [
+    {
+      "id": "msa-cure-qualifier",
+      "category": "qualifier",
+      "question": "Can Brightline terminate its agreement with Northwind immediately if Northwind materially breaches it?",
+      "evidence": [
+        {
+          "doc": "northwind_brightline_msa.txt",
+          "text": "Either Party may terminate this Agreement upon thirty (30) days' written notice to the other Party if the other Party commits a Material Breach, provided that the breaching Party fails to cure"
+        }
+      ],
+      "must_include": [
+        [
+          "30 days",
+          "thirty (30) days",
+          "thirty days",
+          "30-day",
+          "thirty (30) day"
+        ],
+        [
+          "cure*"
+        ]
+      ],
+      "reference_answer": "No. Termination for cause requires 30 days' written notice, and it takes effect only if Northwind fails to cure the Material Breach within that 30-day notice period (Section 5.2)."
+    },
+    {
+      "id": "msa-liquidity-acceleration",
+      "category": "defined_term",
+      "question": "What happens to the remaining fees under the Northwind MSA if Brightline is acquired?",
+      "evidence": [
+        {
+          "doc": "northwind_brightline_msa.txt",
+          "text": "Upon the occurrence of a Liquidity Event, all Fees payable for the remainder of the Initial Term shall become immediately due and payable"
+        },
+        {
+          "doc": "northwind_brightline_msa.txt",
+          "text": "the acquisition by any person or group of more than fifty percent (50%) of Customer's outstanding voting securities"
+        }
+      ],
+      "must_include": [
+        [
+          "immediately due",
+          "accelerat*"
+        ],
+        [
+          "remainder of the Initial Term",
+          "remaining",
+          "rest of the Initial Term"
+        ]
+      ],
+      "reference_answer": "An acquisition of Brightline is a Liquidity Event (merger, sale of substantially all assets, or acquisition of more than 50% of its voting securities). On a Liquidity Event all Fees for the remainder of the 36-month Initial Term become immediately due and payable (Section 3.4)."
+    },
+    {
+      "id": "msa-payment-terms-amended",
+      "category": "amendment",
+      "question": "How many days does Brightline have to pay Northwind's invoices?",
+      "evidence": [
+        {
+          "doc": "northwind_msa_amendment_1.txt",
+          "text": "Customer shall pay each undisputed invoice within forty-five (45) days of the invoice date"
+        }
+      ],
+      "must_include": [
+        [
+          "45 days",
+          "forty-five (45) days",
+          "forty-five days",
+          "45-day"
+        ]
+      ],
+      "reference_answer": "45 days from the invoice date. Amendment No. 1 replaced the original 30-day term in Section 3.2 with 45 days and moved invoicing to quarterly."
+    },
+    {
+      "id": "msa-liability-cap-amended",
+      "category": "amendment",
+      "question": "What is the liability cap in the Northwind and Brightline agreement?",
+      "evidence": [
+        {
+          "doc": "northwind_msa_amendment_1.txt",
+          "text": "shall not exceed two times (2x) the Fees paid or payable by Customer in the twelve (12) months preceding"
+        }
+      ],
+      "must_include": [
+        [
+          "two times",
+          "2x",
+          "twice",
+          "2 times"
+        ]
+      ],
+      "reference_answer": "As amended, each party's aggregate liability is capped at two times the Fees paid or payable in the 12 months before the claim, subject to the carve-outs in Section 10.3."
+    },
+    {
+      "id": "msa-cap-carveout",
+      "category": "qualifier",
+      "question": "Does the liability cap in the Northwind MSA apply to a breach of confidentiality?",
+      "evidence": [
+        {
+          "doc": "northwind_brightline_msa.txt",
+          "text": "do not apply to (a) a Party's indemnification obligations under Article 9, (b) a Party's breach of Article 6 (Confidentiality)"
+        }
+      ],
+      "must_include": [
+        [
+          "not apply",
+          "does not",
+          "doesn't",
+          "excluded",
+          "exception*",
+          "carve*",
+          "uncapped"
+        ]
+      ],
+      "reference_answer": "No. Section 10.3 excludes breaches of Article 6 (Confidentiality) from the damages exclusion and the cap, along with indemnification obligations and gross negligence or willful misconduct."
+    },
+    {
+      "id": "msa-section-11-3-c",
+      "category": "exact_clause",
+      "question": "What does Section 11.3(c) of the Northwind MSA require?",
+      "evidence": [
+        {
+          "doc": "northwind_brightline_msa.txt",
+          "text": "Notices of breach or of termination must be sent by both email and overnight courier and addressed to the General Counsel"
+        }
+      ],
+      "must_include": [
+        [
+          "email"
+        ],
+        [
+          "courier"
+        ],
+        [
+          "General Counsel"
+        ]
+      ],
+      "reference_answer": "Notices of breach or termination must be sent by both email and overnight courier, addressed to the receiving party's General Counsel."
+    },
+    {
+      "id": "msa-security-incident",
+      "category": "fact",
+      "question": "How quickly must Northwind notify Brightline of a security incident?",
+      "evidence": [
+        {
+          "doc": "northwind_brightline_msa.txt",
+          "text": "in any event within seventy-two (72) hours after Provider becomes aware of it"
+        }
+      ],
+      "must_include": [
+        [
+          "72 hours",
+          "seventy-two (72) hours",
+          "seventy-two hours",
+          "72-hour"
+        ]
+      ],
+      "reference_answer": "Without undue delay and in any event within 72 hours after Northwind becomes aware of it (Section 7.2)."
+    },
+    {
+      "id": "msa-convenience-fee",
+      "category": "fact",
+      "question": "What does it cost Brightline to terminate the Northwind MSA for convenience?",
+      "evidence": [
+        {
+          "doc": "northwind_brightline_msa.txt",
+          "text": "an early termination fee equal to fifty percent (50%) of the Fees that would have been payable for the remainder of the Initial Term"
+        }
+      ],
+      "must_include": [
+        [
+          "50%",
+          "fifty percent",
+          "50 percent",
+          "half"
+        ]
+      ],
+      "reference_answer": "After the first 12 months, on 120 days' notice, Brightline pays an early termination fee of 50% of the Fees that would have been payable for the rest of the Initial Term."
+    },
+    {
+      "id": "msa-uptime-amended",
+      "category": "amendment",
+      "question": "What uptime does Northwind commit to for Brightline?",
+      "evidence": [
+        {
+          "doc": "northwind_msa_amendment_1.txt",
+          "text": "\"99.5%\" is replaced with \"99.9%\""
+        }
+      ],
+      "must_include": [
+        [
+          "99.9"
+        ]
+      ],
+      "reference_answer": "99.9% monthly availability, as amended by Amendment No. 1 (originally 99.5%)."
+    },
+    {
+      "id": "msa-chronic-failure",
+      "category": "qualifier",
+      "question": "When can Brightline terminate because Northwind keeps missing its service levels?",
+      "evidence": [
+        {
+          "doc": "northwind_brightline_msa.txt",
+          "text": "fails to meet the Uptime Commitment in three (3) consecutive calendar months, Customer may terminate the affected Order Form"
+        }
+      ],
+      "must_include": [
+        [
+          "three",
+          "3"
+        ],
+        [
+          "consecutive"
+        ]
+      ],
+      "reference_answer": "Only if Northwind misses the Uptime Commitment in three consecutive months; Brightline may then terminate the affected Order Form by notice within 30 days after the third month and get a refund of prepaid Fees. Otherwise service credits are the exclusive remedy."
+    },
+    {
+      "id": "msa-non-renewal-notice",
+      "category": "fact",
+      "question": "How much notice is needed to stop the Northwind MSA from renewing automatically?",
+      "evidence": [
+        {
+          "doc": "northwind_brightline_msa.txt",
+          "text": "unless either Party gives written notice of non-renewal at least ninety (90) days before the end of the then-current term"
+        }
+      ],
+      "must_include": [
+        [
+          "90 days",
+          "ninety (90) days",
+          "ninety days"
+        ]
+      ],
+      "reference_answer": "Written notice of non-renewal at least 90 days before the end of the current term."
+    },
+    {
+      "id": "msa-insurance-absent",
+      "category": "missing_evidence",
+      "question": "What insurance coverage must Northwind carry under its MSA with Brightline?",
+      "evidence": [],
+      "expect_abstain": true,
+      "must_include": [
+        [
+          "does not",
+          "doesn't",
+          "no insurance",
+          "not address*",
+          "not specif*",
+          "silent",
+          "no provision",
+          "not contain*",
+          "no requirement",
+          "not found",
+          "not mention*",
+          "no clause",
+          "not include*"
+        ]
+      ],
+      "reference_answer": "The MSA contains no insurance requirement for Northwind."
+    },
+    {
+      "id": "lease-late-charge",
+      "category": "fact",
+      "question": "What is the late charge under the Calloway Bakery lease?",
+      "evidence": [
+        {
+          "doc": "harbor_point_calloway_lease.txt",
+          "text": "If any installment of rent is not received by Landlord within ten (10) days after its due date, Tenant shall pay a late charge equal to five percent (5%) of the overdue amount"
+        }
+      ],
+      "must_include": [
+        [
+          "5%",
+          "five percent",
+          "5 percent"
+        ],
+        [
+          "10 days",
+          "ten (10) days",
+          "ten days"
+        ]
+      ],
+      "reference_answer": "5% of the overdue amount if rent is not received within 10 days after its due date (Section 2.2)."
+    },
+    {
+      "id": "lease-renewal-window",
+      "category": "qualifier",
+      "question": "When must Calloway Bakery exercise its option to renew the Harbor Point lease?",
+      "evidence": [
+        {
+          "doc": "harbor_point_calloway_lease.txt",
+          "text": "not less than one hundred eighty (180) days and not more than three hundred sixty-five (365) days before the expiration of the initial term"
+        }
+      ],
+      "must_include": [
+        [
+          "180"
+        ],
+        [
+          "365"
+        ]
+      ],
+      "reference_answer": "By written notice given no less than 180 and no more than 365 days before the initial term expires, and only if Tenant is not in default; notice outside the window is void."
+    },
+    {
+      "id": "lease-renewal-rent",
+      "category": "fact",
+      "question": "How is rent set for the renewal term of the Calloway lease?",
+      "evidence": [
+        {
+          "doc": "harbor_point_calloway_lease.txt",
+          "text": "ninety-five percent (95%) of the Fair Market Rent for comparable retail space in Portland, Maine"
+        }
+      ],
+      "must_include": [
+        [
+          "95%",
+          "ninety-five percent",
+          "95 percent"
+        ]
+      ],
+      "reference_answer": "First renewal year rent is 95% of Fair Market Rent for comparable Portland retail space, then increases 3% annually."
+    },
+    {
+      "id": "lease-year-3-rent",
+      "category": "table",
+      "question": "What is the annual base rent in lease year 3 of the Calloway Bakery lease?",
+      "evidence": [
+        {
+          "doc": "harbor_point_calloway_lease.txt",
+          "text": "| 3 | $76,385.00 | $6,365.42 |"
+        }
+      ],
+      "must_include": [
+        [
+          "76,385"
+        ]
+      ],
+      "reference_answer": "$76,385.00 per year ($6,365.42 per month)."
+    },
+    {
+      "id": "lease-cam-share",
+      "category": "fact",
+      "question": "What is Calloway's proportionate share of common area costs at Harbor Point Commons?",
+      "evidence": [
+        {
+          "doc": "harbor_point_calloway_lease.txt",
+          "text": "\"Tenant's Proportionate Share\" is eight and four-tenths percent (8.4%)"
+        }
+      ],
+      "must_include": [
+        [
+          "8.4"
+        ]
+      ],
+      "reference_answer": "8.4%."
+    },
+    {
+      "id": "lease-assignment-consent",
+      "category": "qualifier",
+      "question": "Can Harbor Point refuse to consent to an assignment of the Calloway lease?",
+      "evidence": [
+        {
+          "doc": "harbor_point_calloway_lease.txt",
+          "text": "which Landlord shall not unreasonably withhold, condition or delay"
+        },
+        {
+          "doc": "harbor_point_calloway_lease.txt",
+          "text": "Landlord may withhold its consent in its sole discretion to any proposed assignee whose tangible net worth is less than Two Million Dollars ($2,000,000.00)"
+        }
+      ],
+      "must_include": [
+        [
+          "unreasonabl*"
+        ],
+        [
+          "2,000,000",
+          "$2 million",
+          "2 million",
+          "two million"
+        ]
+      ],
+      "reference_answer": "Only reasonably in general: consent may not be unreasonably withheld, conditioned or delayed. But Landlord may refuse in its sole discretion if the proposed assignee's tangible net worth is under $2,000,000."
+    },
+    {
+      "id": "lease-rofr-absent",
+      "category": "missing_evidence",
+      "question": "Does the Calloway Bakery lease give the tenant a right of first refusal to buy the building?",
+      "evidence": [],
+      "expect_abstain": true,
+      "must_include": [
+        [
+          "does not",
+          "doesn't",
+          "no right of first refusal",
+          "not address*",
+          "not specif*",
+          "silent",
+          "no provision",
+          "not contain*",
+          "not grant*",
+          "not found",
+          "not mention*",
+          "no such",
+          "not include*"
+        ]
+      ],
+      "reference_answer": "No. The lease contains no right of first refusal or purchase option."
+    },
+    {
+      "id": "lease-casualty",
+      "category": "qualifier",
+      "question": "What happens to the Calloway lease if the premises are destroyed by fire?",
+      "evidence": [
+        {
+          "doc": "harbor_point_calloway_lease.txt",
+          "text": "cannot be restored within one hundred eighty (180) days after the casualty, either party may terminate this Lease"
+        }
+      ],
+      "must_include": [
+        [
+          "180"
+        ]
+      ],
+      "reference_answer": "Landlord must restore and rent abates for the untenantable area; if restoration is estimated to take more than 180 days, either party may terminate by notice within 30 days after Landlord's estimate."
+    },
+    {
+      "id": "lease-security-deposit",
+      "category": "fact",
+      "question": "How large is the security deposit under the Harbor Point lease with Calloway?",
+      "evidence": [
+        {
+          "doc": "harbor_point_calloway_lease.txt",
+          "text": "Eighteen Thousand Dollars ($18,000.00) as security for Tenant's performance"
+        }
+      ],
+      "must_include": [
+        [
+          "18,000",
+          "eighteen thousand"
+        ]
+      ],
+      "reference_answer": "$18,000."
+    },
+    {
+      "id": "loan-fccr",
+      "category": "fact",
+      "question": "What fixed charge coverage ratio must Ostrander maintain under its loan from Ridgeway?",
+      "evidence": [
+        {
+          "doc": "ridgeway_ostrander_loan.txt",
+          "text": "a Fixed Charge Coverage Ratio of not less than 1.20 to 1.00"
+        }
+      ],
+      "must_include": [
+        [
+          "1.20",
+          "1.2 to 1",
+          "1.2x",
+          "1.2:1"
+        ]
+      ],
+      "reference_answer": "Not less than 1.20 to 1.00, tested at the end of each fiscal quarter (Section 7.1(a)), with a limited equity cure."
+    },
+    {
+      "id": "loan-cross-default",
+      "category": "qualifier",
+      "question": "Does a default on Ostrander's other debt cause a default under the Ridgeway loan?",
+      "evidence": [
+        {
+          "doc": "ridgeway_ostrander_loan.txt",
+          "text": "in an aggregate principal amount exceeding Two Hundred Fifty Thousand Dollars ($250,000.00), and the default permits the holder to accelerate"
+        }
+      ],
+      "must_include": [
+        [
+          "250,000"
+        ]
+      ],
+      "reference_answer": "Yes, if the other Indebtedness exceeds $250,000 in aggregate principal and the default permits that holder to accelerate it (Section 8.1(e))."
+    },
+    {
+      "id": "loan-coc-optional-acceleration",
+      "category": "qualifier",
+      "question": "If Ostrander undergoes a change in control, is the Ridgeway loan automatically accelerated?",
+      "evidence": [
+        {
+          "doc": "ridgeway_ostrander_loan.txt",
+          "text": "Lender may, at its option and by written notice to Borrower, declare all Obligations immediately due and payable"
+        },
+        {
+          "doc": "ridgeway_ostrander_loan.txt",
+          "text": "(h) a Change in Control occurs."
+        }
+      ],
+      "must_include": [
+        [
+          "not automatic*",
+          "isn't automatic*",
+          "at its option",
+          "may declare",
+          "may, at its option",
+          "option",
+          "elect*"
+        ]
+      ],
+      "reference_answer": "No. A Change in Control is an Event of Default under Section 8.1(h), but only a bankruptcy default accelerates automatically. For a Change in Control, Lender may, at its option and by written notice, declare the Obligations immediately due."
+    },
+    {
+      "id": "loan-coc-definition",
+      "category": "defined_term",
+      "question": "What counts as a Change in Control under the Ridgeway loan agreement?",
+      "evidence": [
+        {
+          "doc": "ridgeway_ostrander_loan.txt",
+          "text": "acquires beneficial ownership of thirty-five percent (35%) or more of the voting equity of Borrower"
+        },
+        {
+          "doc": "ridgeway_ostrander_loan.txt",
+          "text": "the Kessler Family Holders cease to own, directly or indirectly, at least fifty-one percent (51%)"
+        }
+      ],
+      "must_include": [
+        [
+          "35"
+        ],
+        [
+          "51"
+        ]
+      ],
+      "reference_answer": "Anyone other than the Kessler Family Holders acquiring 35% or more of Ostrander's voting equity, or the Kessler Family Holders ceasing to own at least 51%."
+    },
+    {
+      "id": "loan-prepayment-premium",
+      "category": "fact",
+      "question": "Is there a prepayment premium on the Ridgeway term loan to Ostrander?",
+      "evidence": [
+        {
+          "doc": "ridgeway_ostrander_loan.txt",
+          "text": "subject to a prepayment premium equal to two percent (2%) of the amount prepaid if prepaid on or before the first anniversary"
+        }
+      ],
+      "must_include": [
+        [
+          "2%",
+          "two percent"
+        ],
+        [
+          "1%",
+          "one percent"
+        ]
+      ],
+      "reference_answer": "Yes: 2% of the amount prepaid through the first anniversary, 1% through the second anniversary, and none after."
+    },
+    {
+      "id": "loan-default-rate",
+      "category": "fact",
+      "question": "What interest rate applies to the Ostrander loan while an Event of Default exists?",
+      "evidence": [
+        {
+          "doc": "ridgeway_ostrander_loan.txt",
+          "text": "the Obligations bear interest at the rate otherwise applicable plus two percent (2%) per annum"
+        }
+      ],
+      "must_include": [
+        [
+          "2%",
+          "two percent"
+        ]
+      ],
+      "reference_answer": "The otherwise applicable rate plus 2% per annum."
+    },
+    {
+      "id": "loan-section-7-1-b",
+      "category": "exact_clause",
+      "question": "What does Section 7.1(b) of the Ridgeway loan agreement require?",
+      "evidence": [
+        {
+          "doc": "ridgeway_ostrander_loan.txt",
+          "text": "(b) a Senior Leverage Ratio of not more than 3.00 to 1.00."
+        }
+      ],
+      "must_include": [
+        [
+          "3.00",
+          "3.0 to 1",
+          "3.0x",
+          "3:1",
+          "3 to 1"
+        ],
+        [
+          "Senior Leverage",
+          "leverage"
+        ]
+      ],
+      "reference_answer": "A Senior Leverage Ratio of not more than 3.00 to 1.00, tested quarterly."
+    },
+    {
+      "id": "supply-px200-price",
+      "category": "table",
+      "question": "What does Pelican charge Ostrander for PX-200?",
+      "evidence": [
+        {
+          "doc": "pelican_ostrander_supply.txt",
+          "text": "| PX-200 | Glass-filled nylon 6/6, 30% fill | $2.14 |"
+        }
+      ],
+      "must_include": [
+        [
+          "2.14"
+        ]
+      ],
+      "reference_answer": "$2.14 per pound (Schedule B), subject to the annual PPI adjustment capped at 4%."
+    },
+    {
+      "id": "supply-price-cap",
+      "category": "fact",
+      "question": "By how much can Pelican Polymers raise its prices each year?",
+      "evidence": [
+        {
+          "doc": "pelican_ostrander_supply.txt",
+          "text": "provided that no annual increase may exceed four percent (4%)"
+        }
+      ],
+      "must_include": [
+        [
+          "4%",
+          "four percent",
+          "4 percent"
+        ]
+      ],
+      "reference_answer": "By the change in the PPI for plastics materials and resins, but no more than 4% per year, effective each January 1."
+    },
+    {
+      "id": "supply-shortfall",
+      "category": "fact",
+      "question": "What happens if Ostrander buys less than its minimum volume from Pelican?",
+      "evidence": [
+        {
+          "doc": "pelican_ostrander_supply.txt",
+          "text": "a shortfall payment equal to thirty-five cents ($0.35) for each pound by which its purchases fell short of the Minimum Volume"
+        }
+      ],
+      "must_include": [
+        [
+          "0.35",
+          "thirty-five cents",
+          "35 cents"
+        ]
+      ],
+      "reference_answer": "Ostrander pays $0.35 per pound of shortfall below 400,000 pounds within 30 days of invoice; that is Pelican's sole remedy."
+    },
+    {
+      "id": "supply-force-majeure-payment",
+      "category": "qualifier",
+      "question": "Does force majeure excuse Ostrander from paying Pelican on time?",
+      "evidence": [
+        {
+          "doc": "pelican_ostrander_supply.txt",
+          "text": "provided that force majeure shall not excuse any obligation to pay money when due"
+        }
+      ],
+      "must_include": [
+        [
+          "not excuse",
+          "does not",
+          "doesn't",
+          "shall not excuse"
+        ]
+      ],
+      "reference_answer": "No. Section 7.1 excuses performance for force majeure but expressly does not excuse any obligation to pay money when due."
+    },
+    {
+      "id": "supply-risk-of-loss",
+      "category": "fact",
+      "question": "When does risk of loss pass to Ostrander for products bought from Pelican?",
+      "evidence": [
+        {
+          "doc": "pelican_ostrander_supply.txt",
+          "text": "Title and risk of loss pass to Buyer upon delivery to Buyer's carrier at that facility"
+        }
+      ],
+      "must_include": [
+        [
+          "carrier",
+          "FCA"
+        ]
+      ],
+      "reference_answer": "On delivery to Ostrander's carrier at Pelican's Baton Rouge facility (FCA, Incoterms 2020)."
+    },
+    {
+      "id": "emp-good-reason-relocation",
+      "category": "cross_reference",
+      "question": "Would Priya Raman get severance if she resigned because her office was moved 50 miles away?",
+      "evidence": [
+        {
+          "doc": "raman_executive_employment.txt",
+          "text": "relocation of the Executive's principal place of work by more than forty (40) miles"
+        },
+        {
+          "doc": "raman_executive_employment.txt",
+          "text": "or the Executive resigns for Good Reason, the Company shall (a) continue the Executive's base salary for six (6) months"
+        }
+      ],
+      "must_include": [
+        [
+          "40",
+          "forty"
+        ],
+        [
+          "Good Reason"
+        ],
+        [
+          "notice",
+          "cure*",
+          "60"
+        ]
+      ],
+      "reference_answer": "Yes, if she follows the Good Reason procedure: a relocation of more than 40 miles is Good Reason, but she must give notice within 60 days, allow a 30-day cure period, resign within 30 days after it, and sign the release. Severance is six months of salary plus up to six months of COBRA premiums."
+    },
+    {
+      "id": "emp-severance",
+      "category": "fact",
+      "question": "What severance does Northwind's VP of Engineering receive if terminated without cause?",
+      "evidence": [
+        {
+          "doc": "raman_executive_employment.txt",
+          "text": "continue the Executive's base salary for six (6) months after the termination date"
+        },
+        {
+          "doc": "raman_executive_employment.txt",
+          "text": "conditioned on the Executive signing, and not revoking, a general release of claims"
+        }
+      ],
+      "must_include": [
+        [
+          "six (6) months",
+          "6 months",
+          "six months"
+        ],
+        [
+          "release*"
+        ]
+      ],
+      "reference_answer": "Six months of base salary continuation and up to six months of employer COBRA premiums, conditioned on signing a release within 45 days."
+    },
+    {
+      "id": "emp-garden-leave",
+      "category": "fact",
+      "question": "Is Priya Raman paid while her non-compete is in effect?",
+      "evidence": [
+        {
+          "doc": "raman_executive_employment.txt",
+          "text": "during the Restricted Period the Company shall pay the Executive fifty percent (50%) of the Executive's highest annualized base salary"
+        }
+      ],
+      "must_include": [
+        [
+          "50%",
+          "fifty percent",
+          "half"
+        ]
+      ],
+      "reference_answer": "Yes, 50% of her highest annualized base salary in the prior two years, unless Northwind waives the non-compete within 10 days after termination."
+    },
+    {
+      "id": "emp-noncompete-length",
+      "category": "fact",
+      "question": "How long does the VP of Engineering's non-compete last after employment ends?",
+      "evidence": [
+        {
+          "doc": "raman_executive_employment.txt",
+          "text": "for twelve (12) months after it ends for any reason"
+        }
+      ],
+      "must_include": [
+        [
+          "12 months",
+          "twelve (12) months",
+          "twelve months",
+          "one year",
+          "1 year"
+        ]
+      ],
+      "reference_answer": "Twelve months after employment ends for any reason."
+    },
+    {
+      "id": "emp-bonus-target",
+      "category": "fact",
+      "question": "What is Priya Raman's target bonus?",
+      "evidence": [
+        {
+          "doc": "raman_executive_employment.txt",
+          "text": "a target of thirty percent (30%) of base salary"
+        }
+      ],
+      "must_include": [
+        [
+          "30%",
+          "thirty percent",
+          "30 percent"
+        ]
+      ],
+      "reference_answer": "30% of base salary, payable only if she is employed on the payment date."
+    },
+    {
+      "id": "nda-survival",
+      "category": "qualifier",
+      "question": "How long do confidentiality obligations last under the Halvorsen NDA?",
+      "evidence": [
+        {
+          "doc": "halvorsen_northwind_mutual_nda.txt",
+          "text": "continue for three (3) years after the end of the disclosure period"
+        },
+        {
+          "doc": "halvorsen_northwind_mutual_nda.txt",
+          "text": "continue for as long as the information remains a trade secret"
+        }
+      ],
+      "must_include": [
+        [
+          "three (3) years",
+          "3 years",
+          "three years"
+        ],
+        [
+          "trade secret*"
+        ]
+      ],
+      "reference_answer": "For three years after the two-year disclosure period ends, except that trade secrets stay protected for as long as they remain trade secrets."
+    },
+    {
+      "id": "nda-residuals",
+      "category": "defined_term",
+      "question": "Can Northwind use information its engineers remember from the Halvorsen evaluation?",
+      "evidence": [
+        {
+          "doc": "halvorsen_northwind_mutual_nda.txt",
+          "text": "\"Residuals\" means information in non-tangible form retained in the unaided memory of the Recipient's employees"
+        }
+      ],
+      "must_include": [
+        [
+          "Residual*",
+          "unaided memory"
+        ]
+      ],
+      "reference_answer": "Yes, as Residuals: information retained in employees' unaided memory without intentional memorization may be used for any purpose, but this grants no patent or copyright license and does not allow disclosing the source or Halvorsen's financial information."
+    },
+    {
+      "id": "nda-governing-law-absent",
+      "category": "missing_evidence",
+      "question": "What law governs the Halvorsen Maritime NDA?",
+      "evidence": [],
+      "expect_abstain": true,
+      "must_include": [
+        [
+          "does not",
+          "doesn't",
+          "no governing law",
+          "not address*",
+          "not specif*",
+          "silent",
+          "no provision",
+          "not contain*",
+          "not state*",
+          "not found",
+          "not mention*",
+          "no choice",
+          "not include*"
+        ]
+      ],
+      "reference_answer": "The NDA has no governing law clause."
+    },
+    {
+      "id": "nda-return",
+      "category": "fact",
+      "question": "How quickly must confidential information be returned under the Halvorsen NDA?",
+      "evidence": [
+        {
+          "doc": "halvorsen_northwind_mutual_nda.txt",
+          "text": "Within fifteen (15) days after the Discloser's written request"
+        }
+      ],
+      "must_include": [
+        [
+          "15 days",
+          "fifteen (15) days",
+          "fifteen days"
+        ]
+      ],
+      "reference_answer": "Within 15 days after written request, with certification of destruction; legally required and backup copies may be kept."
+    },
+    {
+      "id": "apa-deductible",
+      "category": "qualifier",
+      "question": "How does the indemnification basket work in the Kestrel asset purchase?",
+      "evidence": [
+        {
+          "doc": "kestrel_ridgeline_asset_purchase.txt",
+          "text": "until the aggregate Losses exceed one percent (1%) of the Purchase Price (the \"Deductible\"), and then only for Losses in excess of the Deductible"
+        }
+      ],
+      "must_include": [
+        [
+          "deductible",
+          "excess"
+        ],
+        [
+          "1%",
+          "one percent",
+          "120,000"
+        ]
+      ],
+      "reference_answer": "It is a true deductible of 1% of the $12,000,000 Purchase Price ($120,000): Seller is liable only for Losses above that amount. It does not apply to fraud or Fundamental Representation breaches."
+    },
+    {
+      "id": "apa-cap",
+      "category": "fact",
+      "question": "What is the cap on Ridgeline's indemnification obligations?",
+      "evidence": [
+        {
+          "doc": "kestrel_ridgeline_asset_purchase.txt",
+          "text": "shall not exceed fifteen percent (15%) of the Purchase Price"
+        }
+      ],
+      "must_include": [
+        [
+          "15%",
+          "fifteen percent",
+          "1,800,000",
+          "1.8 million"
+        ]
+      ],
+      "reference_answer": "15% of the Purchase Price ($1,800,000) for representation breaches; fraud and Fundamental Representation breaches are capped only at the Purchase Price."
+    },
+    {
+      "id": "apa-sandbagging",
+      "category": "qualifier",
+      "question": "Can Kestrel recover for a breach of a representation it knew about before closing?",
+      "evidence": [
+        {
+          "doc": "kestrel_ridgeline_asset_purchase.txt",
+          "text": "or by any knowledge acquired or capable of being acquired by Buyer at any time, whether before or after the Closing"
+        }
+      ],
+      "must_include": [
+        [
+          "not affected",
+          "regardless",
+          "knowledge does not",
+          "even if",
+          "pro-sandbagging",
+          "sandbagging"
+        ]
+      ],
+      "reference_answer": "Yes. Section 9.7 is a pro-sandbagging clause: Buyer's indemnification rights are not affected by its knowledge at any time, before or after Closing."
+    },
+    {
+      "id": "apa-fundamental-survival",
+      "category": "fact",
+      "question": "How long do fundamental representations survive under the Kestrel asset purchase agreement?",
+      "evidence": [
+        {
+          "doc": "kestrel_ridgeline_asset_purchase.txt",
+          "text": "the Fundamental Representations survive until six (6) years after the Closing Date"
+        }
+      ],
+      "must_include": [
+        [
+          "six (6) years",
+          "6 years",
+          "six years"
+        ]
+      ],
+      "reference_answer": "Six years after Closing (organization and authority, title, and taxes); other representations survive 18 months."
+    },
+    {
+      "id": "apa-escrow",
+      "category": "fact",
+      "question": "How much of the Kestrel purchase price is held in escrow, and for how long?",
+      "evidence": [
+        {
+          "doc": "kestrel_ridgeline_asset_purchase.txt",
+          "text": "One Million Two Hundred Thousand Dollars ($1,200,000.00) of the Purchase Price with the escrow agent"
+        }
+      ],
+      "must_include": [
+        [
+          "1,200,000",
+          "1.2 million"
+        ],
+        [
+          "18",
+          "eighteen"
+        ]
+      ],
+      "reference_answer": "$1,200,000, released 18 months after Closing less pending claims."
+    },
+    {
+      "id": "multi-coc-acceleration",
+      "category": "multi_doc",
+      "question": "Which of our agreements accelerate payments when a party undergoes a change of control?",
+      "evidence": [
+        {
+          "doc": "northwind_brightline_msa.txt",
+          "text": "Upon the occurrence of a Liquidity Event, all Fees payable for the remainder of the Initial Term shall become immediately due and payable"
+        },
+        {
+          "doc": "ridgeway_ostrander_loan.txt",
+          "text": "Lender may, at its option and by written notice to Borrower, declare all Obligations immediately due and payable"
+        }
+      ],
+      "must_include": [
+        [
+          "Northwind",
+          "Brightline"
+        ],
+        [
+          "Ridgeway",
+          "Ostrander"
+        ]
+      ],
+      "reference_answer": "The Northwind and Brightline MSA (a Liquidity Event automatically accelerates all remaining Initial Term Fees) and the Ridgeway loan to Ostrander (a Change in Control is an Event of Default that lets Lender, at its option, accelerate)."
+    },
+    {
+      "id": "multi-ostrander-agreements",
+      "category": "multi_doc",
+      "question": "Which agreements is Ostrander Tool & Die a party to?",
+      "evidence": [
+        {
+          "doc": "ridgeway_ostrander_loan.txt",
+          "text": "Ridgeway Capital Partners, L.P., a Delaware limited partnership (\"Lender\"), and Ostrander Tool & Die Co."
+        },
+        {
+          "doc": "pelican_ostrander_supply.txt",
+          "text": "Pelican Polymers Corp., a Louisiana corporation (\"Supplier\"), and Ostrander Tool & Die Co."
+        }
+      ],
+      "must_include": [
+        [
+          "Ridgeway",
+          "Loan"
+        ],
+        [
+          "Pelican",
+          "Supply"
+        ]
+      ],
+      "reference_answer": "The Loan and Security Agreement with Ridgeway Capital Partners and the Supply Agreement with Pelican Polymers."
+    }
+  ]
+}

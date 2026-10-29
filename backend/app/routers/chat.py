@@ -244,6 +244,7 @@ async def _per_file_answer(request: ChatRequest, ctx: _ChatContext) -> dict | No
             user_id=ctx.user_id,
             user_keys=ctx.user_keys,
             model=ctx.user_settings.llm_model,
+            accessible_matter_ids=ctx.accessible_matters,
         )
     except Exception as e:  # per-file must never kill chat
         logger.warning(f"Per-file answering failed, answering normally: {e}")

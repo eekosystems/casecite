@@ -1,0 +1,111 @@
+LOAN AND SECURITY AGREEMENT
+
+This Loan and Security Agreement (this "Agreement") is dated as of January 15, 2025 and is entered into between Ridgeway Capital Partners, L.P., a Delaware limited partnership ("Lender"), and Ostrander Tool & Die Co., an Ohio corporation ("Borrower").
+
+ARTICLE 1
+DEFINITIONS
+
+1.1 "Business Day" means any day other than a Saturday, Sunday or day on which banks in New York City are authorized to close.
+
+1.2 "Change in Control" means (a) any person or group, other than the Kessler Family Holders, acquires beneficial ownership of thirty-five percent (35%) or more of the voting equity of Borrower; or (b) the Kessler Family Holders cease to own, directly or indirectly, at least fifty-one percent (51%) of the voting equity of Borrower.
+
+1.3 "Collateral" means all of Borrower's personal property, including accounts, inventory, equipment, general intangibles and proceeds, as further described in Article 6.
+
+1.4 "Fixed Charge Coverage Ratio" means, for any period of four consecutive fiscal quarters, the ratio of (a) EBITDA minus unfinanced capital expenditures and cash taxes to (b) scheduled principal and interest payments on all Indebtedness.
+
+1.5 "Indebtedness" means all obligations for borrowed money, capital lease obligations, and guarantees of the foregoing.
+
+1.6 "Kessler Family Holders" means Robert Kessler, Anne Kessler, their lineal descendants, and trusts for their benefit.
+
+1.7 "Obligations" means all loans, interest, fees, expenses and other amounts owed by Borrower to Lender under the Loan Documents.
+
+1.8 "Senior Leverage Ratio" means the ratio of senior funded Indebtedness to EBITDA for the most recent four fiscal quarters.
+
+1.9 "SOFR" means the secured overnight financing rate administered by the Federal Reserve Bank of New York, with a floor of zero.
+
+ARTICLE 2
+THE LOAN
+
+2.1 Term Loan. Lender shall make a term loan to Borrower on the closing date in the principal amount of Four Million Five Hundred Thousand Dollars ($4,500,000.00) (the "Term Loan").
+
+2.2 Interest. The Term Loan bears interest at a floating rate per annum equal to SOFR plus three and one-quarter percent (3.25%), payable monthly in arrears.
+
+2.3 Amortization and Maturity. Borrower shall repay principal in equal quarterly installments of One Hundred Twelve Thousand Five Hundred Dollars ($112,500.00) beginning March 31, 2025. All outstanding Obligations are due on December 31, 2029 (the "Maturity Date").
+
+2.4 Prepayment. Borrower may prepay the Term Loan in whole or in part, subject to a prepayment premium equal to two percent (2%) of the amount prepaid if prepaid on or before the first anniversary of the closing date, one percent (1%) if prepaid after the first anniversary and on or before the second anniversary, and zero thereafter.
+
+2.5 Default Rate. While an Event of Default exists, the Obligations bear interest at the rate otherwise applicable plus two percent (2%) per annum.
+
+ARTICLE 3
+CONDITIONS PRECEDENT
+
+3.1 Closing Conditions. Lender's obligation to make the Term Loan is subject to receipt of executed Loan Documents, a perfection certificate, evidence of insurance, and a solvency certificate from Borrower's chief financial officer.
+
+ARTICLE 4
+REPRESENTATIONS AND WARRANTIES
+
+4.1 Organization. Borrower is duly organized, validly existing and in good standing under the laws of Ohio.
+
+4.2 Financial Statements. The audited financial statements of Borrower for the fiscal year ended December 31, 2024 fairly present its financial condition in accordance with GAAP.
+
+ARTICLE 5
+AFFIRMATIVE COVENANTS
+
+5.1 Reporting. Borrower shall deliver quarterly financial statements within forty-five (45) days after each fiscal quarter and audited annual statements within one hundred twenty (120) days after each fiscal year, each with a compliance certificate.
+
+5.2 Insurance. Borrower shall maintain property insurance on the Collateral naming Lender as lender loss payee.
+
+ARTICLE 6
+SECURITY INTEREST
+
+6.1 Grant. To secure the Obligations, Borrower grants Lender a continuing first-priority security interest in all Collateral.
+
+ARTICLE 7
+FINANCIAL COVENANTS
+
+7.1 Covenants. Borrower shall maintain, tested as of the last day of each fiscal quarter:
+
+(a) a Fixed Charge Coverage Ratio of not less than 1.20 to 1.00; and
+
+(b) a Senior Leverage Ratio of not more than 3.00 to 1.00.
+
+7.2 Equity Cure. If Borrower fails to satisfy Section 7.1(a), the Kessler Family Holders may contribute cash equity within fifteen (15) Business Days after the compliance certificate is due, and that contribution is added to EBITDA for the failed quarter. The equity cure may be used no more than twice during the term of the Term Loan and never in consecutive quarters.
+
+ARTICLE 8
+EVENTS OF DEFAULT AND REMEDIES
+
+8.1 Events of Default. Each of the following is an "Event of Default":
+
+(a) Borrower fails to pay any principal or interest within five (5) Business Days after it is due;
+
+(b) Borrower fails to comply with Article 7;
+
+(c) Borrower fails to perform any other covenant and the failure continues for thirty (30) days after written notice from Lender;
+
+(d) any representation or warranty proves to have been materially incorrect when made;
+
+(e) Borrower defaults under any other agreement governing Indebtedness in an aggregate principal amount exceeding Two Hundred Fifty Thousand Dollars ($250,000.00), and the default permits the holder to accelerate that Indebtedness;
+
+(f) Borrower becomes subject to any voluntary or involuntary bankruptcy or insolvency proceeding;
+
+(g) a final judgment exceeding Five Hundred Thousand Dollars ($500,000.00) is entered against Borrower and remains unsatisfied for sixty (60) days; or
+
+(h) a Change in Control occurs.
+
+8.2 Remedies. Upon the occurrence of an Event of Default described in Section 8.1(f), all Obligations shall automatically become immediately due and payable. Upon the occurrence of any other Event of Default, Lender may, at its option and by written notice to Borrower, declare all Obligations immediately due and payable, and may exercise all rights of a secured party under the Uniform Commercial Code.
+
+ARTICLE 9
+MISCELLANEOUS
+
+9.1 Governing Law. This Agreement is governed by the laws of the State of New York.
+
+9.2 Jury Waiver. Each party waives its right to a jury trial in any action arising out of this Agreement.
+
+9.3 Amendments. No amendment or waiver is effective unless in writing and signed by Lender and Borrower.
+
+RIDGEWAY CAPITAL PARTNERS, L.P.
+By: Ridgeway GP LLC, its general partner
+By: Samuel Achterberg, Managing Director
+
+OSTRANDER TOOL & DIE CO.
+By: Robert Kessler, Chief Executive Officer

@@ -9,6 +9,7 @@ jurisdiction-to-court mapping live here so they cannot drift apart.
 Requests themselves go through ``courtlistener_gate.cl_client``.
 """
 
+import re
 from datetime import date, datetime
 
 BASE_URL = "https://www.courtlistener.com/api/rest/v4"
@@ -63,6 +64,60 @@ JURISDICTION_COURTS: dict[str, list[str]] = {
 def courts_for_jurisdiction(jurisdiction: str) -> list[str]:
     """Map a jurisdiction name to CourtListener court ids ([] when unknown)."""
     return list(JURISDICTION_COURTS.get(jurisdiction.lower(), []))
+
+
+# "9th", "9th cir", "ninth circuit" style circuit references.
+_CIRCUIT_NUMBER = re.compile(r"^(\d{1,2})(?:st|nd|rd|th)?(?:[\s_.-]*cir(?:cuit|\.)?)?$")
+_CIRCUIT_WORDS = {
+    "first": 1,
+    "second": 2,
+    "third": 3,
+    "fourth": 4,
+    "fifth": 5,
+    "sixth": 6,
+    "seventh": 7,
+    "eighth": 8,
+    "ninth": 9,
+    "tenth": 10,
+    "eleventh": 11,
+}
+# A value that already is a CourtListener court id ("ca9", "nysd", "calctapp").
+_COURT_ID = re.compile(r"^[a-z][a-z0-9]{1,15}$")
+
+
+def resolve_court_ids(values: list[str] | None) -> list[str]:
+    """Court filter values as a user types them -> CourtListener court ids.
+
+    Accepts jurisdiction names ("california", "federal"), circuit references
+    ("9th", "9th cir", "ninth circuit") and raw court ids ("ca9", "nysd").
+    Anything unrecognisable is dropped rather than sent: an invalid court id
+    makes CourtListener return nothing, which would read as "no case law".
+    """
+    ids: list[str] = []
+    for raw in values or []:
+        value = (raw or "").strip().lower()
+        if not value:
+            continue
+        key = re.sub(r"[\s-]+", "_", value)
+        mapped = courts_for_jurisdiction(key)
+        if not mapped:
+            number = None
+            match = _CIRCUIT_NUMBER.match(value)
+            if match:
+                number = int(match.group(1))
+            else:
+                word = key.removesuffix("_circuit").removesuffix("_cir")
+                number = _CIRCUIT_WORDS.get(word)
+            if number and 1 <= number <= 11:
+                mapped = [f"ca{number}"]
+            elif value in ("dc", "d.c.", "dc_cir", "d.c._cir."):
+                mapped = ["cadc"]
+            elif _COURT_ID.match(value):
+                mapped = [value]
+        for court_id in mapped:
+            if court_id not in ids:
+                ids.append(court_id)
+    return ids
 
 
 def parse_date(date_str: str | None) -> date | None:

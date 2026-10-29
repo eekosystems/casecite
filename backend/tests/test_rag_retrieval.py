@@ -334,7 +334,7 @@ RETRIEVED = [
 def _quiet_post_processing():
     """Skip the best-effort utility passes that would build real clients."""
     with (
-        patch("app.services.rag.service.ground_answer_claims", AsyncMock(return_value=None)),
+        patch("app.services.rag.service.ground_answer", AsyncMock(return_value=None)),
         patch("app.services.rag.service.enrich_citations_with_reasoning", AsyncMock()),
     ):
         yield
@@ -1036,7 +1036,7 @@ class TestPerFileProvider:
     def _documents():
         doc_service = MagicMock()
         doc_service.get_document_text = AsyncMock(
-            side_effect=lambda doc_id, user_id: (
+            side_effect=lambda doc_id, user_id, *_scope: (
                 f"{doc_id}.pdf",
                 "This agreement renews automatically each year.",
             )
@@ -1183,7 +1183,7 @@ class TestPerFileCaseLawGuard:
     def _documents(text: str):
         doc_service = MagicMock()
         doc_service.get_document_text = AsyncMock(
-            side_effect=lambda doc_id, user_id: (f"{doc_id}.pdf", text)
+            side_effect=lambda doc_id, user_id, *_scope: (f"{doc_id}.pdf", text)
         )
         return doc_service
 

@@ -1,0 +1,59 @@
+EXECUTIVE EMPLOYMENT AGREEMENT
+
+This Executive Employment Agreement (this "Agreement") is entered into as of February 3, 2025 between Northwind Analytics, Inc., a Delaware corporation (the "Company"), and Priya Raman (the "Executive").
+
+1. POSITION AND DUTIES
+
+1.1 Position. The Company employs the Executive as Vice President of Engineering, reporting to the Chief Technology Officer.
+
+1.2 Location. The Executive's principal place of work is the Company's office in Boston, Massachusetts, subject to reasonable business travel.
+
+2. COMPENSATION
+
+2.1 Base Salary. The Company shall pay the Executive a base salary at the annual rate of Two Hundred Sixty-Five Thousand Dollars ($265,000), payable in accordance with the Company's payroll practices and reviewed annually.
+
+2.2 Annual Bonus. The Executive is eligible for an annual performance bonus with a target of thirty percent (30%) of base salary, based on Company and individual objectives set by the Board. The Executive must be employed on the payment date to earn a bonus.
+
+2.3 Equity. The Executive will receive the stock option grant described in a separate award agreement, which governs its vesting and exercise.
+
+2.4 Benefits. The Executive may participate in the benefit plans the Company makes available to its senior employees.
+
+3. DEFINITIONS
+
+3.1 "Cause" means the Executive's (a) conviction of, or plea of no contest to, a felony; (b) fraud or embezzlement against the Company; (c) willful and continued failure to perform material duties after written notice and a fifteen (15) day opportunity to cure; or (d) material breach of Section 6.
+
+3.2 "Good Reason" means the occurrence of any of the following without the Executive's written consent: (i) a reduction of more than ten percent (10%) in the Executive's base salary, other than an across-the-board reduction applying to all senior executives; (ii) relocation of the Executive's principal place of work by more than forty (40) miles; or (iii) a material diminution in the Executive's title, authority or duties. A resignation is for Good Reason only if the Executive gives written notice within sixty (60) days after the condition first occurs, the Company fails to cure the condition within thirty (30) days after that notice, and the Executive resigns within thirty (30) days after the cure period ends.
+
+4. TERMINATION
+
+4.1 At-Will Employment. The Executive's employment is at will and may be terminated by either party at any time, subject to this Section 4.
+
+4.2 Severance. If the Company terminates the Executive's employment without Cause, or the Executive resigns for Good Reason, the Company shall (a) continue the Executive's base salary for six (6) months after the termination date, and (b) pay the employer portion of COBRA premiums for up to six (6) months, in each case subject to Section 4.3.
+
+4.3 Release. The severance in Section 4.2 is conditioned on the Executive signing, and not revoking, a general release of claims in a form provided by the Company within forty-five (45) days after the termination date.
+
+4.4 Termination for Cause or Resignation. If employment ends for Cause or the Executive resigns without Good Reason, the Executive is entitled only to accrued but unpaid salary and benefits.
+
+5. CONFIDENTIALITY AND INVENTIONS
+
+5.1 The Executive shall comply with the Company's Proprietary Information and Inventions Assignment Agreement, which is incorporated by reference.
+
+6. RESTRICTIVE COVENANTS
+
+6.1 Noncompetition. During employment and for twelve (12) months after it ends for any reason (the "Restricted Period"), the Executive shall not provide services to any business that develops or sells clinical data analytics software in any state in which the Company does business on the termination date.
+
+6.2 Garden Leave Pay. In consideration of Section 6.1, during the Restricted Period the Company shall pay the Executive fifty percent (50%) of the Executive's highest annualized base salary within the two years before termination, unless the Company waives the noncompetition covenant in writing within ten (10) days after the termination date.
+
+6.3 Non-Solicitation. For eighteen (18) months after employment ends, the Executive shall not solicit any Company employee to leave the Company or solicit any customer of the Company with which the Executive had material contact in the last two years of employment.
+
+7. GENERAL
+
+7.1 Governing Law. This Agreement is governed by the laws of the Commonwealth of Massachusetts.
+
+7.2 Entire Agreement. This Agreement and the documents incorporated by reference are the entire agreement between the parties on its subject matter.
+
+NORTHWIND ANALYTICS, INC.
+By: Daniel Okafor, Chief Executive Officer
+
+EXECUTIVE
+Priya Raman

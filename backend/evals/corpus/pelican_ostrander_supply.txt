@@ -1,0 +1,71 @@
+SUPPLY AGREEMENT
+
+This Supply Agreement (this "Agreement") is made as of July 1, 2025 between Pelican Polymers Corp., a Louisiana corporation ("Supplier"), and Ostrander Tool & Die Co., an Ohio corporation ("Buyer").
+
+1. SCOPE
+
+1.1 Products. Supplier shall manufacture and sell to Buyer, and Buyer shall purchase from Supplier, the engineering resins listed in Schedule B (the "Products") in accordance with purchase orders issued under this Agreement.
+
+1.2 Specifications. Each Product shall conform to the specifications in Schedule A, as amended by written agreement of the parties.
+
+2. TERM
+
+2.1 Term. This Agreement has an initial term of three (3) years from its effective date and renews for successive one-year terms unless either party gives notice of non-renewal at least six (6) months before the end of the then-current term.
+
+3. PURCHASE COMMITMENT
+
+3.1 Minimum Annual Volume. In each contract year Buyer shall purchase not less than four hundred thousand (400,000) pounds of Products in the aggregate (the "Minimum Volume").
+
+3.2 Shortfall Payment. If Buyer purchases less than the Minimum Volume in a contract year, Buyer shall pay Supplier, within thirty (30) days after Supplier's invoice, a shortfall payment equal to thirty-five cents ($0.35) for each pound by which its purchases fell short of the Minimum Volume. The shortfall payment is Supplier's sole remedy for the shortfall.
+
+3.3 Forecasts. Buyer shall provide a rolling twelve (12) month non-binding forecast each calendar quarter; the first three (3) months of each forecast are binding.
+
+4. PRICING AND PAYMENT
+
+4.1 Prices. Prices for the Products are set out in Schedule B.
+
+4.2 Annual Adjustment. Effective each January 1, Supplier may adjust prices by the percentage change over the preceding twelve months in the Producer Price Index for plastics materials and resins published by the U.S. Bureau of Labor Statistics, provided that no annual increase may exceed four percent (4%).
+
+4.3 Payment. Buyer shall pay each invoice within forty-five (45) days after the invoice date. Disputed amounts must be identified in writing within fifteen (15) days of receipt of the invoice.
+
+5. DELIVERY
+
+5.1 Terms. Products are delivered FCA Supplier's facility in Baton Rouge, Louisiana (Incoterms 2020). Title and risk of loss pass to Buyer upon delivery to Buyer's carrier at that facility.
+
+5.2 Lead Time. Supplier shall deliver within twenty-one (21) days after acceptance of each purchase order.
+
+6. WARRANTY
+
+6.1 Product Warranty. Supplier warrants that each Product will conform to its specifications for twelve (12) months after delivery.
+
+6.2 Remedy. Buyer's exclusive remedy for non-conforming Product is, at Supplier's option, replacement of the Product or a refund of its purchase price, provided Buyer notifies Supplier within thirty (30) days after discovering the non-conformity.
+
+7. FORCE MAJEURE
+
+7.1 Excused Performance. Neither party is liable for failure or delay in performing its obligations to the extent caused by events beyond its reasonable control, including fire, flood, hurricane, war, epidemic, governmental action or failure of public utilities; provided that force majeure shall not excuse any obligation to pay money when due.
+
+7.2 Extended Force Majeure. If a force majeure event prevents Supplier from delivering Products for more than ninety (90) consecutive days, Buyer may cancel the affected purchase orders and purchase substitute products from third parties without liability for the Minimum Volume during the affected period.
+
+8. LIMITATION OF LIABILITY
+
+8.1 Neither party is liable for lost profits or consequential damages. Supplier's aggregate liability under this Agreement in any contract year shall not exceed the amounts paid by Buyer in that contract year.
+
+9. GENERAL
+
+9.1 Governing Law. This Agreement is governed by the laws of the State of Texas.
+
+9.2 Assignment. Neither party may assign this Agreement without the other party's written consent, not to be unreasonably withheld.
+
+SCHEDULE B
+PRODUCTS AND PRICES
+
+| Product Code | Description | Price per Pound |
+| PX-100 | General purpose polypropylene compound | $1.82 |
+| PX-200 | Glass-filled nylon 6/6, 30% fill | $2.14 |
+| PX-310 | Flame-retardant polycarbonate blend | $2.67 |
+
+PELICAN POLYMERS CORP.
+By: Lucien Thibodeaux, Vice President of Sales
+
+OSTRANDER TOOL & DIE CO.
+By: Robert Kessler, Chief Executive Officer

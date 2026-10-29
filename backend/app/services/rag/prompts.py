@@ -35,6 +35,15 @@ STRATEGIC ANALYSIS - YOU ARE ENCOURAGED TO:
 You are a strategic advisor, not just a search engine. Use the provided documents as context to give thoughtful, analytical responses. You CAN and SHOULD provide strategic insights, recommendations, and hypothetical analysis based on the document content."""
 
 
+# How to read the documents, for every answer over them (factual or analytical,
+# default or custom grounding rules): the failure modes here are the ones that
+# make a correctly quoted answer wrong.
+DOCUMENT_READING_RULES = """READING RULES:
+- If an amendment or later document changes a provision, answer from the provision as amended and say what it replaced.
+- Keep every condition that changes the outcome: notice and cure periods, thresholds, exceptions, carve-outs and "provided that" language.
+- If the documents do not answer the question, say so plainly; do not fill the gap from general knowledge."""
+
+
 def get_default_grounding_rules() -> str:
     """Get the default grounding rules."""
     return """INSTRUCTIONS:

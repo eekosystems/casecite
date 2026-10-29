@@ -208,7 +208,7 @@ class TestRAGService:
 
         with (
             patch("app.services.rag.service.search_documents", AsyncMock(return_value=retrieved)),
-            patch("app.services.rag.service.ground_answer_claims", AsyncMock(return_value=None)),
+            patch("app.services.rag.service.ground_answer", AsyncMock(return_value=None)),
             patch("app.services.rag.service.enrich_citations_with_reasoning", AsyncMock()),
         ):
             result = await service.generate_response(

@@ -235,24 +235,22 @@ def chroma_db(tmp_path):
         metadata={"hnsw:space": "cosine"},
     )
 
-    # Create a minimal ChromaDB-like object
-    class TestChromaDB:
-        pass
+    from app.services.lexical_index import LexicalIndex
+    from app.services.vectordb import ChromaDB
+
+    # The real ChromaDB class over the test collection, with its own keyword
+    # index: skip __init__ (it opens settings.chroma_persist_dir) and attach
+    # the isolated client, collection and index instead.
+    class TestChromaDB(ChromaDB):
+        def __init__(self):
+            pass
 
     db = TestChromaDB()
     db.client = client
     db.collection = collection
-
-    # Bind ChromaDB methods
-    from app.services.vectordb import ChromaDB
-
-    db.add_documents = ChromaDB.add_documents.__get__(db, TestChromaDB)
-    db.search = ChromaDB.search.__get__(db, TestChromaDB)
-    db.delete = ChromaDB.delete.__get__(db, TestChromaDB)
-    db.delete_by_document = ChromaDB.delete_by_document.__get__(db, TestChromaDB)
-    db.get_document_chunks = ChromaDB.get_document_chunks.__get__(db, TestChromaDB)
-    db.get_stats = ChromaDB.get_stats.__get__(db, TestChromaDB)
+    db.lexical = LexicalIndex(str(tmp_path / "lexical.sqlite3"))
     yield db
+    db.lexical.close()
 
 
 @pytest.fixture

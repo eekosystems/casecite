@@ -273,7 +273,7 @@ class TestReindex:
         ):
             stats = await service.reconcile_index()
 
-        assert stats == {"checked": 1, "reindexed": 1, "failed": 0}
+        assert stats == {"checked": 1, "reindexed": 1, "failed": 0, "keyword_backfilled": 0}
         kwargs = rag.index_document.await_args.kwargs
         assert kwargs["matter_id"] == "matter-a"
         assert kwargs["folder_path"] == "/Client A"

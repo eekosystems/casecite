@@ -184,17 +184,42 @@ used by jurisdiction pickers is a static module (`services/courts.py`).
 User query
   → Intent detection and routing (documents, case law, or both)
   → Embed the query; vector search scoped to the user's documents
-  → Keyword (BM25) rescoring of the retrieved candidates
+  → Keyword search (SQLite FTS5, BM25) over every chunk in the same scope
+  → Reciprocal rank fusion of the two lists; optional reranker
   → Context assembly (document text passed as delimited, untrusted content)
   → LLM generation (OpenAI / Anthropic / Gemini, the user's or the server's key)
-  → Citation assembly, case-law guard, claim grounding against selected files
-  → Response with sources and an AI-review notice
+  → Citation assembly, case-law guard, claim grounding against the source files
+  → Support check: each grounded claim read against its passage in context
+  → Response with sources, unsupported-claim notice and an AI-review notice
 ```
 
-There is no cross-encoder or API reranker: ranking is vector similarity
-blended with a BM25 score computed over the candidates the vector search
-returned. A term that appears only in chunks outside those candidates is not
-found by the keyword step.
+**Indexing.** Documents are chunked at their own structure (articles,
+numbered sections and clauses, schedules, headings), and each chunk records
+its section path, character span and, for PDFs, the pages it spans. Each
+chunk is embedded with a one-line document context (title and parties from
+the preamble) and its section path, so a clause is findable by the agreement
+it belongs to; the stored chunk text stays verbatim (`services/chunking.py`).
+`CHUNKING_STRATEGY=fixed` restores the legacy token windows.
+
+**Retrieval.** The vector search and the keyword index search independently,
+over the same tenant scope, and their rankings are fused
+(`services/rag/search.py`). The keyword index (`services/lexical_index.py`,
+`lexical_index.sqlite3` beside the Chroma directory) mirrors every write to
+the vector store and is backfilled from stored chunks at startup, without
+re-embedding; it lets a defined term, clause number, party or amount find a
+passage the vector search ranked low. Without it, hybrid falls back to BM25
+rescoring of the vector candidates. A reranker refines the fused order when
+one is available: `RERANKER_PROVIDER=local` (cross-encoder, needs the optional
+sentence-transformers package) or `cohere` (hosted Rerank API; the candidate
+passages go to Cohere, which must be on the provider allowlist).
+
+**Verification.** Claim grounding pins each factual claim in the answer to a
+verbatim passage; an independent support check then reads each passage in
+context and labels the claim supported, partial (a condition, exception or
+threshold is missing), contradicted or unsupported. Claims that are not fully
+supported, and any part of the answer or file set that was not checked, are
+listed with the answer. `evals/` measures retrieval and answer accuracy on a
+seeded corpus (see `backend/evals/README.md`).
 
 When the provider allowlist is enabled, every embedding call and every LLM call
 goes through its check (`services/provider_policy.py`): research chat and its

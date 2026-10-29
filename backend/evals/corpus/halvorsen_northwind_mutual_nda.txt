@@ -1,0 +1,49 @@
+MUTUAL NONDISCLOSURE AGREEMENT
+
+This Mutual Nondisclosure Agreement (this "Agreement") is entered into as of May 20, 2025 by Halvorsen Maritime AS, a Norwegian company ("Halvorsen"), and Northwind Analytics, Inc., a Delaware corporation ("Northwind"). Each party may disclose and receive Confidential Information under this Agreement.
+
+1. PURPOSE
+
+The parties wish to exchange information to evaluate a possible engagement under which Northwind would build a vessel maintenance analytics platform for Halvorsen's fleet (the "Purpose").
+
+2. CONFIDENTIAL INFORMATION
+
+2.1 Definition. "Confidential Information" means all non-public business, technical and financial information disclosed by a party (the "Discloser") to the other party (the "Recipient") for the Purpose, whether disclosed orally, visually or in writing.
+
+2.2 Exclusions. Confidential Information does not include information that (a) is or becomes generally available to the public other than through the Recipient's breach; (b) was lawfully known to the Recipient without restriction before receipt from the Discloser; (c) is received from a third party without a duty of confidentiality; or (d) is independently developed by the Recipient without use of the Discloser's Confidential Information.
+
+3. OBLIGATIONS
+
+3.1 Use and Protection. The Recipient shall use Confidential Information only for the Purpose and shall protect it using at least the degree of care it uses for its own information of similar importance, and no less than reasonable care.
+
+3.2 Permitted Disclosure. The Recipient may disclose Confidential Information to its employees, officers and professional advisers who need to know it for the Purpose and who are bound by confidentiality obligations at least as protective as this Agreement.
+
+3.3 Compelled Disclosure. If the Recipient is required by law or court order to disclose Confidential Information, it shall give the Discloser prompt written notice, where legally permitted, so that the Discloser may seek a protective order, and shall disclose only the portion legally required.
+
+4. RESIDUALS
+
+4.1 Residuals. Notwithstanding Section 3, either party may use Residuals for any purpose. "Residuals" means information in non-tangible form retained in the unaided memory of the Recipient's employees who had access to Confidential Information, without intentional memorization for the purpose of retaining it. This Section 4 does not grant any license under any patent or copyright of the Discloser and does not permit disclosure of the source of the Residuals or of any financial information of the Discloser.
+
+5. TERM
+
+5.1 Term. This Agreement applies to Confidential Information disclosed during the two (2) years following its effective date.
+
+5.2 Survival. The Recipient's obligations under Section 3 continue for three (3) years after the end of the disclosure period in Section 5.1, except that obligations with respect to information that constitutes a trade secret continue for as long as the information remains a trade secret under applicable law.
+
+6. RETURN OF INFORMATION
+
+Within fifteen (15) days after the Discloser's written request, the Recipient shall return or destroy all Confidential Information in its possession and certify the destruction in writing, except that the Recipient may keep copies required by law or stored in routine backup systems, which remain subject to this Agreement.
+
+7. NO OBLIGATION; NO WARRANTY
+
+Nothing in this Agreement obliges either party to enter into any further agreement. All Confidential Information is provided "as is" without warranty of any kind.
+
+8. REMEDIES
+
+Each party acknowledges that unauthorized disclosure may cause irreparable harm for which damages are inadequate, and that the Discloser may seek injunctive relief in addition to any other remedy.
+
+HALVORSEN MARITIME AS
+By: Ingrid Solberg, Chief Digital Officer
+
+NORTHWIND ANALYTICS, INC.
+By: Daniel Okafor, Chief Executive Officer

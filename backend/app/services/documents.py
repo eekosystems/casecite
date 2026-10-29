@@ -396,6 +396,7 @@ class DocumentService:
                 user_keys=user_keys,
                 user_id=user_id,
                 matter_id=matter_id,
+                page_starts=extraction.page_starts or None,
             )
             if not chunk_count:
                 # Never claim an index entry that does not exist.
@@ -545,7 +546,7 @@ class DocumentService:
         """
         from app.services.user_keys import UserAPIKeys
 
-        stats = {"checked": 0, "reindexed": 0, "failed": 0}
+        stats = {"checked": 0, "reindexed": 0, "failed": 0, "keyword_backfilled": 0}
         if rag_service is None or rag_service.vector_db is None:
             logger.warning("Index reconciliation skipped: vector DB unavailable")
             return stats
@@ -556,6 +557,13 @@ class DocumentService:
                 continue
             stats["checked"] += 1
             if await rag_service.vector_db.has_document(doc.id):
+                # Indexed before the keyword index existed (or its write
+                # failed): copy the stored chunks in, without re-embedding.
+                try:
+                    if await rag_service.vector_db.sync_lexical_document(doc.id, doc.user_id):
+                        stats["keyword_backfilled"] += 1
+                except Exception as e:  # keyword index is an enhancement; keep going
+                    logger.warning(f"Keyword index backfill failed for {doc.id}: {e}")
                 continue
 
             logger.warning(
@@ -635,6 +643,7 @@ class DocumentService:
             user_keys=user_keys,
             user_id=doc.user_id,
             matter_id=doc.matter_id,
+            page_starts=extraction.page_starts or None,
         )
         if not chunk_count:
             raise ValueError("indexing produced no searchable content")

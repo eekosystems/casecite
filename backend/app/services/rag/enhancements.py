@@ -123,25 +123,43 @@ async def expand_query(
     return [query, *variants]
 
 
+# Rank-fusion constant for merging phrasings of one question.
+MERGE_RRF_K = 60
+
+
 def merge_search_results(
     result_lists: list[list[dict[str, Any]]], top_k: int
 ) -> list[dict[str, Any]]:
-    """Merge results from several queries, keeping the best similarity per chunk.
+    """Merge the results of several phrasings of one question.
 
-    Results are deduped by chunk identity, sorted by similarity, truncated to
-    ``top_k`` and re-ranked (1-based ``rank``).
+    Each list arrives in its final order — keyword-fused, rescored or
+    reranked — so lists are merged by reciprocal rank fusion over those
+    ranks. Re-sorting by raw similarity would throw that ordering work away
+    and let a passage that merely embeds close to one paraphrase outrank one
+    every phrasing found. A passage found by several phrasings rises.
+
+    Results are deduped by chunk identity; each keeps the copy with its best
+    similarity (the score shown to the user), gets ``merge_score``, is
+    truncated to ``top_k`` and re-ranked (1-based ``rank``).
     """
+    scores: dict[tuple, float] = {}
     best: dict[tuple, dict[str, Any]] = {}
+    first_seen: dict[tuple, int] = {}
     for results in result_lists:
-        for r in results:
+        for position, r in enumerate(results, start=1):
             key = _result_key(r)
+            scores[key] = scores.get(key, 0.0) + 1.0 / (MERGE_RRF_K + position)
+            first_seen.setdefault(key, len(first_seen))
             existing = best.get(key)
             if existing is None or r.get("similarity", 0) > existing.get("similarity", 0):
                 best[key] = r
 
-    merged = sorted(best.values(), key=lambda r: r.get("similarity", 0), reverse=True)
-    merged = merged[: top_k or len(merged)]
+    # Ties (equal fused score) keep the order they were first found in, so
+    # the original question's ranking wins over a paraphrase's.
+    ordered = sorted(best, key=lambda key: (-scores[key], first_seen[key]))
+    merged = [best[key] for key in ordered][: top_k or len(ordered)]
     for i, r in enumerate(merged):
+        r["merge_score"] = scores[_result_key(r)]
         r["rank"] = i + 1
     return merged
 
@@ -243,9 +261,12 @@ def annotate_source_locations(
     for c, r in zip(citations, results):
         meta = r.get("metadata", {}) if isinstance(r, dict) else {}
         parts = [f"chunk #{c.chunk_index + 1}"]
-        page = meta.get("page") or meta.get("page_number")
-        if page is not None:
-            parts.append(f"page {page}")
+        if meta.get("section"):
+            parts.append(str(meta["section"]))
+        first = meta.get("page_start") or meta.get("page") or meta.get("page_number")
+        last = meta.get("page_end") or first
+        if first is not None:
+            parts.append(f"page {first}" if last == first else f"pages {first}-{last}")
         start = meta.get("char_start")
         end = meta.get("char_end")
         if start is not None and end is not None:

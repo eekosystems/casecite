@@ -1,0 +1,1014 @@
+{
+  "label": "after: hybrid keyword index + RRF, structured chunks with context headers",
+  "created": "2026-10-28T23:30:38",
+  "embeddings": "local",
+  "top_k": 10,
+  "search_options": {
+    "similarity_threshold": 0.001
+  },
+  "settings": {
+    "top_k": 10
+  },
+  "corpus": {
+    "documents": 113,
+    "gold": 8,
+    "chunks": 314
+  },
+  "embedding_model": "all-MiniLM-L6-v2 (local)",
+  "retrieval": {
+    "overall": {
+      "questions": 46,
+      "recall@1": 0.641,
+      "recall@3": 0.859,
+      "recall@5": 0.902,
+      "recall@10": 0.978,
+      "complete@10": 0.978,
+      "mrr": 0.776,
+      "avg_returned": 10
+    },
+    "by_category": {
+      "amendment": {
+        "questions": 3,
+        "recall@1": 0.0,
+        "recall@3": 0.333,
+        "recall@5": 0.667,
+        "recall@10": 1.0,
+        "complete@10": 1.0,
+        "mrr": 0.219,
+        "avg_returned": 10
+      },
+      "cross_reference": {
+        "questions": 1,
+        "recall@1": 0.5,
+        "recall@3": 1.0,
+        "recall@5": 1.0,
+        "recall@10": 1.0,
+        "complete@10": 1.0,
+        "mrr": 1.0,
+        "avg_returned": 10
+      },
+      "defined_term": {
+        "questions": 3,
+        "recall@1": 0.167,
+        "recall@3": 0.833,
+        "recall@5": 0.833,
+        "recall@10": 1.0,
+        "complete@10": 1.0,
+        "mrr": 0.611,
+        "avg_returned": 10
+      },
+      "exact_clause": {
+        "questions": 2,
+        "recall@1": 0.5,
+        "recall@3": 1.0,
+        "recall@5": 1.0,
+        "recall@10": 1.0,
+        "complete@10": 1.0,
+        "mrr": 0.75,
+        "avg_returned": 10
+      },
+      "fact": {
+        "questions": 21,
+        "recall@1": 0.81,
+        "recall@3": 0.905,
+        "recall@5": 0.952,
+        "recall@10": 1.0,
+        "complete@10": 1.0,
+        "mrr": 0.877,
+        "avg_returned": 10
+      },
+      "multi_doc": {
+        "questions": 2,
+        "recall@1": 0.25,
+        "recall@3": 0.5,
+        "recall@5": 0.5,
+        "recall@10": 0.5,
+        "complete@10": 0.5,
+        "mrr": 0.5,
+        "avg_returned": 10
+      },
+      "qualifier": {
+        "questions": 12,
+        "recall@1": 0.667,
+        "recall@3": 0.917,
+        "recall@5": 0.917,
+        "recall@10": 1.0,
+        "complete@10": 1.0,
+        "mrr": 0.776,
+        "avg_returned": 10
+      },
+      "table": {
+        "questions": 2,
+        "recall@1": 1.0,
+        "recall@3": 1.0,
+        "recall@5": 1.0,
+        "recall@10": 1.0,
+        "complete@10": 1.0,
+        "mrr": 1.0,
+        "avg_returned": 10
+      }
+    },
+    "misses": [
+      {
+        "id": "multi-coc-acceleration",
+        "ranks": [
+          null,
+          null
+        ],
+        "top": [
+          "pelican_ostrander_supply.txt#1",
+          "distractor_056_services_agreement.txt#1",
+          "distractor_035_services_agreement.txt#0",
+          "distractor_049_services_agreement.txt#1",
+          "distractor_098_services_agreement.txt#0"
+        ]
+      }
+    ]
+  },
+  "retrieval_detail": [
+    {
+      "id": "msa-cure-qualifier",
+      "category": "qualifier",
+      "evidence_ranks": [
+        1
+      ],
+      "retrieved": [
+        "northwind_brightline_msa.txt#4",
+        "northwind_brightline_msa.txt#6",
+        "northwind_brightline_msa.txt#8",
+        "northwind_brightline_msa.txt#7",
+        "northwind_brightline_msa.txt#2",
+        "northwind_brightline_msa.txt#3",
+        "northwind_brightline_msa.txt#1",
+        "northwind_brightline_msa.txt#0",
+        "northwind_msa_amendment_1.txt#0",
+        "northwind_brightline_msa.txt#5"
+      ]
+    },
+    {
+      "id": "msa-liquidity-acceleration",
+      "category": "defined_term",
+      "evidence_ranks": [
+        1,
+        10
+      ],
+      "retrieved": [
+        "northwind_brightline_msa.txt#2",
+        "northwind_msa_amendment_1.txt#0",
+        "northwind_brightline_msa.txt#1",
+        "northwind_brightline_msa.txt#6",
+        "northwind_brightline_msa.txt#3",
+        "northwind_brightline_msa.txt#7",
+        "northwind_brightline_msa.txt#4",
+        "northwind_brightline_msa.txt#8",
+        "northwind_brightline_msa.txt#5",
+        "northwind_brightline_msa.txt#0"
+      ]
+    },
+    {
+      "id": "msa-payment-terms-amended",
+      "category": "amendment",
+      "evidence_ranks": [
+        8
+      ],
+      "retrieved": [
+        "northwind_brightline_msa.txt#2",
+        "northwind_brightline_msa.txt#3",
+        "northwind_brightline_msa.txt#8",
+        "northwind_brightline_msa.txt#4",
+        "northwind_brightline_msa.txt#6",
+        "northwind_brightline_msa.txt#7",
+        "northwind_brightline_msa.txt#1",
+        "northwind_msa_amendment_1.txt#0",
+        "distractor_035_services_agreement.txt#0",
+        "distractor_056_services_agreement.txt#0"
+      ]
+    },
+    {
+      "id": "msa-liability-cap-amended",
+      "category": "amendment",
+      "evidence_ranks": [
+        3
+      ],
+      "retrieved": [
+        "northwind_brightline_msa.txt#7",
+        "northwind_brightline_msa.txt#8",
+        "northwind_msa_amendment_1.txt#0",
+        "northwind_brightline_msa.txt#4",
+        "northwind_brightline_msa.txt#3",
+        "northwind_brightline_msa.txt#6",
+        "northwind_brightline_msa.txt#1",
+        "northwind_brightline_msa.txt#2",
+        "northwind_brightline_msa.txt#5",
+        "northwind_brightline_msa.txt#0"
+      ]
+    },
+    {
+      "id": "msa-cap-carveout",
+      "category": "qualifier",
+      "evidence_ranks": [
+        1
+      ],
+      "retrieved": [
+        "northwind_brightline_msa.txt#7",
+        "northwind_brightline_msa.txt#5",
+        "northwind_brightline_msa.txt#4",
+        "halvorsen_northwind_mutual_nda.txt#3",
+        "northwind_brightline_msa.txt#8",
+        "halvorsen_northwind_mutual_nda.txt#1",
+        "northwind_msa_amendment_1.txt#0",
+        "halvorsen_northwind_mutual_nda.txt#2",
+        "northwind_brightline_msa.txt#6",
+        "distractor_021_services_agreement.txt#2"
+      ]
+    },
+    {
+      "id": "msa-section-11-3-c",
+      "category": "exact_clause",
+      "evidence_ranks": [
+        2
+      ],
+      "retrieved": [
+        "northwind_brightline_msa.txt#1",
+        "northwind_brightline_msa.txt#8",
+        "northwind_brightline_msa.txt#7",
+        "northwind_msa_amendment_1.txt#0",
+        "northwind_brightline_msa.txt#5",
+        "northwind_brightline_msa.txt#4",
+        "halvorsen_northwind_mutual_nda.txt#1",
+        "northwind_brightline_msa.txt#3",
+        "halvorsen_northwind_mutual_nda.txt#2",
+        "northwind_brightline_msa.txt#6"
+      ]
+    },
+    {
+      "id": "msa-security-incident",
+      "category": "fact",
+      "evidence_ranks": [
+        1
+      ],
+      "retrieved": [
+        "northwind_brightline_msa.txt#5",
+        "northwind_brightline_msa.txt#8",
+        "northwind_brightline_msa.txt#4",
+        "northwind_brightline_msa.txt#7",
+        "northwind_brightline_msa.txt#1",
+        "northwind_brightline_msa.txt#6",
+        "northwind_brightline_msa.txt#3",
+        "northwind_msa_amendment_1.txt#0",
+        "northwind_brightline_msa.txt#0",
+        "northwind_brightline_msa.txt#2"
+      ]
+    },
+    {
+      "id": "msa-convenience-fee",
+      "category": "fact",
+      "evidence_ranks": [
+        1
+      ],
+      "retrieved": [
+        "northwind_brightline_msa.txt#4",
+        "northwind_brightline_msa.txt#3",
+        "northwind_brightline_msa.txt#8",
+        "northwind_brightline_msa.txt#2",
+        "northwind_brightline_msa.txt#1",
+        "northwind_brightline_msa.txt#7",
+        "northwind_brightline_msa.txt#6",
+        "northwind_msa_amendment_1.txt#0",
+        "northwind_brightline_msa.txt#5",
+        "northwind_brightline_msa.txt#0"
+      ]
+    },
+    {
+      "id": "msa-uptime-amended",
+      "category": "amendment",
+      "evidence_ranks": [
+        5
+      ],
+      "retrieved": [
+        "northwind_brightline_msa.txt#1",
+        "northwind_brightline_msa.txt#3",
+        "northwind_brightline_msa.txt#4",
+        "northwind_brightline_msa.txt#8",
+        "northwind_msa_amendment_1.txt#0",
+        "northwind_brightline_msa.txt#6",
+        "northwind_brightline_msa.txt#7",
+        "northwind_brightline_msa.txt#2",
+        "northwind_brightline_msa.txt#0",
+        "northwind_brightline_msa.txt#5"
+      ]
+    },
+    {
+      "id": "msa-chronic-failure",
+      "category": "qualifier",
+      "evidence_ranks": [
+        1
+      ],
+      "retrieved": [
+        "northwind_brightline_msa.txt#3",
+        "northwind_brightline_msa.txt#4",
+        "northwind_brightline_msa.txt#1",
+        "northwind_brightline_msa.txt#6",
+        "northwind_brightline_msa.txt#8",
+        "northwind_brightline_msa.txt#7",
+        "northwind_msa_amendment_1.txt#0",
+        "northwind_brightline_msa.txt#2",
+        "distractor_049_services_agreement.txt#1",
+        "distractor_000_services_agreement.txt#1"
+      ]
+    },
+    {
+      "id": "msa-non-renewal-notice",
+      "category": "fact",
+      "evidence_ranks": [
+        1
+      ],
+      "retrieved": [
+        "northwind_brightline_msa.txt#4",
+        "northwind_brightline_msa.txt#3",
+        "northwind_brightline_msa.txt#8",
+        "northwind_brightline_msa.txt#1",
+        "northwind_brightline_msa.txt#6",
+        "northwind_msa_amendment_1.txt#0",
+        "northwind_brightline_msa.txt#7",
+        "northwind_brightline_msa.txt#2",
+        "distractor_015_commercial_lease.txt#2",
+        "distractor_029_commercial_lease.txt#2"
+      ]
+    },
+    {
+      "id": "lease-late-charge",
+      "category": "fact",
+      "evidence_ranks": [
+        1
+      ],
+      "retrieved": [
+        "harbor_point_calloway_lease.txt#1",
+        "harbor_point_calloway_lease.txt#4",
+        "harbor_point_calloway_lease.txt#8",
+        "harbor_point_calloway_lease.txt#0",
+        "harbor_point_calloway_lease.txt#2",
+        "harbor_point_calloway_lease.txt#6",
+        "harbor_point_calloway_lease.txt#7",
+        "harbor_point_calloway_lease.txt#3",
+        "harbor_point_calloway_lease.txt#5",
+        "distractor_043_commercial_lease.txt#1"
+      ]
+    },
+    {
+      "id": "lease-renewal-window",
+      "category": "qualifier",
+      "evidence_ranks": [
+        1
+      ],
+      "retrieved": [
+        "harbor_point_calloway_lease.txt#6",
+        "harbor_point_calloway_lease.txt#0",
+        "harbor_point_calloway_lease.txt#8",
+        "harbor_point_calloway_lease.txt#4",
+        "harbor_point_calloway_lease.txt#2",
+        "harbor_point_calloway_lease.txt#1",
+        "harbor_point_calloway_lease.txt#7",
+        "harbor_point_calloway_lease.txt#3",
+        "distractor_050_commercial_lease.txt#2",
+        "harbor_point_calloway_lease.txt#5"
+      ]
+    },
+    {
+      "id": "lease-renewal-rent",
+      "category": "fact",
+      "evidence_ranks": [
+        1
+      ],
+      "retrieved": [
+        "harbor_point_calloway_lease.txt#6",
+        "distractor_029_commercial_lease.txt#2",
+        "distractor_071_commercial_lease.txt#2",
+        "distractor_015_commercial_lease.txt#2",
+        "distractor_057_commercial_lease.txt#2",
+        "distractor_099_commercial_lease.txt#2",
+        "harbor_point_calloway_lease.txt#1",
+        "distractor_050_commercial_lease.txt#2",
+        "distractor_036_commercial_lease.txt#2",
+        "distractor_092_commercial_lease.txt#2"
+      ]
+    },
+    {
+      "id": "lease-year-3-rent",
+      "category": "table",
+      "evidence_ranks": [
+        1
+      ],
+      "retrieved": [
+        "harbor_point_calloway_lease.txt#1",
+        "harbor_point_calloway_lease.txt#2",
+        "harbor_point_calloway_lease.txt#6",
+        "harbor_point_calloway_lease.txt#0",
+        "distractor_064_commercial_lease.txt#0",
+        "harbor_point_calloway_lease.txt#8",
+        "distractor_099_commercial_lease.txt#0",
+        "harbor_point_calloway_lease.txt#4",
+        "distractor_050_commercial_lease.txt#0",
+        "distractor_092_commercial_lease.txt#0"
+      ]
+    },
+    {
+      "id": "lease-cam-share",
+      "category": "fact",
+      "evidence_ranks": [
+        1
+      ],
+      "retrieved": [
+        "harbor_point_calloway_lease.txt#2",
+        "harbor_point_calloway_lease.txt#0",
+        "distractor_099_commercial_lease.txt#1",
+        "distractor_036_commercial_lease.txt#1",
+        "harbor_point_calloway_lease.txt#1",
+        "distractor_064_commercial_lease.txt#1",
+        "distractor_015_commercial_lease.txt#1",
+        "distractor_078_commercial_lease.txt#1",
+        "distractor_022_commercial_lease.txt#1",
+        "harbor_point_calloway_lease.txt#4"
+      ]
+    },
+    {
+      "id": "lease-assignment-consent",
+      "category": "qualifier",
+      "evidence_ranks": [
+        1,
+        1
+      ],
+      "retrieved": [
+        "harbor_point_calloway_lease.txt#4",
+        "harbor_point_calloway_lease.txt#8",
+        "harbor_point_calloway_lease.txt#0",
+        "harbor_point_calloway_lease.txt#7",
+        "harbor_point_calloway_lease.txt#3",
+        "harbor_point_calloway_lease.txt#2",
+        "harbor_point_calloway_lease.txt#1",
+        "harbor_point_calloway_lease.txt#6",
+        "harbor_point_calloway_lease.txt#5",
+        "distractor_015_commercial_lease.txt#1"
+      ]
+    },
+    {
+      "id": "lease-casualty",
+      "category": "qualifier",
+      "evidence_ranks": [
+        1
+      ],
+      "retrieved": [
+        "harbor_point_calloway_lease.txt#5",
+        "distractor_036_commercial_lease.txt#2",
+        "distractor_071_commercial_lease.txt#2",
+        "distractor_029_commercial_lease.txt#2",
+        "harbor_point_calloway_lease.txt#8",
+        "distractor_057_commercial_lease.txt#2",
+        "harbor_point_calloway_lease.txt#3",
+        "distractor_015_commercial_lease.txt#2",
+        "harbor_point_calloway_lease.txt#7",
+        "distractor_050_commercial_lease.txt#2"
+      ]
+    },
+    {
+      "id": "lease-security-deposit",
+      "category": "fact",
+      "evidence_ranks": [
+        1
+      ],
+      "retrieved": [
+        "harbor_point_calloway_lease.txt#1",
+        "harbor_point_calloway_lease.txt#4",
+        "harbor_point_calloway_lease.txt#8",
+        "harbor_point_calloway_lease.txt#2",
+        "harbor_point_calloway_lease.txt#0",
+        "harbor_point_calloway_lease.txt#3",
+        "harbor_point_calloway_lease.txt#6",
+        "harbor_point_calloway_lease.txt#7",
+        "harbor_point_calloway_lease.txt#5",
+        "distractor_015_commercial_lease.txt#0"
+      ]
+    },
+    {
+      "id": "loan-fccr",
+      "category": "fact",
+      "evidence_ranks": [
+        1
+      ],
+      "retrieved": [
+        "ridgeway_ostrander_loan.txt#3",
+        "ridgeway_ostrander_loan.txt#0",
+        "ridgeway_ostrander_loan.txt#1",
+        "ridgeway_ostrander_loan.txt#2",
+        "ridgeway_ostrander_loan.txt#5",
+        "distractor_044_loan_agreement.txt#0",
+        "distractor_009_loan_agreement.txt#0",
+        "distractor_093_loan_agreement.txt#0",
+        "ridgeway_ostrander_loan.txt#4",
+        "distractor_051_loan_agreement.txt#0"
+      ]
+    },
+    {
+      "id": "loan-cross-default",
+      "category": "qualifier",
+      "evidence_ranks": [
+        3
+      ],
+      "retrieved": [
+        "ridgeway_ostrander_loan.txt#1",
+        "ridgeway_ostrander_loan.txt#5",
+        "ridgeway_ostrander_loan.txt#4",
+        "distractor_058_loan_agreement.txt#1",
+        "distractor_044_loan_agreement.txt#1",
+        "ridgeway_ostrander_loan.txt#2",
+        "distractor_009_loan_agreement.txt#1",
+        "distractor_037_loan_agreement.txt#1",
+        "distractor_051_loan_agreement.txt#1",
+        "ridgeway_ostrander_loan.txt#3"
+      ]
+    },
+    {
+      "id": "loan-coc-optional-acceleration",
+      "category": "qualifier",
+      "evidence_ranks": [
+        3,
+        3
+      ],
+      "retrieved": [
+        "ridgeway_ostrander_loan.txt#5",
+        "ridgeway_ostrander_loan.txt#1",
+        "ridgeway_ostrander_loan.txt#4",
+        "ridgeway_ostrander_loan.txt#2",
+        "ridgeway_ostrander_loan.txt#0",
+        "ridgeway_ostrander_loan.txt#3",
+        "distractor_009_loan_agreement.txt#1",
+        "distractor_058_loan_agreement.txt#1",
+        "distractor_044_loan_agreement.txt#1",
+        "distractor_079_loan_agreement.txt#1"
+      ]
+    },
+    {
+      "id": "loan-coc-definition",
+      "category": "defined_term",
+      "evidence_ranks": [
+        2,
+        2
+      ],
+      "retrieved": [
+        "ridgeway_ostrander_loan.txt#5",
+        "ridgeway_ostrander_loan.txt#0",
+        "ridgeway_ostrander_loan.txt#2",
+        "ridgeway_ostrander_loan.txt#4",
+        "ridgeway_ostrander_loan.txt#1",
+        "ridgeway_ostrander_loan.txt#3",
+        "distractor_009_loan_agreement.txt#1",
+        "distractor_044_loan_agreement.txt#1",
+        "distractor_072_loan_agreement.txt#1",
+        "distractor_030_loan_agreement.txt#1"
+      ]
+    },
+    {
+      "id": "loan-prepayment-premium",
+      "category": "fact",
+      "evidence_ranks": [
+        1
+      ],
+      "retrieved": [
+        "ridgeway_ostrander_loan.txt#1",
+        "ridgeway_ostrander_loan.txt#5",
+        "ridgeway_ostrander_loan.txt#2",
+        "ridgeway_ostrander_loan.txt#3",
+        "ridgeway_ostrander_loan.txt#0",
+        "distractor_009_loan_agreement.txt#0",
+        "distractor_037_loan_agreement.txt#0",
+        "distractor_023_loan_agreement.txt#0",
+        "distractor_079_loan_agreement.txt#0",
+        "ridgeway_ostrander_loan.txt#4"
+      ]
+    },
+    {
+      "id": "loan-default-rate",
+      "category": "fact",
+      "evidence_ranks": [
+        4
+      ],
+      "retrieved": [
+        "distractor_009_loan_agreement.txt#1",
+        "distractor_058_loan_agreement.txt#1",
+        "distractor_093_loan_agreement.txt#1",
+        "ridgeway_ostrander_loan.txt#1",
+        "distractor_044_loan_agreement.txt#1",
+        "distractor_030_loan_agreement.txt#1",
+        "distractor_065_loan_agreement.txt#1",
+        "distractor_037_loan_agreement.txt#1",
+        "distractor_079_loan_agreement.txt#1",
+        "distractor_100_loan_agreement.txt#1"
+      ]
+    },
+    {
+      "id": "loan-section-7-1-b",
+      "category": "exact_clause",
+      "evidence_ranks": [
+        1
+      ],
+      "retrieved": [
+        "ridgeway_ostrander_loan.txt#3",
+        "ridgeway_ostrander_loan.txt#2",
+        "ridgeway_ostrander_loan.txt#5",
+        "ridgeway_ostrander_loan.txt#1",
+        "ridgeway_ostrander_loan.txt#0",
+        "ridgeway_ostrander_loan.txt#4",
+        "distractor_044_loan_agreement.txt#0",
+        "distractor_044_loan_agreement.txt#2",
+        "distractor_051_loan_agreement.txt#2",
+        "distractor_058_loan_agreement.txt#2"
+      ]
+    },
+    {
+      "id": "supply-px200-price",
+      "category": "table",
+      "evidence_ranks": [
+        1
+      ],
+      "retrieved": [
+        "pelican_ostrander_supply.txt#4",
+        "pelican_ostrander_supply.txt#2",
+        "pelican_ostrander_supply.txt#1",
+        "pelican_ostrander_supply.txt#0",
+        "pelican_ostrander_supply.txt#3",
+        "ridgeway_ostrander_loan.txt#1",
+        "distractor_071_commercial_lease.txt#1",
+        "distractor_022_commercial_lease.txt#1",
+        "distractor_057_commercial_lease.txt#1",
+        "distractor_081_employment_agreement.txt#0"
+      ]
+    },
+    {
+      "id": "supply-price-cap",
+      "category": "fact",
+      "evidence_ranks": [
+        2
+      ],
+      "retrieved": [
+        "pelican_ostrander_supply.txt#4",
+        "pelican_ostrander_supply.txt#2",
+        "pelican_ostrander_supply.txt#0",
+        "pelican_ostrander_supply.txt#1",
+        "pelican_ostrander_supply.txt#3",
+        "distractor_031_supply_agreement.txt#0",
+        "distractor_094_supply_agreement.txt#0",
+        "distractor_080_supply_agreement.txt#0",
+        "distractor_010_supply_agreement.txt#0",
+        "distractor_087_supply_agreement.txt#0"
+      ]
+    },
+    {
+      "id": "supply-shortfall",
+      "category": "fact",
+      "evidence_ranks": [
+        1
+      ],
+      "retrieved": [
+        "pelican_ostrander_supply.txt#1",
+        "pelican_ostrander_supply.txt#4",
+        "pelican_ostrander_supply.txt#3",
+        "pelican_ostrander_supply.txt#2",
+        "pelican_ostrander_supply.txt#0",
+        "distractor_104_asset_purchase.txt#0",
+        "distractor_090_asset_purchase.txt#0",
+        "distractor_034_asset_purchase.txt#0",
+        "distractor_020_asset_purchase.txt#0",
+        "distractor_006_asset_purchase.txt#0"
+      ]
+    },
+    {
+      "id": "supply-force-majeure-payment",
+      "category": "qualifier",
+      "evidence_ranks": [
+        1
+      ],
+      "retrieved": [
+        "pelican_ostrander_supply.txt#3",
+        "distractor_031_supply_agreement.txt#1",
+        "distractor_017_supply_agreement.txt#1",
+        "distractor_010_supply_agreement.txt#1",
+        "pelican_ostrander_supply.txt#1",
+        "distractor_073_supply_agreement.txt#1",
+        "distractor_038_supply_agreement.txt#1",
+        "distractor_059_supply_agreement.txt#1",
+        "pelican_ostrander_supply.txt#4",
+        "distractor_087_supply_agreement.txt#1"
+      ]
+    },
+    {
+      "id": "supply-risk-of-loss",
+      "category": "fact",
+      "evidence_ranks": [
+        1
+      ],
+      "retrieved": [
+        "pelican_ostrander_supply.txt#2",
+        "pelican_ostrander_supply.txt#0",
+        "pelican_ostrander_supply.txt#4",
+        "distractor_031_supply_agreement.txt#1",
+        "pelican_ostrander_supply.txt#1",
+        "distractor_010_supply_agreement.txt#1",
+        "pelican_ostrander_supply.txt#3",
+        "distractor_087_supply_agreement.txt#1",
+        "distractor_094_supply_agreement.txt#1",
+        "distractor_017_supply_agreement.txt#1"
+      ]
+    },
+    {
+      "id": "emp-good-reason-relocation",
+      "category": "cross_reference",
+      "evidence_ranks": [
+        2,
+        1
+      ],
+      "retrieved": [
+        "raman_executive_employment.txt#2",
+        "raman_executive_employment.txt#1",
+        "raman_executive_employment.txt#0",
+        "raman_executive_employment.txt#4",
+        "raman_executive_employment.txt#3",
+        "distractor_039_employment_agreement.txt#0",
+        "distractor_025_employment_agreement.txt#0",
+        "distractor_060_employment_agreement.txt#0",
+        "distractor_053_employment_agreement.txt#0",
+        "distractor_081_employment_agreement.txt#0"
+      ]
+    },
+    {
+      "id": "emp-severance",
+      "category": "fact",
+      "evidence_ranks": [
+        1,
+        1
+      ],
+      "retrieved": [
+        "raman_executive_employment.txt#2",
+        "distractor_032_employment_agreement.txt#0",
+        "distractor_011_employment_agreement.txt#0",
+        "distractor_088_employment_agreement.txt#0",
+        "distractor_067_employment_agreement.txt#0",
+        "distractor_074_employment_agreement.txt#0",
+        "distractor_004_employment_agreement.txt#0",
+        "distractor_046_employment_agreement.txt#0",
+        "distractor_025_employment_agreement.txt#0",
+        "distractor_039_employment_agreement.txt#0"
+      ]
+    },
+    {
+      "id": "emp-garden-leave",
+      "category": "fact",
+      "evidence_ranks": [
+        2
+      ],
+      "retrieved": [
+        "raman_executive_employment.txt#0",
+        "raman_executive_employment.txt#3",
+        "raman_executive_employment.txt#4",
+        "raman_executive_employment.txt#1",
+        "raman_executive_employment.txt#2",
+        "distractor_053_employment_agreement.txt#0",
+        "distractor_081_employment_agreement.txt#0",
+        "northwind_msa_amendment_1.txt#0",
+        "northwind_brightline_msa.txt#4",
+        "distractor_025_employment_agreement.txt#0"
+      ]
+    },
+    {
+      "id": "emp-noncompete-length",
+      "category": "fact",
+      "evidence_ranks": [
+        6
+      ],
+      "retrieved": [
+        "distractor_025_employment_agreement.txt#1",
+        "distractor_067_employment_agreement.txt#1",
+        "distractor_074_employment_agreement.txt#1",
+        "distractor_011_employment_agreement.txt#1",
+        "distractor_088_employment_agreement.txt#1",
+        "raman_executive_employment.txt#3",
+        "distractor_046_employment_agreement.txt#1",
+        "distractor_053_employment_agreement.txt#1",
+        "distractor_081_employment_agreement.txt#1",
+        "distractor_039_employment_agreement.txt#1"
+      ]
+    },
+    {
+      "id": "emp-bonus-target",
+      "category": "fact",
+      "evidence_ranks": [
+        1
+      ],
+      "retrieved": [
+        "raman_executive_employment.txt#0",
+        "raman_executive_employment.txt#4",
+        "distractor_032_employment_agreement.txt#0",
+        "distractor_025_employment_agreement.txt#0",
+        "raman_executive_employment.txt#1",
+        "distractor_053_employment_agreement.txt#0",
+        "distractor_046_employment_agreement.txt#0",
+        "distractor_088_employment_agreement.txt#0",
+        "distractor_039_employment_agreement.txt#0",
+        "raman_executive_employment.txt#3"
+      ]
+    },
+    {
+      "id": "nda-survival",
+      "category": "qualifier",
+      "evidence_ranks": [
+        2,
+        2
+      ],
+      "retrieved": [
+        "halvorsen_northwind_mutual_nda.txt#3",
+        "halvorsen_northwind_mutual_nda.txt#2",
+        "halvorsen_northwind_mutual_nda.txt#1",
+        "halvorsen_northwind_mutual_nda.txt#0",
+        "distractor_096_nda.txt#1",
+        "distractor_019_nda.txt#1",
+        "distractor_019_nda.txt#0",
+        "distractor_054_nda.txt#1",
+        "distractor_005_nda.txt#1",
+        "distractor_033_nda.txt#1"
+      ]
+    },
+    {
+      "id": "nda-residuals",
+      "category": "defined_term",
+      "evidence_ranks": [
+        3
+      ],
+      "retrieved": [
+        "halvorsen_northwind_mutual_nda.txt#0",
+        "halvorsen_northwind_mutual_nda.txt#1",
+        "halvorsen_northwind_mutual_nda.txt#2",
+        "halvorsen_northwind_mutual_nda.txt#3",
+        "northwind_brightline_msa.txt#5",
+        "distractor_019_nda.txt#0",
+        "northwind_brightline_msa.txt#1",
+        "northwind_brightline_msa.txt#6",
+        "raman_executive_employment.txt#4",
+        "distractor_082_nda.txt#1"
+      ]
+    },
+    {
+      "id": "nda-return",
+      "category": "fact",
+      "evidence_ranks": [
+        1
+      ],
+      "retrieved": [
+        "halvorsen_northwind_mutual_nda.txt#3",
+        "halvorsen_northwind_mutual_nda.txt#1",
+        "distractor_019_nda.txt#1",
+        "distractor_096_nda.txt#1",
+        "distractor_082_nda.txt#1",
+        "halvorsen_northwind_mutual_nda.txt#0",
+        "distractor_054_nda.txt#1",
+        "halvorsen_northwind_mutual_nda.txt#2",
+        "distractor_103_nda.txt#1",
+        "distractor_033_nda.txt#1"
+      ]
+    },
+    {
+      "id": "apa-deductible",
+      "category": "qualifier",
+      "evidence_ranks": [
+        7
+      ],
+      "retrieved": [
+        "kestrel_ridgeline_asset_purchase.txt#4",
+        "distractor_006_asset_purchase.txt#0",
+        "kestrel_ridgeline_asset_purchase.txt#0",
+        "distractor_076_asset_purchase.txt#0",
+        "distractor_090_asset_purchase.txt#0",
+        "distractor_104_asset_purchase.txt#0",
+        "kestrel_ridgeline_asset_purchase.txt#3",
+        "distractor_055_asset_purchase.txt#0",
+        "distractor_020_asset_purchase.txt#0",
+        "kestrel_ridgeline_asset_purchase.txt#2"
+      ]
+    },
+    {
+      "id": "apa-cap",
+      "category": "fact",
+      "evidence_ranks": [
+        1
+      ],
+      "retrieved": [
+        "kestrel_ridgeline_asset_purchase.txt#3",
+        "distractor_021_services_agreement.txt#2",
+        "northwind_brightline_msa.txt#7",
+        "distractor_007_services_agreement.txt#2",
+        "distractor_006_asset_purchase.txt#0",
+        "distractor_049_services_agreement.txt#2",
+        "distractor_055_asset_purchase.txt#0",
+        "distractor_014_services_agreement.txt#2",
+        "distractor_021_services_agreement.txt#1",
+        "distractor_104_asset_purchase.txt#0"
+      ]
+    },
+    {
+      "id": "apa-sandbagging",
+      "category": "qualifier",
+      "evidence_ranks": [
+        1
+      ],
+      "retrieved": [
+        "kestrel_ridgeline_asset_purchase.txt#3",
+        "kestrel_ridgeline_asset_purchase.txt#1",
+        "kestrel_ridgeline_asset_purchase.txt#4",
+        "kestrel_ridgeline_asset_purchase.txt#2",
+        "kestrel_ridgeline_asset_purchase.txt#0",
+        "distractor_006_asset_purchase.txt#0",
+        "distractor_055_asset_purchase.txt#0",
+        "distractor_104_asset_purchase.txt#0",
+        "halvorsen_northwind_mutual_nda.txt#3",
+        "distractor_020_asset_purchase.txt#0"
+      ]
+    },
+    {
+      "id": "apa-fundamental-survival",
+      "category": "fact",
+      "evidence_ranks": [
+        1
+      ],
+      "retrieved": [
+        "kestrel_ridgeline_asset_purchase.txt#3",
+        "kestrel_ridgeline_asset_purchase.txt#4",
+        "kestrel_ridgeline_asset_purchase.txt#2",
+        "kestrel_ridgeline_asset_purchase.txt#0",
+        "distractor_104_asset_purchase.txt#0",
+        "distractor_090_asset_purchase.txt#0",
+        "distractor_020_asset_purchase.txt#0",
+        "distractor_006_asset_purchase.txt#0",
+        "distractor_055_asset_purchase.txt#0",
+        "distractor_013_asset_purchase.txt#0"
+      ]
+    },
+    {
+      "id": "apa-escrow",
+      "category": "fact",
+      "evidence_ranks": [
+        1
+      ],
+      "retrieved": [
+        "kestrel_ridgeline_asset_purchase.txt#1",
+        "distractor_090_asset_purchase.txt#0",
+        "distractor_006_asset_purchase.txt#0",
+        "distractor_076_asset_purchase.txt#0",
+        "distractor_104_asset_purchase.txt#0",
+        "distractor_013_asset_purchase.txt#0",
+        "distractor_048_asset_purchase.txt#0",
+        "distractor_055_asset_purchase.txt#0",
+        "distractor_020_asset_purchase.txt#0",
+        "distractor_041_asset_purchase.txt#0"
+      ]
+    },
+    {
+      "id": "multi-coc-acceleration",
+      "category": "multi_doc",
+      "evidence_ranks": [
+        null,
+        null
+      ],
+      "retrieved": [
+        "pelican_ostrander_supply.txt#1",
+        "distractor_056_services_agreement.txt#1",
+        "distractor_035_services_agreement.txt#0",
+        "distractor_049_services_agreement.txt#1",
+        "distractor_098_services_agreement.txt#0",
+        "distractor_063_services_agreement.txt#1",
+        "distractor_084_services_agreement.txt#0",
+        "distractor_007_services_agreement.txt#1",
+        "distractor_056_services_agreement.txt#0",
+        "distractor_021_services_agreement.txt#1"
+      ]
+    },
+    {
+      "id": "multi-ostrander-agreements",
+      "category": "multi_doc",
+      "evidence_ranks": [
+        3,
+        1
+      ],
+      "retrieved": [
+        "pelican_ostrander_supply.txt#0",
+        "ridgeway_ostrander_loan.txt#5",
+        "ridgeway_ostrander_loan.txt#0",
+        "pelican_ostrander_supply.txt#3",
+        "pelican_ostrander_supply.txt#1",
+        "pelican_ostrander_supply.txt#4",
+        "distractor_028_services_agreement.txt#2",
+        "distractor_063_services_agreement.txt#2",
+        "distractor_035_services_agreement.txt#2",
+        "distractor_042_services_agreement.txt#2"
+      ]
+    }
+  ],
+  "seconds": 31.0
+}

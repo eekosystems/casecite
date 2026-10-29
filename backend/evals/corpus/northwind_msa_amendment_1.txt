@@ -1,0 +1,25 @@
+AMENDMENT NO. 1 TO MASTER SERVICES AGREEMENT
+
+This Amendment No. 1 (this "Amendment") is entered into as of September 15, 2025 (the "Amendment Effective Date") by and between Northwind Analytics, Inc. ("Provider") and Brightline Health Partners, LLC ("Customer"), and amends the Master Services Agreement between Provider and Customer dated March 1, 2025 (the "Agreement"). Capitalized terms used but not defined in this Amendment have the meanings given in the Agreement.
+
+1. Payment Terms. Section 3.2 of the Agreement is deleted in its entirety and replaced with the following:
+
+"3.2 Invoicing and Payment. Provider shall invoice Fees quarterly in advance. Customer shall pay each undisputed invoice within forty-five (45) days of the invoice date."
+
+2. Liability Cap. Section 10.2 of the Agreement is deleted in its entirety and replaced with the following:
+
+"10.2 Cap. Each Party's aggregate liability arising out of or related to this Agreement shall not exceed two times (2x) the Fees paid or payable by Customer in the twelve (12) months preceding the event giving rise to the claim."
+
+3. Uptime Commitment. In Section 1.10 of the Agreement, "99.5%" is replaced with "99.9%".
+
+4. Additional Services. The Parties shall execute a new Order Form for the population health module described in Schedule 1 to this Amendment.
+
+5. Effect of Amendment. Except as expressly amended by this Amendment, the Agreement remains unchanged and in full force and effect. If there is any conflict between this Amendment and the Agreement, this Amendment controls. References in the Agreement to "this Agreement" mean the Agreement as amended by this Amendment.
+
+6. Counterparts. This Amendment may be executed in counterparts, including by electronic signature, each of which is an original and all of which together are one instrument.
+
+NORTHWIND ANALYTICS, INC.
+By: Daniel Okafor, Chief Executive Officer
+
+BRIGHTLINE HEALTH PARTNERS, LLC
+By: Maria Esposito, President
