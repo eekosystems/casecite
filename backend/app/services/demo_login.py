@@ -26,6 +26,8 @@ logger = logging.getLogger(__name__)
 
 DEMO_LOGIN_NAME = "Demo User"
 DEMO_LOGIN_ROLES = ["attorney"]
+# Concurrent sign-ins allowed on the shared account (ordinary accounts get 5).
+DEMO_LOGIN_MAX_SESSIONS = 500
 
 # The message every refused self-service action returns, so the UI can explain.
 DEMO_LOGIN_LOCKED_MESSAGE = (

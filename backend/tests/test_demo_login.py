@@ -248,6 +248,31 @@ class TestHostageProofing:
         row = client.portal.call(_get_coro)
         assert verify_password(DEMO_PASSWORD, row.password_hash)
 
+    def test_many_visitors_can_be_signed_in_at_once(self, client, demo_user):
+        """The ordinary cap of 5 would evict the first visitor on the sixth sign-in."""
+        first = _bearer(_login(client))
+        for _ in range(7):
+            assert _login(client).status_code == 200
+        assert client.get("/api/v1/auth/me", headers=first).status_code == 200
+
+    def test_refresh_replay_does_not_sign_everyone_out(self, client, demo_user):
+        _login(client)
+        stolen = client.cookies.get("refresh_token")
+        assert client.post("/api/v1/auth/refresh").status_code == 200
+        client.cookies.clear()
+        other_visitor = _bearer(_login(client))
+
+        with patch("app.services.auth.REFRESH_REUSE_GRACE_SECONDS", -1):
+            client.cookies.clear()
+            client.cookies.set("refresh_token", stolen)
+            assert client.post("/api/v1/auth/refresh").status_code == 401
+
+        # Only the replayed refresh was refused; the other visitor is still in.
+        client.cookies.clear()
+        assert client.get("/api/v1/auth/me", headers=other_visitor).status_code == 200
+        row = client.portal.call(_get_coro)
+        assert row.token_version == demo_user.token_version
+
     def test_admin_cannot_change_its_role(self, client, demo_user, auth_headers):
         resp = client.patch(
             f"/api/v1/admin/users/{demo_user.id}/role",

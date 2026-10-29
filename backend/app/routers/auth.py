@@ -71,7 +71,11 @@ from app.services.auth import (
     mfa_enrollment_required,
     password_reset_service,
 )
-from app.services.demo_login import DEMO_LOGIN_LOCKED_MESSAGE, is_demo_login_email
+from app.services.demo_login import (
+    DEMO_LOGIN_LOCKED_MESSAGE,
+    DEMO_LOGIN_MAX_SESSIONS,
+    is_demo_login_email,
+)
 from app.services.device_auth import device_auth_service, format_user_code, normalize_user_code
 from app.utils.ip_resolution import get_client_ip
 
@@ -169,6 +173,9 @@ def _mint_session(request: Request, user: User, client: str | None = None) -> tu
         jti=auth_service.verify_token(access_token).jti,
         session_id=session_id,
         client=DEVICE_CLIENT_LABEL if client == DEVICE_CLIENT else None,
+        # Many visitors share the public demo account: the ordinary cap would
+        # evict the earliest of them on every new sign-in.
+        max_sessions=DEMO_LOGIN_MAX_SESSIONS if is_demo_login_email(user.email) else None,
     )
     return access_token, refresh_token
 
@@ -823,6 +830,20 @@ async def refresh_token(
         # Rotate: spend the presented refresh token (atomically) and mint a
         # fresh pair, so each refresh token is single-use.
         claim = auth_service.claim_refresh_token(token_data.jti)
+        if claim == "reused" and is_demo_login_email(db_user.email):
+            # The public demo account is shared by every visitor, so there is
+            # no single legitimate holder to protect: refuse this refresh only,
+            # instead of signing every visitor out.
+            await audit_service.log_event(
+                event_type=AuditEventType.SESSION_HIJACK_ATTEMPT,
+                user_id=db_user.id,
+                user_email=db_user.email,
+                ip_address=get_client_ip(request),
+                user_agent=request.headers.get("user-agent"),
+                details={"reason": "refresh_token_reuse", "demo_account": True},
+                success=False,
+            )
+            raise UnauthorizedError("Session expired, please sign in again")
         if claim == "reused":
             # A refresh token that was already rotated is being presented again:
             # the legitimate client and someone else both hold it. Which of them

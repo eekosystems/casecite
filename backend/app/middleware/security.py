@@ -622,6 +622,7 @@ class SessionManager:
         jti: str,
         session_id: str | None = None,
         client: str | None = None,
+        max_sessions: int | None = None,
     ) -> bool:
         """Create a new session (one per sign-in), enforcing limits.
 
@@ -629,6 +630,8 @@ class SessionManager:
         claim); it defaults to a fresh random id. ``client`` labels the kind of
         client that signed in ("web" by default, "Word add-in" for a
         device-code grant) so the sessions list can tell them apart.
+        ``max_sessions`` overrides the per-user concurrent-session cap (the
+        shared public demo account is signed into by many visitors at once).
         """
         self._cleanup_expired_sessions()
         now = datetime.now(UTC)
@@ -637,8 +640,9 @@ class SessionManager:
         self._sessions[user_id] = [s for s in self._sessions[user_id] if self._is_live(s, now)]
 
         # Check session limit
+        cap = self.max_sessions_per_user if max_sessions is None else max_sessions
         evicted = False
-        while len(self._sessions[user_id]) >= self.max_sessions_per_user:
+        while len(self._sessions[user_id]) >= cap:
             # Remove oldest session
             self._sessions[user_id].sort(key=lambda s: s["created_at"])
             self._sessions[user_id].pop(0)
