@@ -79,8 +79,17 @@ async def _resolve_scope(
     document_ids: list[str] | None = None
     if body.document_filter and not body.document_filter.search_all:
         f = body.document_filter
+        from_matters: list[str] = []
+        if f.matter_ids:
+            # Several matters picked in the workspace: their documents, for
+            # matters the caller belongs to (personal = their unfiled files).
+            personal = await matters_service.get_personal_matter_id(db, current_user.user_id)
+            from_matters = document_service.document_ids_in_matters(
+                f.matter_ids, current_user.user_id, matter_ids, personal
+            )
+            document_ids = from_matters
         if f.document_ids or f.folder_paths or f.sources or f.doc_types:
-            document_ids = await document_service.get_documents_by_filter(
+            picked = await document_service.get_documents_by_filter(
                 user_id=current_user.user_id,
                 document_ids=f.document_ids,
                 folder_paths=f.folder_paths,
@@ -89,6 +98,7 @@ async def _resolve_scope(
                 include_subfolders=f.include_subfolders,
                 accessible_matter_ids=matter_ids,
             )
+            document_ids = list(dict.fromkeys([*from_matters, *picked]))
     if document_ids is None and body.matter_id:
         matter = await matters_service.get_matter(db, body.matter_id)
         if matter is None:

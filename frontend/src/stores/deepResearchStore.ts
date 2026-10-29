@@ -26,11 +26,14 @@ const errorMessage = (e: unknown, fallback: string) => (e instanceof Error && e.
 /** The explicit file-workspace pick, in the shape the endpoints accept (null = none). */
 export function toDocumentFilter(filter: DocumentFilter | null | undefined): DeepResearchDocumentFilter | null {
   if (!filter) return null;
-  const { document_ids, folder_paths, sources, doc_types, include_subfolders, search_all } = filter;
-  if (!document_ids?.length && !folder_paths?.length && !sources?.length && !doc_types?.length && !search_all) {
+  const { document_ids, folder_paths, sources, doc_types, include_subfolders, search_all, matter_ids } = filter;
+  if (
+    !document_ids?.length && !folder_paths?.length && !sources?.length && !doc_types?.length &&
+    !matter_ids?.length && !search_all
+  ) {
     return null;
   }
-  return { document_ids, folder_paths, sources, doc_types, include_subfolders, search_all };
+  return { document_ids, folder_paths, sources, doc_types, include_subfolders, search_all, matter_ids };
 }
 
 /** One line summarising a finished run for the toast. */

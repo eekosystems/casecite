@@ -23,6 +23,14 @@ async def accessible_matter_ids(
     return set(await matters_service.get_member_matter_ids(db, current_user.user_id))
 
 
+async def personal_matter_id(
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> str | None:
+    """The caller's personal matter (their unfiled documents), if it exists."""
+    return await matters_service.get_personal_matter_id(db, current_user.user_id)
+
+
 async def owned_matter_ids(
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),

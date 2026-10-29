@@ -114,7 +114,10 @@ class TestStrategyRouting:
                 headers=auth_headers,
             )
         assert resp.status_code == 200, resp.text
-        assert brief.await_args.kwargs["folder_paths"] == ["/Cases/Smith/", "/Cases/Jones/"]
+        # Both folders are resolved (with the caller's matters) into the
+        # brief's scope, not just the first.
+        assert brief.await_args.kwargs["document_ids"] == ["d1", "d2"]
+        assert "accessible_matter_ids" in brief.await_args.kwargs
 
         case, doc = resp.json()["citations"]
         assert case["opinion_id"] == "123"

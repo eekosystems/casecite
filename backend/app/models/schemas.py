@@ -62,6 +62,10 @@ class DocumentFilter(BaseModel):
     doc_types: list[str] | None = None  # Filter by document type (contract, brief, memo, etc.)
     include_subfolders: bool = True  # Whether to include documents in subfolders
     search_all: bool = False  # If True, ignore other filters and search all documents
+    # Matters whose documents to include (a union with document_ids and
+    # folder_paths). Only matters the caller belongs to contribute; the
+    # caller's personal matter also brings in their unfiled documents.
+    matter_ids: list[str] | None = Field(None, max_length=200)
 
 
 class CreateFolderRequest(BaseModel):

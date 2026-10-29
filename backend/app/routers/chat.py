@@ -15,6 +15,7 @@ from app.config import settings
 from app.exceptions import ServiceUnavailableError, UpstreamError
 from app.models.schemas import ChatRequest, ChatResponse, ConversationExportRequest, RAGSettings
 from app.routers._matter_deps import accessible_matter_ids as _accessible_matter_ids
+from app.routers._matter_deps import personal_matter_id as _personal_matter_id
 from app.services import chat_sessions as chat_session_service
 from app.services import conversation_export
 from app.services.audit import AuditEventType, audit_service
@@ -95,8 +96,15 @@ async def _chat_context(
     http_request: Request,
     current_user: TokenData,
     accessible_matters: set[str],
+    personal_matter_id: str | None = None,
 ) -> _ChatContext:
-    """Capture the caller's context and resolve the document scope."""
+    """Capture the caller's context and resolve the document scope.
+
+    A filter's ``matter_ids`` resolve to the indexed documents of those
+    matters (only matters the caller belongs to), unioned with any files and
+    folders it also names. A selection that resolves to nothing stays an
+    empty scope; it never widens to everything.
+    """
     # Eagerly capture context before potential background execution
     user_keys = UserAPIKeys.from_request(http_request, user_id=current_user.user_id)
     user_settings = load_user_settings(current_user.user_id)
@@ -106,17 +114,26 @@ async def _chat_context(
 
     # Pre-resolve document IDs (requires await, must happen before returning 202).
     document_ids = None
-    if request.document_filter and request.include_documents:
-        if not request.document_filter.search_all:
-            document_ids = await document_service.get_documents_by_filter(
+    doc_filter = request.document_filter
+    if doc_filter and request.include_documents and not doc_filter.search_all:
+        from_matters: list[str] = []
+        if doc_filter.matter_ids:
+            from_matters = document_service.document_ids_in_matters(
+                doc_filter.matter_ids, user_id, accessible_matters, personal_matter_id
+            )
+        if doc_filter.matter_ids and not (doc_filter.document_ids or doc_filter.folder_paths):
+            document_ids = from_matters
+        else:
+            picked = await document_service.get_documents_by_filter(
                 user_id=user_id,
-                document_ids=request.document_filter.document_ids,
-                folder_paths=request.document_filter.folder_paths,
-                sources=request.document_filter.sources,
-                doc_types=request.document_filter.doc_types,
-                include_subfolders=request.document_filter.include_subfolders,
+                document_ids=doc_filter.document_ids,
+                folder_paths=doc_filter.folder_paths,
+                sources=doc_filter.sources,
+                doc_types=doc_filter.doc_types,
+                include_subfolders=doc_filter.include_subfolders,
                 accessible_matter_ids=accessible_matters,
             )
+            document_ids = list(dict.fromkeys([*from_matters, *picked]))
 
     return _ChatContext(
         user_id=user_id,
@@ -199,19 +216,18 @@ async def _strategy_answer(
     Returns ``(strategy_payload, result)``.
     """
     try:
-        brief_folder_paths = None
         brief_document_ids = None
         if request.document_filter and not request.document_filter.search_all:
-            # All selected folders scope the brief, not only the first.
-            brief_folder_paths = request.document_filter.folder_paths or None
-            brief_document_ids = request.document_filter.document_ids
+            # The scope as resolved for this request: selected matters, files
+            # and folders together, including documents shared via a matter.
+            brief_document_ids = ctx.document_ids
         brief = await strategy_service.generate_brief(
             question=request.query,
-            folder_paths=brief_folder_paths,
             document_ids=brief_document_ids,
             include_case_law=include_case_law,
             user_id=ctx.user_id,
             user_keys=ctx.user_keys,
+            accessible_matter_ids=ctx.accessible_matters,
         )
         result = {
             "content": brief.get("position") or "Strategy brief generated.",
@@ -438,6 +454,7 @@ async def chat(
     current_user: TokenData = require_permission("chat.use"),
     async_mode: bool = Query(False, alias="async"),
     accessible_matters: set[str] = Depends(_accessible_matter_ids),
+    personal_matter: str | None = Depends(_personal_matter_id),
 ) -> ChatResponse:
     """Send a message and get a RAG-powered response with case law integration. Requires authentication."""
     if rag_service is None:
@@ -445,7 +462,9 @@ async def chat(
             "RAG service is temporarily unavailable. Please try again later.",
         )
 
-    ctx = await _chat_context(request, http_request, current_user, accessible_matters)
+    ctx = await _chat_context(
+        request, http_request, current_user, accessible_matters, personal_matter
+    )
 
     async def do_work():
         return await _answer_chat(request, ctx)

@@ -32,8 +32,13 @@ export function DeepResearchPanel({ docFilter }: DeepResearchPanelProps) {
     void useDeepResearchStore.getState().loadRuns();
   }, [activeMatterId]);
 
-  const scopeLabel = docFilter?.document_ids?.length
-    ? `${docFilter.document_ids.length} picked document${docFilter.document_ids.length === 1 ? '' : 's'}`
+  const pickedMatters = docFilter?.matter_ids?.length ?? 0;
+  const pickedDocs = docFilter?.document_ids?.length ?? 0;
+  const scopeLabel = pickedMatters
+    ? `${pickedMatters} picked matter${pickedMatters === 1 ? '' : 's'}` +
+      (pickedDocs ? ` and ${pickedDocs} document${pickedDocs === 1 ? '' : 's'}` : '')
+    : pickedDocs
+    ? `${pickedDocs} picked document${pickedDocs === 1 ? '' : 's'}`
     : docFilter?.folder_paths?.length
       ? `${docFilter.folder_paths.length} picked folder${docFilter.folder_paths.length === 1 ? '' : 's'}`
       : activeMatter

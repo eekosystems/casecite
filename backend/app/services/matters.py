@@ -175,6 +175,19 @@ async def is_member(session: AsyncSession, matter_id: str, user_id: str) -> bool
     return row is not None
 
 
+async def get_personal_matter_id(session: AsyncSession, user_id: str) -> str | None:
+    """The id of the user's personal matter, or None if it was never created.
+
+    A pure read: the personal matter is created when matters are listed, and
+    a client can only name a matter it has been shown.
+    """
+    row = await session.execute(
+        select(Matter.id).where(Matter.owner_id == user_id, Matter.is_personal.is_(True))
+    )
+    found = row.scalars().first()
+    return str(found) if found else None
+
+
 async def get_member_matter_ids(session: AsyncSession, user_id: str) -> list[str]:
     """All matter IDs the user is a member of.
 

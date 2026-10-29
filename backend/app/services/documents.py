@@ -231,6 +231,39 @@ class DocumentService:
         docs.sort(key=lambda d: d.created_at, reverse=True)
         return docs
 
+    def document_ids_in_matters(
+        self,
+        matter_ids: list[str],
+        user_id: str,
+        accessible_matter_ids: set[str] | None,
+        personal_matter_id: str | None = None,
+    ) -> list[str]:
+        """Indexed documents filed under the given matters, for the caller.
+
+        Only matters the caller belongs to contribute; any other id adds
+        nothing (and reveals nothing about whether it exists). The caller's
+        personal matter also gathers their own unfiled documents, as its
+        workspace does. Order: matters as given, newest document first.
+        """
+        allowed = set(accessible_matter_ids or ())
+        if personal_matter_id:
+            allowed.add(personal_matter_id)
+        ids: list[str] = []
+        seen: set[str] = set()
+        for matter_id in dict.fromkeys(matter_ids):
+            if matter_id not in allowed:
+                continue
+            owner = user_id if matter_id == personal_matter_id else None
+            for doc in self.documents_in_matter(matter_id, owner):
+                if (
+                    doc.status == DocumentStatus.INDEXED
+                    and doc.id not in seen
+                    and self._can_access(doc, user_id, accessible_matter_ids)
+                ):
+                    seen.add(doc.id)
+                    ids.append(doc.id)
+        return ids
+
     async def move_documents_to_matter(
         self, docs: list[Document], target_matter_id: str | None
     ) -> list[str]:
@@ -1233,12 +1266,18 @@ class DocumentService:
 
         return matching_ids
 
-    async def get_documents_by_ids(self, doc_ids: list[str], user_id: str) -> list[Document]:
-        """Get documents by their IDs, scoped to user."""
+    async def get_documents_by_ids(
+        self,
+        doc_ids: list[str],
+        user_id: str,
+        accessible_matter_ids: set[str] | None = None,
+    ) -> list[Document]:
+        """Get documents by their IDs, scoped to the caller (owner, or matter member)."""
         return [
             self.documents[doc_id]
             for doc_id in doc_ids
-            if doc_id in self.documents and self.documents[doc_id].user_id == user_id
+            if doc_id in self.documents
+            and self._can_access(self.documents[doc_id], user_id, accessible_matter_ids)
         ]
 
 

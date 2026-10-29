@@ -253,7 +253,7 @@ class TestGenerateBrief:
     ):
         fallback_chunks = fallback_chunks or {}
 
-        async def fake_direct(vector_db, document_ids, limit=20, user_id=""):
+        async def fake_direct(vector_db, document_ids, limit=20, user_id="", matter_ids=None):
             return fallback_chunks.get(document_ids[0], [])
 
         vector_db = MagicMock()
@@ -275,7 +275,7 @@ class TestGenerateBrief:
             ),
             patch(
                 "app.services.strategy.document_service.get_documents_by_ids",
-                new=AsyncMock(side_effect=lambda ids, user_id: [_doc(doc_id) for doc_id in ids]),
+                new=AsyncMock(side_effect=lambda ids, user_id, *_: [_doc(doc_id) for doc_id in ids]),
             ),
             patch("app.services.strategy.get_document_chunks_directly", new=fake_direct),
         ]

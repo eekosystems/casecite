@@ -169,16 +169,17 @@ function ResearchView() {
                   </div>
                 </div>
               ) : (
-                /* The workspace IS the page: your files as a browsable file
-                   system. Folder click = chat with that folder; file click =
-                   chat with that file. The conversation floats above it. */
+                /* The workspace IS the page: your matters, each with its files.
+                   Matter click = chat with that matter; tick several to chat
+                   with all of them; file click = chat with that file. The
+                   conversation floats above it. */
                 <div className={s.workspaceWrap}>
                   <div className={s.workspaceHead}>
                     <h3 className={s.workspaceTitle}>Matter Strategy</h3>
                     <p className={s.workspaceSub}>
-                      Pick a folder or file to scope the chat — ask questions, or get a strategy
-                      brief with verified case law for every point (&ldquo;give me all the case law
-                      for this file&rdquo;).
+                      Pick a matter, several matters or individual files to scope the chat, or chat
+                      across all of them — ask questions, or get a strategy brief with verified case
+                      law for every point (&ldquo;give me all the case law for this matter&rdquo;).
                     </p>
                   </div>
                   {openDocs.length > 0 && (

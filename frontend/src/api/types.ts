@@ -671,6 +671,7 @@ export interface DeepResearchDocumentFilter {
   doc_types?: string[] | null;
   include_subfolders?: boolean;
   search_all?: boolean;
+  matter_ids?: string[] | null;
 }
 
 export interface DeepResearchScope {

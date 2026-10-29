@@ -1,8 +1,7 @@
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { api } from '../api';
 import { useUIStore } from '../stores/uiStore';
-import { useMattersStore, documentInMatter } from '../stores/mattersStore';
-import { useRagDocsStore } from '../stores/ragDocsStore';
+import { useMattersStore } from '../stores/mattersStore';
 import { registerReset } from '../stores/resetRegistry';
 import { generateId, parseUtcDate, fetchDocumentPdfUrl } from '../utils';
 import { parseCitations } from '../utils/citationParser';
@@ -15,21 +14,18 @@ import { conversationTitle, downloadConversation } from '../utils/conversationEx
 import type { ConversationExportFormat, ConversationExportMessage } from '../api/types';
 
 /**
- * The scope a question is asked over. An explicit pick in the file workspace
- * wins; otherwise the header's active matter narrows retrieval to the
- * documents filed under it (an empty matter asks over nothing, which is the
- * honest answer). With no active matter the question goes to everything.
+ * The scope a question is asked over. An explicit pick in the Matter Strategy
+ * workspace (several matters, files) wins; otherwise the header's active
+ * matter narrows retrieval to the documents filed under it (an empty matter
+ * asks over nothing, which is the honest answer). With no active matter the
+ * question goes to everything. Matters are sent as ids and resolved by the
+ * server, which checks membership and includes colleagues' shared documents.
  */
 function effectiveDocFilter(picked: DocumentFilter | null): DocumentFilter | null {
   if (picked) return picked;
   const matter = useMattersStore.getState().activeMatter();
   if (!matter) return null;
-  const docs = useRagDocsStore.getState().ragDocs;
-  if (docs.length === 0) return null; // the list has not loaded yet: nothing to narrow by
-  return {
-    document_ids: docs.filter((d) => d.status === 'indexed' && documentInMatter(d, matter)).map((d) => d.id),
-    include_subfolders: true,
-  };
+  return { matter_ids: [matter.id], include_subfolders: true };
 }
 
 /** Flatten a Matter Strategy message (brief included) for export. */

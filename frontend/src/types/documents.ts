@@ -24,6 +24,8 @@ export interface DocumentFilter {
   doc_types?: string[] | null;
   include_subfolders?: boolean;
   search_all?: boolean;
+  /** Matters whose documents to include; the server resolves them (membership-checked). */
+  matter_ids?: string[] | null;
 }
 
 export interface DocumentTreeItem {

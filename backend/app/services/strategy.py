@@ -31,7 +31,7 @@ from app.services.documents import document_service
 from app.services.embeddings import embedding_service
 from app.services.llm_clients import make_openai, openai_chat, utility_model
 from app.services.rag.prompt_safety import UNTRUSTED_CONTENT_RULE, untrusted_block
-from app.services.rag.search import get_document_chunks_directly
+from app.services.rag.search import get_document_chunks_directly, tenant_scope
 from app.services.vectordb import get_vector_db
 
 logger = logging.getLogger(__name__)
@@ -188,15 +188,19 @@ class StrategyService:
         return settings.openai_api_key
 
     async def _retrieve_coverage(
-        self, question: str, doc_order: list[tuple[str, str]], user_id: str, user_keys
+        self,
+        question: str,
+        doc_order: list[tuple[str, str]],
+        user_id: str,
+        user_keys,
+        matter_ids: list[str] | None = None,
     ) -> dict[str, list[dict[str, Any]]]:
         """Retrieve each document's most relevant chunks for the question.
 
-        The vector DB's tenant guard requires a flat {"user_id": ...} filter, so
-        per-document filtered searches are not possible here. Instead: one global
-        user-scoped search with a large top_k, grouped by document — then any
-        document the search did not cover contributes its first stored chunk, so
-        every document in scope is represented.
+        One search over the documents in scope, within the caller's tenant
+        scope (their own chunks and those of matters they belong to), grouped
+        by document — then any document the search did not cover contributes
+        its first stored chunk, so every document in scope is represented.
         """
         vector_db = get_vector_db()
         if vector_db is None:
@@ -209,10 +213,11 @@ class StrategyService:
         try:
             query_embedding = await embedding_service.embed_query(question, user_keys=user_keys)
             top_k = min(200, max(50, CHUNKS_PER_DOCUMENT * len(doc_order) * 2))
+            scope = tenant_scope(user_id, matter_ids)
             results = await vector_db.search(
                 query_embedding=query_embedding,
                 top_k=top_k,
-                filter={"user_id": user_id},
+                filter={"$and": [scope, {"document_id": {"$in": sorted(allowed)}}]},
             )
             grouped = group_chunks_by_document(results, allowed)
         except (ValueError, KeyError, ConnectionError, TimeoutError, OSError, RuntimeError) as e:
@@ -226,7 +231,7 @@ class StrategyService:
                 continue
             try:
                 chunks = await get_document_chunks_directly(
-                    vector_db, [doc_id], limit=1, user_id=user_id
+                    vector_db, [doc_id], limit=1, user_id=user_id, matter_ids=matter_ids
                 )
             except Exception as e:  # fallback is best-effort per document
                 logger.warning(f"Strategy brief fallback chunk fetch failed for {doc_id}: {e}")
@@ -529,7 +534,11 @@ class StrategyService:
         include_case_law: bool = False,
         user_id: str,
         user_keys=None,
+        accessible_matter_ids: set[str] | None = None,
     ) -> dict[str, Any]:
+        """``accessible_matter_ids`` are the matters the caller belongs to: a
+        colleague's document filed under one of them is read like the caller's
+        own (owner-only when None)."""
         client = make_openai(self._api_key(user_keys), async_=True)
         if client is None:
             raise ValueError(
@@ -545,6 +554,7 @@ class StrategyService:
             user_id=user_id,
             document_ids=document_ids,
             folder_paths=scope_folders,
+            accessible_matter_ids=accessible_matter_ids,
         )
         documents_total = len(matched_ids)
         if documents_total == 0:
@@ -554,10 +564,18 @@ class StrategyService:
                 f"Strategy brief scope truncated from {documents_total} to "
                 f"{MAX_DOCUMENTS} documents for user {user_id}"
             )
-        docs = await document_service.get_documents_by_ids(matched_ids[:MAX_DOCUMENTS], user_id)
+        docs = await document_service.get_documents_by_ids(
+            matched_ids[:MAX_DOCUMENTS], user_id, accessible_matter_ids
+        )
         doc_order = [(doc.id, doc.filename) for doc in docs]
 
-        grouped = await self._retrieve_coverage(question, doc_order, user_id, user_keys)
+        grouped = await self._retrieve_coverage(
+            question,
+            doc_order,
+            user_id,
+            user_keys,
+            matter_ids=sorted(accessible_matter_ids) if accessible_matter_ids else None,
+        )
         passages = build_passages(doc_order, grouped)
         if not passages:
             raise LookupError("No indexed content is available for the selected documents.")

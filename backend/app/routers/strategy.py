@@ -8,10 +8,11 @@ contributes at least one passage. Consumed by the chat-style frontend.
 
 import logging
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 
 from app.exceptions import BadRequestError, NotFoundError, ServiceUnavailableError, UpstreamError
 from app.models.schemas import StrategyBriefRequest
+from app.routers._matter_deps import accessible_matter_ids
 from app.services.audit import AuditEventType, audit_service
 from app.services.auth import TokenData
 from app.services.permissions import require_permission
@@ -33,6 +34,7 @@ async def strategy_brief(
     request: StrategyBriefRequest,
     http_request: Request,
     current_user: TokenData = require_permission("chat.use"),
+    accessible_matters: set[str] = Depends(accessible_matter_ids),
 ) -> dict:
     """Synthesize a strategy brief with guaranteed per-document coverage."""
     user_keys = UserAPIKeys.from_request(http_request, user_id=current_user.user_id)
@@ -45,6 +47,7 @@ async def strategy_brief(
             include_case_law=request.include_case_law,
             user_id=current_user.user_id,
             user_keys=user_keys,
+            accessible_matter_ids=accessible_matters,
         )
     except StrategyServiceUnavailable as e:
         raise ServiceUnavailableError(str(e))

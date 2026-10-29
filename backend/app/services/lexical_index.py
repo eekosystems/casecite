@@ -451,9 +451,12 @@ class LexicalIndex:
         match = build_match_query(query, phrases)
         if not match:
             return []
+        # ``where`` is built by compile_filter from allow-listed column names
+        # and "?" placeholders only; every value (including the MATCH
+        # expression) is a bound parameter.
         where, params = compile_filter(filter)
         sql = (
-            "SELECT c.chunk_id, c.text, c.metadata, bm25(chunks_fts, ?, ?) AS score "
+            "SELECT c.chunk_id, c.text, c.metadata, bm25(chunks_fts, ?, ?) AS score "  # nosec B608
             "FROM chunks_fts JOIN chunks c ON c.rowid = chunks_fts.rowid "
             f"WHERE chunks_fts MATCH ? AND ({where}) ORDER BY score LIMIT ?"
         )
