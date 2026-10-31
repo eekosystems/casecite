@@ -1,5 +1,7 @@
 # CaseCite — Private Legal RAG
 
+If you need help setting up or installing this on your infrastructure, contact me at https://thomasunise.com
+
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
 CaseCite is an **open-source, self-hosted** legal research platform. Upload your firm's documents, ask questions, and research cases & judges — on infrastructure you control. Documents, the search index and chat history are stored on your own servers. AI features send your questions and the relevant document text to the AI providers **you** configure, under your own API keys (BYOK); nothing is sent to the CaseCite maintainers, and there is no telemetry. See [What leaves your infrastructure](#what-leaves-your-infrastructure).
