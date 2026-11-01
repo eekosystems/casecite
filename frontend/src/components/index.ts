@@ -43,6 +43,7 @@ export { DraftCard } from './shared/DraftCard';
 export { MatterSelector } from './shared/MatterSelector';
 export { MatterCard } from './shared/MatterCard';
 export { MatterDocumentsTab } from './shared/MatterDocumentsTab';
+export { MatterFactsTab } from './shared/MatterFactsTab';
 export { MatterChatsTab } from './shared/MatterChatsTab';
 export { MatterAnalysesTab } from './shared/MatterAnalysesTab';
 export { MatterMembersTab } from './shared/MatterMembersTab';

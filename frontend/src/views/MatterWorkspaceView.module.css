@@ -427,3 +427,80 @@
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+/* ── Facts tab ── */
+.factsPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.factsHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.factsTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gray-800);
+}
+
+.factsUnsaved {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--amber-700);
+}
+
+.factsReadOnly {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--gray-100);
+  color: var(--gray-700);
+  font-size: 12px;
+}
+
+.factsText {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 260px;
+  padding: 10px 12px;
+  border: 1px solid var(--gray-300);
+  border-radius: 8px;
+  background: white;
+  color: var(--gray-900);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.55;
+  resize: vertical;
+}
+
+.factsText:read-only {
+  background: var(--gray-50, #f9fafb);
+}
+
+.factsFooter {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.factsCount {
+  font-size: 12px;
+  color: var(--gray-500);
+  font-variant-numeric: tabular-nums;
+}
+
+.factsCountOver {
+  color: var(--red-600);
+  font-weight: 600;
+}

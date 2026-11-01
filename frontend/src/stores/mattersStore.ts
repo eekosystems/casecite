@@ -13,7 +13,10 @@ import type {
   MatterDetail,
 } from '../api/types';
 
-export type MatterTab = 'documents' | 'chats' | 'analyses' | 'members' | 'activity';
+export type MatterTab = 'documents' | 'facts' | 'chats' | 'analyses' | 'members' | 'activity';
+
+/** Longest facts the server accepts (MAX_MATTER_FACTS_CHARS in the backend). */
+export const MAX_MATTER_FACTS_CHARS = 20_000;
 
 /** Per-device memory of the matter the header selector is set to. */
 const ACTIVE_MATTER_KEY = 'casecite.activeMatterId';
@@ -85,6 +88,15 @@ export interface MattersState {
   moveDocumentsHere: (documentIds: string[]) => Promise<boolean>;
   /** Documents the user can file here but that are not here yet (for the move picker). */
   movableDocuments: (allDocs: RagDocument[], currentUserId: string | null) => RagDocument[];
+
+  // ── Facts tab ──
+  /** Unsaved edits to the facts; null when there are none. Kept across tab switches. */
+  factsDraft: string | null;
+  factsSaving: boolean;
+  /** The server refused an edit (403): the caller's role can read but not change the facts. */
+  factsReadOnly: boolean;
+  setFactsDraft: (text: string) => void;
+  saveFacts: () => Promise<boolean>;
 }
 
 export const useMattersStore = create<MattersState>((set, get) => ({
@@ -174,7 +186,12 @@ export const useMattersStore = create<MattersState>((set, get) => ({
       workspaceId: matterId,
       workspaceLoading: true,
       workspaceError: null,
-      ...(changed ? { workspace: null, documents: [], chats: [], analyses: [], activity: [] } : {}),
+      ...(changed
+        ? {
+          workspace: null, documents: [], chats: [], analyses: [], activity: [],
+          factsDraft: null, factsReadOnly: false,
+        }
+        : {}),
     });
     try {
       const detail = await api.getMatter(matterId);
@@ -222,9 +239,13 @@ export const useMattersStore = create<MattersState>((set, get) => ({
           break;
         }
         case 'members':
-          // Members arrive with the matter detail; refresh it so the list is current.
-          set({ workspace: await api.getMatter(matterId) });
+        case 'facts': {
+          // Members and facts arrive with the matter detail; refresh it so they are
+          // current. Unsaved facts edits live in factsDraft and are left alone.
+          const detail = await api.getMatter(matterId);
+          if (get().workspaceId === matterId) set({ workspace: detail });
           break;
+        }
       }
     } catch (e: unknown) {
       logger.error(`Failed to load matter ${tab}:`, e);
@@ -364,6 +385,51 @@ export const useMattersStore = create<MattersState>((set, get) => ({
     } catch (e: unknown) {
       useUIStore.getState().addToast(`Could not move documents: ${errorMessage(e, 'unknown error')}`, 'error');
       return false;
+    }
+  },
+
+  factsDraft: null,
+  factsSaving: false,
+  factsReadOnly: false,
+
+  setFactsDraft: (text) => {
+    const saved = get().workspace?.facts ?? '';
+    set({ factsDraft: text === saved ? null : text });
+  },
+
+  saveFacts: async () => {
+    const { workspaceId, factsDraft } = get();
+    if (!workspaceId || factsDraft === null) return false;
+    if (factsDraft.length > MAX_MATTER_FACTS_CHARS) {
+      useUIStore.getState().addToast(
+        `The facts are too long: ${MAX_MATTER_FACTS_CHARS.toLocaleString()} characters at most.`,
+        'error',
+      );
+      return false;
+    }
+    set({ factsSaving: true });
+    try {
+      const saved = await api.setMatterFacts(workspaceId, factsDraft);
+      if (get().workspaceId !== workspaceId) return false; // navigated away meanwhile
+      set((state) => ({
+        workspace: state.workspace ? { ...state.workspace, ...saved } : null,
+        factsDraft: null,
+      }));
+      useUIStore.getState().addToast(
+        saved.facts ? 'Facts saved. Chats in this matter now use them.' : 'Facts cleared',
+        'success',
+      );
+      return true;
+    } catch (e: unknown) {
+      if ((e as { status?: number }).status === 403) {
+        set({ factsReadOnly: true });
+        useUIStore.getState().addToast('Your role can read these facts but not change them.', 'error');
+      } else {
+        useUIStore.getState().addToast(`Could not save the facts: ${errorMessage(e, 'unknown error')}`, 'error');
+      }
+      return false;
+    } finally {
+      set({ factsSaving: false });
     }
   },
 

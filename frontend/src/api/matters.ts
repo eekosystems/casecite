@@ -6,6 +6,7 @@ import type {
   MatterActivityEvent,
   MatterAnalysisItem,
   MatterDetail,
+  MatterFacts,
 } from './types';
 
 const matterPath = (matterId: string, suffix = '') => `/matters/${encodeURIComponent(matterId)}${suffix}`;
@@ -24,6 +25,13 @@ Object.assign(api, {
 
   async getMatter(matterId: string): Promise<MatterDetail> {
     return api.request(matterPath(matterId));
+  },
+
+  async setMatterFacts(matterId: string, facts: string): Promise<MatterFacts> {
+    return api.request(matterPath(matterId, '/facts'), {
+      method: 'PUT',
+      body: JSON.stringify({ facts }),
+    });
   },
 
   async updateMatter(
