@@ -211,6 +211,8 @@ class LocalLLMRequest(BaseModel):
     base_url: str = Field(..., min_length=4, max_length=400)  # e.g. http://localhost:11434/v1
     chat_model: str = Field(..., min_length=1, max_length=120)
     utility_model: str | None = Field(None, max_length=120)
+    # Deep research. Blank: follows the chat model.
+    research_model: str | None = Field(None, max_length=120)
 
     @field_validator("base_url")
     @classmethod
@@ -221,6 +223,19 @@ class LocalLLMRequest(BaseModel):
         return v
 
 
+def _embeddings_provider() -> str:
+    """Where document text goes for embeddings. The model endpoint above does not
+    cover embeddings (EMBEDDING_BASE_URL does), so the UI can warn when chat is
+    local but embeddings still go to a hosted provider."""
+    from app.services.embeddings import embedding_service
+
+    try:
+        return embedding_service.resolve_route(None).provider
+    except Exception as e:  # status display must never fail on this
+        logger.warning("Could not resolve the embeddings provider: %s", e)
+        return "unknown"
+
+
 def _local_llm_status() -> dict:
     """Effective endpoint config — one shape for GET, POST and DELETE."""
     cfg = llm_clients.get_runtime()
@@ -229,6 +244,8 @@ def _local_llm_status() -> dict:
         "base_url": cfg.get("base_url"),
         "chat_model": cfg.get("chat_model"),
         "utility_model": cfg.get("utility_model"),
+        "research_model": cfg.get("research_model"),
+        "embeddings_provider": _embeddings_provider(),
     }
 
 
@@ -249,6 +266,8 @@ async def set_local_llm(
         "base_url": body.base_url.strip(),
         "chat_model": body.chat_model.strip(),
         "utility_model": (body.utility_model or "").strip() or body.chat_model.strip(),
+        # "" (not None) so a cleared field is stored as cleared and survives a restart.
+        "research_model": (body.research_model or "").strip(),
     }
     await set_secret(LLM_SECRET, json.dumps(payload))
     llm_clients.set_runtime(**payload)
@@ -263,7 +282,13 @@ async def set_local_llm(
     )
     # Same fields as GET /local-llm (configured + the applied values), so the
     # UI shows "configured" right after saving instead of "not configured".
-    return {"status": "saved", "configured": True, **payload}
+    return {
+        "status": "saved",
+        "configured": True,
+        **payload,
+        "research_model": payload["research_model"] or None,
+        "embeddings_provider": _embeddings_provider(),
+    }
 
 
 @router.delete("/local-llm")
@@ -280,6 +305,7 @@ async def clear_local_llm(
         base_url=settings.openai_base_url or "",
         chat_model=settings.openai_chat_model,
         utility_model=settings.openai_utility_model,
+        research_model=settings.openai_research_model or "",
     )
     await audit_service.log_event(
         event_type=AuditEventType.SETTINGS_CHANGE,

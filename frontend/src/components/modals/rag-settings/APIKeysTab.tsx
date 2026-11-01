@@ -50,6 +50,7 @@ export const APIKeysTab = ({ local: _local, setLocal: _setLocal, showKeys, setSh
   const [baseUrl, setBaseUrl] = useState('');
   const [chatModel, setChatModel] = useState('');
   const [utilityModel, setUtilityModel] = useState('');
+  const [researchModel, setResearchModel] = useState('');
 
   const loadIntegrations = useCallback(async () => {
     try {
@@ -61,6 +62,7 @@ export const APIKeysTab = ({ local: _local, setLocal: _setLocal, showKeys, setSh
       setBaseUrl(llm.base_url || '');
       setChatModel(llm.chat_model || '');
       setUtilityModel(llm.utility_model || '');
+      setResearchModel(llm.research_model || '');
     } catch { /* non-critical */ }
   }, []);
 
@@ -222,7 +224,7 @@ export const APIKeysTab = ({ local: _local, setLocal: _setLocal, showKeys, setSh
 
   // ----- Local model endpoint (auto-save, debounced) -----
   const llmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const autoSaveLlm = (next: { baseUrl: string; chatModel: string; utilityModel: string }) => {
+  const autoSaveLlm = (next: { baseUrl: string; chatModel: string; utilityModel: string; researchModel: string }) => {
     if (llmTimer.current) clearTimeout(llmTimer.current);
     // Needs both a base URL and a chat model to be a valid endpoint.
     if (next.baseUrl.trim().length < 4 || !next.chatModel.trim()) return;
@@ -233,6 +235,7 @@ export const APIKeysTab = ({ local: _local, setLocal: _setLocal, showKeys, setSh
           baseUrl: next.baseUrl.trim(),
           chatModel: next.chatModel.trim(),
           utilityModel: next.utilityModel.trim() || null,
+          researchModel: next.researchModel.trim() || null,
         });
         setLlmStatus((prev) => ({
           ...prev,
@@ -241,6 +244,7 @@ export const APIKeysTab = ({ local: _local, setLocal: _setLocal, showKeys, setSh
           base_url: saved.base_url ?? next.baseUrl.trim(),
           chat_model: saved.chat_model ?? next.chatModel.trim(),
           utility_model: saved.utility_model ?? (next.utilityModel.trim() || null),
+          research_model: saved.research_model ?? (next.researchModel.trim() || null),
         }));
         markSaved('local', 'saved');
       } catch (e) {
@@ -263,6 +267,7 @@ export const APIKeysTab = ({ local: _local, setLocal: _setLocal, showKeys, setSh
             setBaseUrl(cleared.base_url || '');
             setChatModel(cleared.chat_model || '');
             setUtilityModel(cleared.utility_model || '');
+            setResearchModel(cleared.research_model || '');
           } else {
             await loadIntegrations();
           }
@@ -565,7 +570,7 @@ export const APIKeysTab = ({ local: _local, setLocal: _setLocal, showKeys, setSh
             id={`${id}-llm-base-url`}
             className={styles.modalInputMono}
             value={baseUrl}
-            onChange={e => { const v = e.target.value; setBaseUrl(v); autoSaveLlm({ baseUrl: v, chatModel, utilityModel }); }}
+            onChange={e => { const v = e.target.value; setBaseUrl(v); autoSaveLlm({ baseUrl: v, chatModel, utilityModel, researchModel }); }}
             placeholder="http://localhost:11434/v1"
           />
         </div>
@@ -576,9 +581,10 @@ export const APIKeysTab = ({ local: _local, setLocal: _setLocal, showKeys, setSh
             id={`${id}-llm-chat-model`}
             className={styles.modalInputMono}
             value={chatModel}
-            onChange={e => { const v = e.target.value; setChatModel(v); autoSaveLlm({ baseUrl, chatModel: v, utilityModel }); }}
+            onChange={e => { const v = e.target.value; setChatModel(v); autoSaveLlm({ baseUrl, chatModel: v, utilityModel, researchModel }); }}
             placeholder="llama3.1:70b"
           />
+          <span className={styles.helpText}>Answers in chat and drafting.</span>
         </div>
 
         <div>
@@ -587,10 +593,33 @@ export const APIKeysTab = ({ local: _local, setLocal: _setLocal, showKeys, setSh
             id={`${id}-llm-utility-model`}
             className={styles.modalInputMono}
             value={utilityModel}
-            onChange={e => { const v = e.target.value; setUtilityModel(v); autoSaveLlm({ baseUrl, chatModel, utilityModel: v }); }}
+            onChange={e => { const v = e.target.value; setUtilityModel(v); autoSaveLlm({ baseUrl, chatModel, utilityModel: v, researchModel }); }}
             placeholder="defaults to chat model"
           />
+          <span className={styles.helpText}>
+            Many small background jobs: routing questions, checking claims, pulling contract terms. A small, fast model works well here.
+          </span>
         </div>
+
+        <div>
+          <label className={styles.settingLabel} htmlFor={`${id}-llm-research-model`}>Research Model (optional)</label>
+          <input
+            id={`${id}-llm-research-model`}
+            className={styles.modalInputMono}
+            value={researchModel}
+            onChange={e => { const v = e.target.value; setResearchModel(v); autoSaveLlm({ baseUrl, chatModel, utilityModel, researchModel: v }); }}
+            placeholder="defaults to chat model"
+          />
+          <span className={styles.helpText}>Deep research: the plan, each research step and the final write-up.</span>
+        </div>
+
+        {llmStatus?.configured && llmStatus.embeddings_provider && llmStatus.embeddings_provider !== 'self_hosted' && (
+          <p className={styles.bannerTextAmber}>
+            Embeddings don&apos;t use this endpoint: they go to {llmStatus.embeddings_provider}, and uploaded document
+            text is sent there when it is indexed. To keep it on your network, set EMBEDDING_BASE_URL and
+            EMBEDDING_MODEL in the server&apos;s .env, then re-index.
+          </p>
+        )}
 
         {llmStatus?.configured && (
           <div className={styles.boxActions}>

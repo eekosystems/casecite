@@ -1,5 +1,5 @@
 import { api } from './client';
-import type { RAGSettings, ReindexResult } from './types';
+import type { InstanceModels, RAGSettings, ReindexResult } from './types';
 
 Object.assign(api, {
   async getSettings(): Promise<RAGSettings> {
@@ -34,6 +34,10 @@ Object.assign(api, {
 
   async getPromptDefaults(): Promise<Record<string, unknown>> {
     return api.request('/settings/prompts/defaults');
+  },
+
+  async getInstanceModels(): Promise<InstanceModels> {
+    return api.request('/settings/models');
   },
 
   async reindexDocuments(): Promise<ReindexResult> {

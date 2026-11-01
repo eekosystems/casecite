@@ -1169,12 +1169,26 @@ export interface LocalLlmStatus {
   base_url: string | null;
   chat_model: string | null;
   utility_model: string | null;
+  /** Deep research model; null means it follows the chat model. */
+  research_model?: string | null;
+  /** Where embeddings go ("openai", "voyage", "cohere", "self_hosted" or a hostname). */
+  embeddings_provider?: string;
 }
 
 export interface LocalLlmConfig {
   baseUrl: string;
   chatModel: string;
   utilityModel?: string | null;
+  researchModel?: string | null;
+}
+
+/** GET /settings/models — the instance's configured models, for the model picker. */
+export interface InstanceModels {
+  /** True when chat goes to a custom endpoint (local server or gateway), not OpenAI. */
+  custom_endpoint: boolean;
+  chat_model: string;
+  utility_model: string;
+  research_model: string;
 }
 
 // ==================== Admin User Management Types ====================
@@ -1689,6 +1703,7 @@ export interface ApiClient {
   saveApiKey(keyType: string, apiKey: string): Promise<void>;
   deleteApiKey(keyType: string): Promise<void>;
   getPromptDefaults(): Promise<Record<string, unknown>>;
+  getInstanceModels(): Promise<InstanceModels>;
   reindexDocuments(): Promise<ReindexResult>;
 
   // Admin Integrations (admin-only)

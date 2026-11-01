@@ -1345,7 +1345,8 @@ class RAGSettings(BaseModel):
     context_compression: bool = False
     query_expansion: bool = True
     source_tracking: bool = True
-    llm_model: str = Field(default="gpt-5.5", max_length=100)
+    # Empty: the instance chat model (the admin's local model when one is set).
+    llm_model: str = Field(default="", max_length=100)
     temperature: float = Field(default=0.1, ge=0.0, le=2.0)
     max_tokens: int = Field(default=4096, ge=100, le=128000)
     # Firm contract playbook: standing review standards applied to every

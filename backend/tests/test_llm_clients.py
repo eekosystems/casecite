@@ -124,3 +124,101 @@ class TestProviderAllowlist:
 
         client = self._client("https://api.groq.com/openai/v1")
         assert await openai_chat(client, model="llama", messages=[]) == "ok"
+
+
+class TestModelSlots:
+    """Chat, utility and research models resolve independently, and a chat
+    request never names an OpenAI model on a custom (local) endpoint."""
+
+    LOCAL = {
+        "base_url": "http://localhost:11434/v1",
+        "chat_model": "qwen3:27b",
+        "utility_model": "qwen3:4b",
+        "research_model": None,
+    }
+
+    def test_research_model_follows_chat_model_when_unset(self):
+        from app.services.llm_clients import research_model
+
+        with patch.dict("app.services.llm_clients._runtime", self.LOCAL):
+            assert research_model() == "qwen3:27b"
+
+    def test_research_model_is_independent_of_utility_model(self):
+        from app.services.llm_clients import research_model, utility_model
+
+        runtime = {**self.LOCAL, "research_model": "qwen3:32b"}
+        with patch.dict("app.services.llm_clients._runtime", runtime):
+            assert research_model() == "qwen3:32b"
+            assert utility_model() == "qwen3:4b"
+
+    def test_set_runtime_clears_research_model_with_empty_string(self):
+        from app.services.llm_clients import research_model, set_runtime
+
+        runtime = {**self.LOCAL, "research_model": "qwen3:32b"}
+        with patch.dict("app.services.llm_clients._runtime", runtime):
+            set_runtime(research_model=None)  # None leaves it unchanged
+            assert research_model() == "qwen3:32b"
+            set_runtime(research_model="")
+            assert research_model() == "qwen3:27b"
+
+    @pytest.mark.parametrize("requested", ["", None, "  "])
+    def test_no_choice_uses_instance_chat_model(self, requested):
+        from app.services.llm_clients import resolve_chat_model
+
+        with patch.dict("app.services.llm_clients._runtime", self.LOCAL):
+            assert resolve_chat_model(requested) == "qwen3:27b"
+        with patch.dict(
+            "app.services.llm_clients._runtime",
+            {"base_url": None, "chat_model": "gpt-5.5"},
+        ):
+            assert resolve_chat_model(requested) == "gpt-5.5"
+
+    @pytest.mark.parametrize("requested", ["gpt-5.5", "gpt-5.4-mini"])
+    def test_openai_name_on_local_endpoint_uses_local_chat_model(self, requested):
+        """The old default ("gpt-5.5") must not be sent to an Ollama server."""
+        from app.services.llm_clients import resolve_chat_model
+
+        with patch.dict("app.services.llm_clients._runtime", self.LOCAL):
+            assert resolve_chat_model(requested) == "qwen3:27b"
+
+    @pytest.mark.parametrize("requested", ["qwen3:27b", "qwen3:4b"])
+    def test_endpoint_models_are_kept(self, requested):
+        from app.services.llm_clients import resolve_chat_model
+
+        with patch.dict("app.services.llm_clients._runtime", self.LOCAL):
+            assert resolve_chat_model(requested) == requested
+
+    @pytest.mark.parametrize("requested", ["claude-opus-4-8", "gemini-3.1-pro-preview"])
+    def test_claude_and_gemini_choices_are_kept(self, requested):
+        from app.services.llm_clients import resolve_chat_model
+
+        with patch.dict("app.services.llm_clients._runtime", self.LOCAL):
+            assert resolve_chat_model(requested) == requested
+
+    def test_openai_choice_is_kept_without_custom_endpoint(self):
+        from app.services.llm_clients import resolve_chat_model
+
+        with patch.dict(
+            "app.services.llm_clients._runtime",
+            {"base_url": None, "chat_model": "gpt-5.5", "utility_model": "gpt-5.4-mini"},
+        ):
+            assert resolve_chat_model("gpt-5.4-mini") == "gpt-5.4-mini"
+
+
+class TestUnknownModelOutputTokens:
+    """A model the token table doesn't know (local, gateway) is not held to 4096."""
+
+    def test_unknown_model_defers_to_the_users_setting(self):
+        from app.services.rag.generation import UNKNOWN_MODEL_MAX_TOKENS, get_model_max_tokens
+
+        with patch("app.services.rag.generation.settings") as mock_settings:
+            mock_settings.llm_max_output_tokens = None
+            assert get_model_max_tokens("qwen3:27b") == UNKNOWN_MODEL_MAX_TOKENS
+
+    def test_admin_override_caps_unknown_models(self):
+        from app.services.rag.generation import get_model_max_tokens
+
+        with patch("app.services.rag.generation.settings") as mock_settings:
+            mock_settings.llm_max_output_tokens = 2048
+            assert get_model_max_tokens("qwen3:27b") == 2048
+            assert get_model_max_tokens("gpt-5.5") == 32768  # known models unaffected

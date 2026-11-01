@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 from app.config import settings
 from app.models.schemas import QueryIntent
-from app.services.llm_clients import SDK_MAX_RETRIES, openai_chat
+from app.services.llm_clients import SDK_MAX_RETRIES, model_family, openai_chat
 from app.services.provider_policy import (
     enforce_openai_client,
     enforce_provider_allowed,
@@ -56,6 +56,10 @@ def build_context_with_case_law(
     return "\n---\n".join(context_parts)
 
 
+# Same as the RAGSettings.max_tokens ceiling: no cap beyond the user's own setting.
+UNKNOWN_MODEL_MAX_TOKENS = 128_000
+
+
 def get_model_max_tokens(model_name: str, intent: QueryIntent | None = None) -> int:
     """Get maximum output tokens for a model, adjusted by query intent."""
     # Factual queries: cap at 500 tokens - they should be brief
@@ -81,8 +85,10 @@ def get_model_max_tokens(model_name: str, intent: QueryIntent | None = None) -> 
         return 8192
     elif "o1" in model_lower or "o3" in model_lower:
         return 32768
-    else:
-        return 4096
+    # A model the table doesn't know — usually a local or gateway model. Its
+    # limit can't be read from the name, so the admin's LLM_MAX_OUTPUT_TOKENS
+    # caps it when set; otherwise the user's own max-tokens setting decides.
+    return settings.llm_max_output_tokens or UNKNOWN_MODEL_MAX_TOKENS
 
 
 def provider_of_model(model: str | None) -> str:
@@ -91,12 +97,7 @@ def provider_of_model(model: str | None) -> str:
     Used only to pick a client; the allowlist check always keys on the client
     that actually carries the request, never on this.
     """
-    lowered = (model or "").lower()
-    if "claude" in lowered:
-        return "anthropic"
-    if "gemini" in lowered:
-        return "google"
-    return "openai"
+    return model_family(model)
 
 
 async def call_llm(

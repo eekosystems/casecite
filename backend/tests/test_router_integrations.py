@@ -4,6 +4,7 @@ Instance-wide credentials: every route must be admin-only (``admin.settings``),
 must never return a secret unmasked, and must audit each change.
 """
 
+import json
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -234,10 +235,41 @@ class TestLocalLLM:
             )
         assert resp.status_code == 200
         assert resp.json()["utility_model"] == "llama3"  # defaults to the chat model
+        assert resp.json()["research_model"] is None  # deep research follows the chat model
         set_runtime.assert_called_once_with(
-            base_url="http://localhost:11434/v1", chat_model="llama3", utility_model="llama3"
+            base_url="http://localhost:11434/v1",
+            chat_model="llama3",
+            utility_model="llama3",
+            research_model="",
         )
         assert [e["details"]["action"] for e in audit_events] == ["local_llm_set"]
+
+    def test_research_model_is_saved_separately(self, client, admin):
+        with (
+            patch(f"{ROUTER}.set_secret", new_callable=AsyncMock) as set_secret,
+            patch(f"{ROUTER}.llm_clients.set_runtime") as set_runtime,
+        ):
+            resp = client.post(
+                f"{BASE}/local-llm",
+                json={
+                    "base_url": "http://localhost:11434/v1",
+                    "chat_model": "qwen3:27b",
+                    "utility_model": "qwen3:4b",
+                    "research_model": "qwen3:32b",
+                },
+                headers=headers(admin),
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert (body["utility_model"], body["research_model"]) == ("qwen3:4b", "qwen3:32b")
+        assert set_runtime.call_args.kwargs["research_model"] == "qwen3:32b"
+        assert json.loads(set_secret.call_args.args[1])["research_model"] == "qwen3:32b"
+
+    def test_status_reports_where_embeddings_go(self, client, admin):
+        """Chat on a local server does not move embeddings; the admin sees where they go."""
+        with patch(f"{ROUTER}._embeddings_provider", return_value="openai"):
+            status = client.get(f"{BASE}/local-llm", headers=headers(admin)).json()
+        assert status["embeddings_provider"] == "openai"
 
     def test_set_response_reports_configured_like_status(self, client, admin):
         """Right after saving, the response says the endpoint is configured — the
@@ -264,6 +296,7 @@ class TestLocalLLM:
                     base_url=settings.openai_base_url or "",
                     chat_model=settings.openai_chat_model,
                     utility_model=settings.openai_utility_model,
+                    research_model=settings.openai_research_model or "",
                 )
 
     @pytest.mark.parametrize(

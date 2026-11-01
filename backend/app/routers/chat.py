@@ -22,6 +22,7 @@ from app.services.audit import AuditEventType, audit_service
 from app.services.auth import TokenData
 from app.services.documents import document_service
 from app.services.job_queue import RETRY_POLICIES, job_manager
+from app.services.llm_clients import resolve_chat_model
 from app.services.permissions import require_permission
 from app.services.rag import rag_service
 from app.services.rag.per_file import PER_FILE_MAX_FILES, per_file_answer
@@ -259,7 +260,7 @@ async def _per_file_answer(request: ChatRequest, ctx: _ChatContext) -> dict | No
             document_ids=ctx.document_ids,
             user_id=ctx.user_id,
             user_keys=ctx.user_keys,
-            model=ctx.user_settings.llm_model,
+            model=resolve_chat_model(ctx.user_settings.llm_model),
             accessible_matter_ids=ctx.accessible_matters,
         )
     except Exception as e:  # per-file must never kill chat
@@ -299,7 +300,7 @@ async def _retrieve_answer(request: ChatRequest, ctx: _ChatContext) -> tuple[dic
     # also distills the case-law SEARCH TERM — the raw message ("find me
     # case law for a dwi") is never a usable keyword query.
     intent, wants_authority, case_law_query, per_file = await route_query(
-        request.query, ctx.user_keys, model=ctx.user_settings.llm_model
+        request.query, ctx.user_keys, model=resolve_chat_model(ctx.user_settings.llm_model)
     )
     include_case_law = (
         request.include_case_law if request.include_case_law is not None else wants_authority

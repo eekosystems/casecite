@@ -115,6 +115,54 @@ describe('APIKeysTab', () => {
     });
   });
 
+  describe('local model endpoint', () => {
+    afterEach(() => { vi.useRealTimers(); });
+
+    it('saves the research model separately from the utility model', async () => {
+      vi.useFakeTimers();
+      answer('/admin/integrations/local-llm', 'POST', {
+        status: 'saved', configured: true, base_url: 'http://localhost:11434/v1',
+        chat_model: 'qwen3:27b', utility_model: 'qwen3:4b', research_model: 'qwen3:32b',
+      });
+      const { container } = render(<APIKeysTab {...defaultProps()} />);
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+
+      fireEvent.change(container.querySelector('input[placeholder="http://localhost:11434/v1"]')!, { target: { value: 'http://localhost:11434/v1' } });
+      fireEvent.change(container.querySelector('input[placeholder="llama3.1:70b"]')!, { target: { value: 'qwen3:27b' } });
+      const [utility, research] = Array.from(container.querySelectorAll('input[placeholder="defaults to chat model"]'));
+      fireEvent.change(utility, { target: { value: 'qwen3:4b' } });
+      fireEvent.change(research, { target: { value: 'qwen3:32b' } });
+      await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+
+      const post = (api.request as ReturnType<typeof vi.fn>).mock.calls.find(
+        ([ep, opts]) => ep === '/admin/integrations/local-llm' && opts?.method === 'POST');
+      expect(JSON.parse(post![1].body)).toEqual({
+        base_url: 'http://localhost:11434/v1', chat_model: 'qwen3:27b',
+        utility_model: 'qwen3:4b', research_model: 'qwen3:32b',
+      });
+    });
+
+    it('warns when chat is local but embeddings go to a hosted provider', async () => {
+      answer('/admin/integrations/local-llm', 'GET', {
+        configured: true, base_url: 'http://localhost:11434/v1', chat_model: 'qwen3:27b',
+        utility_model: 'qwen3:27b', research_model: null, embeddings_provider: 'openai',
+      });
+      const { container } = render(<APIKeysTab {...defaultProps()} />);
+      await act(async () => {});
+      expect(container.textContent).toContain('they go to openai');
+    });
+
+    it('says nothing about embeddings when they are self-hosted too', async () => {
+      answer('/admin/integrations/local-llm', 'GET', {
+        configured: true, base_url: 'http://localhost:11434/v1', chat_model: 'qwen3:27b',
+        utility_model: 'qwen3:27b', research_model: null, embeddings_provider: 'self_hosted',
+      });
+      const { container } = render(<APIKeysTab {...defaultProps()} />);
+      await act(async () => {});
+      expect(container.textContent).not.toContain("Embeddings don't use this endpoint");
+    });
+  });
+
   it('has password inputs for api keys', () => {
     const { container } = render(<APIKeysTab {...defaultProps()} />);
     const passwordInputs = container.querySelectorAll('input[type="password"]');

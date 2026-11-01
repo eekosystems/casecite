@@ -12,7 +12,7 @@ import json
 import logging
 from typing import Any
 
-from app.services.llm_clients import openai_chat, utility_model
+from app.services.llm_clients import openai_chat, research_model
 from app.services.rag.prompt_safety import UNTRUSTED_CONTENT_RULE, untrusted_block
 
 logger = logging.getLogger(__name__)
@@ -98,7 +98,7 @@ async def plan_research(
     try:
         resp = await openai_chat(
             client,
-            model=utility_model(),
+            model=research_model(),
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1,
             response_format={"type": "json_object"},

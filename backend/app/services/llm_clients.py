@@ -23,10 +23,12 @@ logger = logging.getLogger(__name__)
 INSTANCE_KEY = "local_llm_config"
 
 # Effective config. base_url=None -> default OpenAI. Models fall back to settings.
+# research_model=None -> deep research uses the chat model.
 _runtime: dict[str, str | None] = {
     "base_url": (settings.openai_base_url or "").strip() or None,
     "chat_model": settings.openai_chat_model,
     "utility_model": settings.openai_utility_model,
+    "research_model": (settings.openai_research_model or "").strip() or None,
 }
 
 
@@ -34,15 +36,21 @@ def set_runtime(
     base_url: str | None = None,
     chat_model: str | None = None,
     utility_model: str | None = None,
+    research_model: str | None = None,
 ) -> None:
-    """Update the effective config. Pass base_url="" to clear (revert to OpenAI);
-    pass None to leave a field unchanged."""
+    """Update the effective config. Pass None to leave a field unchanged.
+
+    base_url="" clears the endpoint (revert to OpenAI); research_model="" clears
+    the research model so deep research follows the chat model again.
+    """
     if base_url is not None:
         _runtime["base_url"] = base_url.strip() or None
     if chat_model:
         _runtime["chat_model"] = chat_model
     if utility_model:
         _runtime["utility_model"] = utility_model
+    if research_model is not None:
+        _runtime["research_model"] = research_model.strip() or None
 
 
 def get_runtime() -> dict[str, str | None]:
@@ -59,6 +67,41 @@ def chat_model() -> str:
 
 def utility_model() -> str:
     return _runtime["utility_model"] or settings.openai_utility_model
+
+
+def research_model() -> str:
+    """Model for deep research: the research model if one is set, else the chat model."""
+    return _runtime["research_model"] or chat_model()
+
+
+def model_family(model: str | None) -> str:
+    """Which provider family a model NAME belongs to ("anthropic"/"google"/"openai")."""
+    lowered = (model or "").lower()
+    if "claude" in lowered:
+        return "anthropic"
+    if "gemini" in lowered:
+        return "google"
+    return "openai"
+
+
+def resolve_chat_model(requested: str | None) -> str:
+    """The model a chat request should use, given the user's model setting.
+
+    - No choice ("" / None): the instance chat model.
+    - A Claude or Gemini model: kept. Those are served by their own clients.
+    - An OpenAI model name while a custom endpoint is configured: the endpoint's
+      chat model, unless the name is one of the models the endpoint was set up
+      with. The OpenAI client points at that endpoint, so a name like "gpt-5.5"
+      would be sent to the local server, which does not serve it.
+    """
+    name = (requested or "").strip()
+    if not name:
+        return chat_model()
+    if model_family(name) != "openai" or not is_custom_endpoint():
+        return name
+    if name in {chat_model(), utility_model(), research_model()}:
+        return name
+    return chat_model()
 
 
 # SDK-level retries (backoff on 429/5xx/connection errors). Pinned explicitly so
@@ -164,6 +207,7 @@ async def load_from_storage() -> None:
                 base_url=cfg.get("base_url", None),
                 chat_model=cfg.get("chat_model"),
                 utility_model=cfg.get("utility_model"),
+                research_model=cfg.get("research_model"),
             )
             if _runtime["base_url"]:
                 logger.info("Applied instance custom LLM endpoint: %s", _runtime["base_url"])

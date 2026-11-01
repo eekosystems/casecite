@@ -25,6 +25,7 @@ from app.services.chunking import (
     embedding_text,
 )
 from app.services.embeddings import embedding_service
+from app.services.llm_clients import resolve_chat_model
 from app.services.rag.case_law_guard import redact_unverified_case_law
 from app.services.rag.citation_reasoning import enrich_citations_with_reasoning
 from app.services.rag.citations import (
@@ -396,7 +397,7 @@ class RAGService:
         # Resolve effective per-user settings up front so the model choice and
         # retrieval toggles apply to every code path below (including no-results).
         effective_settings = rag_settings if rag_settings else RAGSettings()
-        model = model or effective_settings.llm_model or settings.openai_chat_model
+        model = resolve_chat_model(model or effective_settings.llm_model)
 
         openai_client, anthropic_client, gemini_model = self._resolve_llm_clients(user_keys, model)
 
@@ -790,7 +791,7 @@ class RAGService:
             is_drafting = any(kw in query.lower() for kw in drafting_keywords)
 
             system_prompt = get_system_prompt(mode, is_drafting=is_drafting)
-            model = model or effective_settings.llm_model or settings.openai_chat_model
+            model = resolve_chat_model(model or effective_settings.llm_model)
             # Respect the user's max-tokens setting, capped by the model ceiling.
             max_tokens = min(effective_settings.max_tokens, get_model_max_tokens(model))
             # Drafting needs a little more creativity; treat 0.3 as a floor there.

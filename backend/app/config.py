@@ -368,6 +368,10 @@ class Settings(BaseSettings):
     openai_utility_model: str = (
         "gpt-5.4-mini"  # cheaper model for high-volume utility/extraction calls
     )
+    # Model for deep research (planning, each research step, the synthesis).
+    # Unset: the chat model. Kept apart from the utility model so a strong model
+    # can do research while the many small background calls stay on a fast one.
+    openai_research_model: str | None = None
     # Point the OpenAI-compatible client at a custom endpoint to use local/open models
     # (Ollama http://host:11434/v1, LM Studio, vLLM) or hosted OSS gateways (Together,
     # Groq, OpenRouter). Leave unset for OpenAI. Also editable at runtime via the admin UI.
@@ -376,6 +380,11 @@ class Settings(BaseSettings):
     # or local endpoints. Long-document drafting budgets reference material against
     # it. Unset: inferred from the model name (gpt-5 → 400k, gpt-4o → 128k, ...).
     llm_context_window: int | None = None
+    # Answer-length ceiling (output tokens) for a chat model whose name doesn't
+    # reveal it — custom or local endpoints. Unset: the user's own max-tokens
+    # setting is used as is. Set it when your server's context is small enough
+    # that a long answer request would be rejected.
+    llm_max_output_tokens: int | None = None
 
     # Anthropic
     anthropic_api_key: str | None = None

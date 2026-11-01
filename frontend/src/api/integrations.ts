@@ -56,6 +56,7 @@ Object.assign(api, {
         base_url: config.baseUrl,
         chat_model: config.chatModel,
         utility_model: config.utilityModel || null,
+        research_model: config.researchModel || null,
       }),
     });
   },

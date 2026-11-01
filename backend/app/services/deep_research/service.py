@@ -32,7 +32,7 @@ from app.services.deep_research.planner import (
     PlanningError,
     plan_research,
 )
-from app.services.llm_clients import make_openai, utility_model
+from app.services.llm_clients import make_openai, research_model
 
 logger = logging.getLogger(__name__)
 
@@ -247,7 +247,7 @@ class DeepResearchService:
             "quotes_unverified": verification.get("quotes_unverified"),
             "invalid_refs_stripped": verification.get("invalid_refs_stripped"),
             "citations_checked": verification.get("citations_checked"),
-            "model": result.get("model") or utility_model(),
+            "model": result.get("model") or research_model(),
         }
 
 

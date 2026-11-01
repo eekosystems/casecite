@@ -14,7 +14,8 @@ const defaultRagSettings: RagSettings = {
   topK: 10, enableReranking: true, hybridSearch: true, citationVerification: true,
   contextCompression: false, queryExpansion: true, sourceTracking: true,
   // 4096 matches the server-side default (RAGSettings.max_tokens).
-  llmModel: 'gpt-5.5', temperature: 0.1, maxTokens: 4096,
+  // llmModel '': the instance default (the admin's local model, when one is set).
+  llmModel: '', temperature: 0.1, maxTokens: 4096,
 };
 
 export function loadSavedRagSettings(): RagSettings {

@@ -3,8 +3,13 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.exceptions import UpstreamError
-from app.models.responses.settings import ClearResponse, PromptDefaultsResponse
+from app.models.responses.settings import (
+    ClearResponse,
+    InstanceModelsResponse,
+    PromptDefaultsResponse,
+)
 from app.models.schemas import RAGSettings
+from app.services import llm_clients
 from app.services.audit import AuditEventType, audit_service
 from app.services.auth import TokenData, get_current_user
 from app.services.permissions import require_permission
@@ -46,6 +51,20 @@ async def update_rag_settings(
 
     save_user_settings(current_user.user_id, merged)
     return merged
+
+
+@router.get("/models", response_model=InstanceModelsResponse)
+async def get_instance_models(
+    current_user: TokenData = Depends(get_current_user),
+) -> InstanceModelsResponse:
+    """The models this instance is set up with, so the model picker can offer
+    the instance default (an admin's local model, when one is configured)."""
+    return InstanceModelsResponse(
+        custom_endpoint=llm_clients.is_custom_endpoint(),
+        chat_model=llm_clients.chat_model(),
+        utility_model=llm_clients.utility_model(),
+        research_model=llm_clients.research_model(),
+    )
 
 
 @router.get("/prompts/defaults", response_model=PromptDefaultsResponse)

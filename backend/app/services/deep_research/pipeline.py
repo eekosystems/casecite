@@ -50,7 +50,7 @@ from app.services.deep_research.tools import (
     search_firm_documents,
 )
 from app.services.job_queue import job_manager
-from app.services.llm_clients import openai_chat, utility_model
+from app.services.llm_clients import openai_chat, research_model
 from app.services.rag.prompt_safety import UNTRUSTED_CONTENT_RULE, untrusted_block
 
 logger = logging.getLogger(__name__)
@@ -182,7 +182,7 @@ def build_synthesis_prompt(question: str, steps: list[StepLog], passages: list[A
 async def _json_chat(client: Any, prompt: str, temperature: float) -> dict[str, Any]:
     resp = await openai_chat(
         client,
-        model=utility_model(),
+        model=research_model(),
         messages=[{"role": "user", "content": prompt}],
         temperature=temperature,
         response_format={"type": "json_object"},
@@ -533,6 +533,6 @@ class ResearchRunner:
                 "case_references_removed": synthesis["case_references_removed"],
                 "citations_checked": len(treatment),
             },
-            "model": utility_model(),
+            "model": research_model(),
             "notice": AI_REVIEW_NOTICE,
         }
