@@ -433,6 +433,17 @@ export interface Matter {
 
 export interface MatterDetail extends Matter {
   members: MatterMember[];
+  /** The case team's account of the matter (Matter → Facts); read by chat and strategy. */
+  facts?: string | null;
+  facts_updated_at?: string | null;
+  /** User id of the member who last saved the facts. */
+  facts_updated_by?: string | null;
+}
+
+export interface MatterFacts {
+  facts: string | null;
+  facts_updated_at: string | null;
+  facts_updated_by: string | null;
 }
 
 export interface MatterAnalysisItem {
@@ -1790,6 +1801,8 @@ export interface ApiClient {
   getMatterChats(matterId: string): Promise<ChatSessionListResponse>;
   getMatterAnalyses(matterId: string): Promise<{ analyses: MatterAnalysisItem[] }>;
   getMatterActivity(matterId: string, limit?: number): Promise<{ events: MatterActivityEvent[] }>;
+  /** Replace the matter's facts (empty clears them). 403 when the caller's role can't edit. */
+  setMatterFacts(matterId: string, facts: string): Promise<MatterFacts>;
 
   // Tabular review
   listReviewTables(): Promise<{ tables: ReviewTableSummary[] }>;

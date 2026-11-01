@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { useMattersStore, type MatterTab } from '../stores/mattersStore';
+import { useMattersStore, MAX_MATTER_FACTS_CHARS, type MatterTab } from '../stores/mattersStore';
 import { useAuthStore } from '../stores/authStore';
 import { useRagDocsStore } from '../stores/ragDocsStore';
 import { useContractsStore } from '../stores/contractsStore';
@@ -9,6 +9,7 @@ import { appNavigate } from '../utils/router';
 import {
   Icon,
   MatterDocumentsTab,
+  MatterFactsTab,
   MatterChatsTab,
   MatterAnalysesTab,
   MatterMembersTab,
@@ -18,6 +19,7 @@ import s from './MatterWorkspaceView.module.css';
 
 const TABS: Array<{ id: MatterTab; label: string; icon: string }> = [
   { id: 'documents', label: 'Documents', icon: 'FileText' },
+  { id: 'facts', label: 'Facts', icon: 'NotebookPen' },
   { id: 'chats', label: 'Chats', icon: 'MessageSquare' },
   { id: 'analyses', label: 'Analyses', icon: 'FileCheck' },
   { id: 'members', label: 'Members', icon: 'Users' },
@@ -32,6 +34,7 @@ function MatterWorkspaceView() {
     documents, chats, analyses, activity, tabLoading,
     loadWorkspace, renameMatter, addMember, removeMember, transferOwnership, deleteMatter,
     moveDocumentsHere, movableDocuments, activeMatterId, setActiveMatter, init,
+    factsDraft, factsSaving, factsReadOnly, setFactsDraft, saveFacts,
   } = useMattersStore();
   const currentUserId = useAuthStore((st) => st.user?.id ?? null);
   const ragDocs = useRagDocsStore((st) => st.ragDocs);
@@ -176,6 +179,21 @@ function MatterWorkspaceView() {
               movable={movableDocuments(ragDocs, currentUserId)}
               onMove={moveDocumentsHere}
               onOpenKnowledgeBase={() => appNavigate('/documents')}
+              styles={s}
+            />
+          )}
+          {tab === 'facts' && (
+            <MatterFactsTab
+              facts={workspace.facts ?? null}
+              draft={factsDraft}
+              updatedAt={workspace.facts_updated_at ?? null}
+              updatedBy={workspace.facts_updated_by ?? null}
+              members={workspace.members}
+              maxChars={MAX_MATTER_FACTS_CHARS}
+              saving={factsSaving}
+              readOnly={factsReadOnly}
+              onChange={setFactsDraft}
+              onSave={() => { saveFacts(); }}
               styles={s}
             />
           )}
