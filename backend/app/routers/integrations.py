@@ -11,7 +11,7 @@ import json
 import logging
 
 from fastapi import APIRouter, Request
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.config import settings
 from app.exceptions import BadRequestError, NotFoundError
@@ -207,8 +207,27 @@ async def clear_connector_credentials(
 LLM_SECRET = "local_llm_config"
 
 
-class LocalLLMRequest(BaseModel):
+def _http_url(v: str) -> str:
+    v = v.strip()
+    if not v.lower().startswith(("http://", "https://")):
+        raise ValueError("base_url must start with http:// or https://")
+    return v
+
+
+class LocalModelEntry(BaseModel):
+    """One registered model and the server that serves it."""
+
+    name: str = Field(..., min_length=1, max_length=120)
     base_url: str = Field(..., min_length=4, max_length=400)  # e.g. http://localhost:11434/v1
+
+    _check_url = field_validator("base_url")(_http_url)
+
+
+class LocalLLMRequest(BaseModel):
+    # The model list. Older clients send one server instead (base_url, no
+    # models); that is read as the role models on that server.
+    models: list[LocalModelEntry] | None = Field(None, max_length=50)
+    base_url: str | None = Field(None, min_length=4, max_length=400)
     chat_model: str = Field(..., min_length=1, max_length=120)
     utility_model: str | None = Field(None, max_length=120)
     # Deep research. Blank: follows the chat model.
@@ -216,11 +235,37 @@ class LocalLLMRequest(BaseModel):
 
     @field_validator("base_url")
     @classmethod
-    def _http_url(cls, v: str) -> str:
-        v = v.strip()
-        if not v.lower().startswith(("http://", "https://")):
-            raise ValueError("base_url must start with http:// or https://")
-        return v
+    def _base_url(cls, v: str | None) -> str | None:
+        return None if v is None else _http_url(v)
+
+    @model_validator(mode="after")
+    def _registry(self) -> "LocalLLMRequest":
+        if self.models is None:
+            if not self.base_url:
+                raise ValueError("Send the model list (models) or one server URL (base_url).")
+            role_models = dict.fromkeys(
+                n.strip()
+                for n in (self.chat_model, self.utility_model, self.research_model)
+                if n and n.strip()
+            )
+            self.models = [LocalModelEntry(name=n, base_url=self.base_url) for n in role_models]
+        if not self.models:
+            raise ValueError("Add at least one model.")
+        names = [m.name.strip() for m in self.models]
+        duplicate = next((n for n in names if names.count(n) > 1), None)
+        if duplicate:
+            raise ValueError(
+                f"The model '{duplicate}' is listed more than once. Each model name must be "
+                "unique, so every request goes to one known server."
+            )
+        for role, value in (
+            ("chat", self.chat_model),
+            ("utility", self.utility_model),
+            ("research", self.research_model),
+        ):
+            if value and value.strip() and value.strip() not in names:
+                raise ValueError(f"The {role} model '{value.strip()}' is not in the model list.")
+        return self
 
 
 def _embeddings_provider() -> str:
@@ -245,6 +290,7 @@ def _local_llm_status() -> dict:
         "chat_model": cfg.get("chat_model"),
         "utility_model": cfg.get("utility_model"),
         "research_model": cfg.get("research_model"),
+        "models": cfg.get("models") or [],
         "embeddings_provider": _embeddings_provider(),
     }
 
@@ -261,16 +307,33 @@ async def set_local_llm(
     request: Request,
     current_user: TokenData = require_permission("admin.settings"),
 ):
-    """Point the instance at a custom OpenAI-compatible endpoint and apply immediately."""
+    """Register the instance's OpenAI-compatible models (one or more servers) and
+    which model fills each role, and apply immediately."""
+    models = [
+        {"name": m.name.strip(), "base_url": m.base_url.strip().rstrip("/")}
+        for m in body.models or []
+    ]
+    chat = body.chat_model.strip()
+    # The chat model's server: the endpoint clients are built for.
+    base_url = next(m["base_url"] for m in models if m["name"] == chat)
+    utility = (body.utility_model or "").strip() or chat
+    # "" (not None) so a cleared field is stored as cleared and survives a restart.
+    research = (body.research_model or "").strip()
     payload = {
-        "base_url": body.base_url.strip(),
-        "chat_model": body.chat_model.strip(),
-        "utility_model": (body.utility_model or "").strip() or body.chat_model.strip(),
-        # "" (not None) so a cleared field is stored as cleared and survives a restart.
-        "research_model": (body.research_model or "").strip(),
+        "base_url": base_url,
+        "models": models,
+        "chat_model": chat,
+        "utility_model": utility,
+        "research_model": research,
     }
     await set_secret(LLM_SECRET, json.dumps(payload))
-    llm_clients.set_runtime(**payload)
+    llm_clients.set_runtime(
+        base_url=base_url,
+        models=models,
+        chat_model=chat,
+        utility_model=utility,
+        research_model=research,
+    )
     await audit_service.log_event(
         event_type=AuditEventType.SETTINGS_CHANGE,
         user_id=current_user.user_id,
@@ -278,7 +341,11 @@ async def set_local_llm(
         resource_type="integration",
         resource_id="local_llm",
         ip_address=get_client_ip(request),
-        details={"action": "local_llm_set", "base_url": payload["base_url"]},
+        details={
+            "action": "local_llm_set",
+            "base_url": payload["base_url"],
+            "models": [m["name"] for m in models],
+        },
     )
     # Same fields as GET /local-llm (configured + the applied values), so the
     # UI shows "configured" right after saving instead of "not configured".

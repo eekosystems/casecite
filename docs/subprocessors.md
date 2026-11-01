@@ -55,7 +55,9 @@ application, and no script is fetched from a CDN on page load.
 
 - **Self-hosted chat model:** set `OPENAI_BASE_URL` to an OpenAI-compatible
   server on your network (Ollama, vLLM, LM Studio). Admins can also set this at
-  runtime (Settings → API Keys → Local LLM).
+  runtime (Settings → API Keys → Local / Self-Hosted Models), including several
+  models on different servers; each call goes to the server of the model it
+  uses, so every listed server receives the prompts sent to its models.
 - **Self-hosted embeddings:** set `EMBEDDING_BASE_URL` (and `EMBEDDING_MODEL`)
   to an OpenAI-compatible embeddings server on your network, or have an admin
   set it in Settings → Embedding (checked before it is used; documents are then

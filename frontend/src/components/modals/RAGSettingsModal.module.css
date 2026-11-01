@@ -602,6 +602,25 @@
   line-height: 1.5;
 }
 
+.localModelList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Server URL + model name + remove. Wraps onto two lines on narrow screens. */
+.localModelRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.localModelRow > input {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+
 .boxActions {
   display: flex;
   flex-wrap: wrap;

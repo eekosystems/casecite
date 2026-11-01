@@ -194,6 +194,11 @@ class TestInstanceModels:
             "chat_model": "qwen3:27b",
             "utility_model": "qwen3:4b",
             "research_model": None,
+            "models": [
+                {"name": "qwen3:27b", "base_url": "http://ollama.internal:11434/v1"},
+                {"name": "qwen3:4b", "base_url": "http://ollama.internal:11434/v1"},
+                {"name": "llama-3.3-70b", "base_url": "http://vllm.internal:8000/v1"},
+            ],
         }
         with patch.dict("app.services.llm_clients._runtime", runtime):
             response = client.get("/api/v1/settings/models", headers=auth_headers)
@@ -203,4 +208,6 @@ class TestInstanceModels:
             "chat_model": "qwen3:27b",
             "utility_model": "qwen3:4b",
             "research_model": "qwen3:27b",
+            "models": ["qwen3:27b", "qwen3:4b", "llama-3.3-70b"],
         }
+        assert "internal" not in response.text  # server addresses are admin-only

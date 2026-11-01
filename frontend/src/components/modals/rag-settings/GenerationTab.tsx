@@ -32,8 +32,11 @@ export const GenerationTab = ({ local, setLocal, styles }: GenerationTabProps) =
   }, []);
 
   const custom = models?.custom_endpoint ?? false;
+  // Every model the admin registered; older servers send only the role models.
   const endpointModels = models && custom
-    ? Array.from(new Set([models.chat_model, models.utility_model, models.research_model].filter(Boolean)))
+    ? Array.from(new Set(models.models?.length
+      ? models.models
+      : [models.chat_model, models.utility_model, models.research_model].filter(Boolean)))
     : [];
   // Mirrors the server (resolve_chat_model): on a custom endpoint, an OpenAI
   // name the endpoint doesn't serve is answered by the instance default.

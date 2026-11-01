@@ -31,6 +31,30 @@ const SaveHint = ({ state, styles }: { state: SaveState | undefined; styles: Rec
   return null;
 };
 
+/** One row of the local model list: a model and the server that runs it. */
+interface ModelRow { key: number; name: string; baseUrl: string }
+
+/** The local model form as typed. utility/research '' = same as the chat model. */
+interface LlmDraft { rows: ModelRow[]; chat: string; utility: string; research: string }
+
+/** What the form would save: complete rows, unique names, and a valid model per role. */
+function resolveLlmDraft(d: LlmDraft) {
+  const complete = d.rows.filter((r) => r.name.trim() && r.baseUrl.trim().length >= 4);
+  const all = complete.map((r) => r.name.trim());
+  const names = Array.from(new Set(all));
+  const duplicate = all.find((n, i) => all.indexOf(n) !== i) ?? null;
+  const pick = (value: string) => (names.includes(value.trim()) ? value.trim() : '');
+  return {
+    complete,
+    names,
+    duplicate,
+    // The first model is the chat model until another is chosen.
+    chat: pick(d.chat) || names[0] || '',
+    utility: pick(d.utility),
+    research: pick(d.research),
+  };
+}
+
 export const APIKeysTab = ({ local: _local, setLocal: _setLocal, showKeys, setShowKeys, apiKeys, setApiKeys, serverKeyStatus, maskedKeys, keyStatusError, refreshKeyStatus, styles }: APIKeysTabProps) => {
   const id = useId();
   const saveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
@@ -45,26 +69,39 @@ export const APIKeysTab = ({ local: _local, setLocal: _setLocal, showKeys, setSh
   const [clStatus, setClStatus] = useState<CourtListenerStatus | null>(null);
   const [clToken, setClToken] = useState('');
 
-  // Local / custom OpenAI-compatible model endpoint
+  // Local / custom OpenAI-compatible models: a list of (server, model) rows and
+  // the model chosen for each role. '' for utility/research = same as chat.
   const [llmStatus, setLlmStatus] = useState<LocalLlmStatus | null>(null);
-  const [baseUrl, setBaseUrl] = useState('');
+  const rowKey = useRef(0);
+  const [modelRows, setModelRows] = useState<ModelRow[]>([{ key: 0, name: '', baseUrl: '' }]);
   const [chatModel, setChatModel] = useState('');
   const [utilityModel, setUtilityModel] = useState('');
   const [researchModel, setResearchModel] = useState('');
+
+  const newRow = useCallback((baseUrl = ''): ModelRow => ({ key: ++rowKey.current, name: '', baseUrl }), []);
+
+  /** Load the form from a status response (GET, or after a revert). */
+  const applyLlmStatus = useCallback((llm: LocalLlmStatus) => {
+    setLlmStatus(llm);
+    const models = llm.configured
+      ? (llm.models?.length ? llm.models : llm.base_url && llm.chat_model ? [{ name: llm.chat_model, base_url: llm.base_url }] : [])
+      : [];
+    setModelRows(models.length
+      ? models.map((m) => ({ key: ++rowKey.current, name: m.name, baseUrl: m.base_url }))
+      : [newRow()]);
+    setChatModel(llm.configured ? llm.chat_model || '' : '');
+    setUtilityModel(llm.configured && llm.utility_model && llm.utility_model !== llm.chat_model ? llm.utility_model : '');
+    setResearchModel(llm.configured ? llm.research_model || '' : '');
+  }, [newRow]);
 
   const loadIntegrations = useCallback(async () => {
     try {
       setClStatus(await api.getCourtListenerStatus());
     } catch { /* non-critical */ }
     try {
-      const llm = await api.getLocalLlmStatus();
-      setLlmStatus(llm);
-      setBaseUrl(llm.base_url || '');
-      setChatModel(llm.chat_model || '');
-      setUtilityModel(llm.utility_model || '');
-      setResearchModel(llm.research_model || '');
+      applyLlmStatus(await api.getLocalLlmStatus());
     } catch { /* non-critical */ }
-  }, []);
+  }, [applyLlmStatus]);
 
   useEffect(() => { loadIntegrations(); }, [loadIntegrations]);
 
@@ -222,37 +259,59 @@ export const APIKeysTab = ({ local: _local, setLocal: _setLocal, showKeys, setSh
     });
   };
 
-  // ----- Local model endpoint (auto-save, debounced) -----
+  // ----- Local models (auto-save, debounced) -----
   const llmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const autoSaveLlm = (next: { baseUrl: string; chatModel: string; utilityModel: string; researchModel: string }) => {
+  const autoSaveLlm = (next: LlmDraft) => {
     if (llmTimer.current) clearTimeout(llmTimer.current);
-    // Needs both a base URL and a chat model to be a valid endpoint.
-    if (next.baseUrl.trim().length < 4 || !next.chatModel.trim()) return;
+    // Saved once at least one row is complete and every name is unique.
+    const draft = resolveLlmDraft(next);
+    if (!draft.chat || draft.duplicate) return;
     markSaved('local', 'saving');
     llmTimer.current = setTimeout(async () => {
       try {
+        const models = draft.complete.map((r) => ({ name: r.name.trim(), baseUrl: r.baseUrl.trim() }));
         const saved = await api.setLocalLlm({
-          baseUrl: next.baseUrl.trim(),
-          chatModel: next.chatModel.trim(),
-          utilityModel: next.utilityModel.trim() || null,
-          researchModel: next.researchModel.trim() || null,
+          models,
+          chatModel: draft.chat,
+          utilityModel: draft.utility || null,
+          researchModel: draft.research || null,
         });
         setLlmStatus((prev) => ({
           ...prev,
           ...saved,
           configured: saved.configured ?? true,
-          base_url: saved.base_url ?? next.baseUrl.trim(),
-          chat_model: saved.chat_model ?? next.chatModel.trim(),
-          utility_model: saved.utility_model ?? (next.utilityModel.trim() || null),
-          research_model: saved.research_model ?? (next.researchModel.trim() || null),
+          base_url: saved.base_url ?? models.find((m) => m.name === draft.chat)?.baseUrl ?? null,
+          chat_model: saved.chat_model ?? draft.chat,
+          utility_model: saved.utility_model ?? (draft.utility || draft.chat),
+          research_model: saved.research_model ?? (draft.research || null),
+          models: saved.models ?? models.map((m) => ({ name: m.name, base_url: m.baseUrl })),
         }));
         markSaved('local', 'saved');
       } catch (e) {
         markSaved('local', 'error');
-        addToast(e instanceof Error ? e.message : 'Failed to save endpoint', 'error');
+        addToast(e instanceof Error ? e.message : 'Failed to save models', 'error');
       }
     }, 1000);
   };
+
+  /** Change the form and schedule a save with the new values. */
+  const updateLlm = (change: Partial<LlmDraft>) => {
+    const next: LlmDraft = { rows: modelRows, chat: chatModel, utility: utilityModel, research: researchModel, ...change };
+    if (change.rows) setModelRows(change.rows);
+    if (change.chat !== undefined) setChatModel(change.chat);
+    if (change.utility !== undefined) setUtilityModel(change.utility);
+    if (change.research !== undefined) setResearchModel(change.research);
+    autoSaveLlm(next);
+  };
+  const updateRow = (key: number, field: 'name' | 'baseUrl', value: string) =>
+    updateLlm({ rows: modelRows.map((r) => (r.key === key ? { ...r, [field]: value } : r)) });
+  // A new row starts on the previous row's server: several models on one Ollama is the common case.
+  const addModelRow = () => setModelRows([...modelRows, newRow(modelRows[modelRows.length - 1]?.baseUrl || '')]);
+  const removeModelRow = (key: number) => {
+    const rows = modelRows.filter((r) => r.key !== key);
+    updateLlm({ rows: rows.length ? rows : [newRow()] });
+  };
+  const llmDraft = resolveLlmDraft({ rows: modelRows, chat: chatModel, utility: utilityModel, research: researchModel });
 
   const handleClearLlm = () => {
     showConfirm({
@@ -263,11 +322,7 @@ export const APIKeysTab = ({ local: _local, setLocal: _setLocal, showKeys, setSh
         try {
           const cleared = await api.clearLocalLlm();
           if (typeof cleared?.configured === 'boolean') {
-            setLlmStatus((prev) => ({ ...prev, ...cleared }));
-            setBaseUrl(cleared.base_url || '');
-            setChatModel(cleared.chat_model || '');
-            setUtilityModel(cleared.utility_model || '');
-            setResearchModel(cleared.research_model || '');
+            applyLlmStatus({ ...llmStatus, ...cleared });
           } else {
             await loadIntegrations();
           }
@@ -555,69 +610,106 @@ export const APIKeysTab = ({ local: _local, setLocal: _setLocal, showKeys, setSh
       <div className={styles.localModelBox}>
         <div className={styles.localModelHeader}>
           <Icon name="Server" size={16} className={styles.bannerIconAmber} />
-          <span className={styles.localModelTitle}>Local / Self-Hosted Model</span>
+          <span className={styles.localModelTitle}>Local / Self-Hosted Models</span>
           {llmStatus?.configured && <Icon name="CheckCircle" size={14} className={styles.checkIcon} />}
           <SaveHint state={savedState["local"]} styles={styles} />
         </div>
         <p className={styles.localModelDesc}>
-          Point the app at any OpenAI-compatible endpoint — Ollama, LM Studio, vLLM, or hosted gateways
-          (Together, Groq, OpenRouter). Leave blank to use the default OpenAI models above.
+          Add the models your OpenAI-compatible servers run — Ollama, LM Studio, vLLM, or hosted gateways
+          (Together, Groq, OpenRouter). Models can be on different servers. Leave empty to use the default
+          OpenAI models above.
         </p>
 
-        <div>
-          <label className={styles.settingLabel} htmlFor={`${id}-llm-base-url`}>Base URL</label>
-          <input
-            id={`${id}-llm-base-url`}
-            className={styles.modalInputMono}
-            value={baseUrl}
-            onChange={e => { const v = e.target.value; setBaseUrl(v); autoSaveLlm({ baseUrl: v, chatModel, utilityModel, researchModel }); }}
-            placeholder="http://localhost:11434/v1"
-          />
+        <div className={styles.localModelList}>
+          <span className={styles.settingLabel}>Models (server URL and model name)</span>
+          {modelRows.map((row, i) => (
+            <div key={row.key} className={styles.localModelRow}>
+              <input
+                aria-label={`Server URL for model ${i + 1}`}
+                className={styles.modalInputMono}
+                value={row.baseUrl}
+                onChange={e => updateRow(row.key, 'baseUrl', e.target.value)}
+                placeholder="http://localhost:11434/v1"
+              />
+              <input
+                aria-label={`Name of model ${i + 1}`}
+                className={styles.modalInputMono}
+                value={row.name}
+                onChange={e => updateRow(row.key, 'name', e.target.value)}
+                placeholder="llama3.1:70b"
+              />
+              <button
+                type="button"
+                className={styles.btnSecondarySmall}
+                onClick={() => removeModelRow(row.key)}
+                aria-label={`Remove model ${i + 1}`}
+              >
+                <Icon name="X" size={16} />
+              </button>
+            </div>
+          ))}
+          {llmDraft.duplicate && (
+            <span className={styles.saveHintErr}>
+              &ldquo;{llmDraft.duplicate}&rdquo; is listed more than once. Each model name must be unique.
+            </span>
+          )}
+          <div>
+            <button type="button" className={styles.btnSecondarySmall} onClick={addModelRow}>
+              <Icon name="Plus" size={14} /> Add model
+            </button>
+          </div>
         </div>
 
         <div>
           <label className={styles.settingLabel} htmlFor={`${id}-llm-chat-model`}>Chat Model</label>
-          <input
+          <select
             id={`${id}-llm-chat-model`}
-            className={styles.modalInputMono}
-            value={chatModel}
-            onChange={e => { const v = e.target.value; setChatModel(v); autoSaveLlm({ baseUrl, chatModel: v, utilityModel, researchModel }); }}
-            placeholder="llama3.1:70b"
-          />
+            className={styles.select}
+            value={llmDraft.chat}
+            onChange={e => updateLlm({ chat: e.target.value })}
+            disabled={!llmDraft.names.length}
+          >
+            {!llmDraft.names.length && <option value="">Add a model above</option>}
+            {llmDraft.names.map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
           <span className={styles.helpText}>Answers in chat and drafting.</span>
         </div>
 
         <div>
-          <label className={styles.settingLabel} htmlFor={`${id}-llm-utility-model`}>Utility Model (optional)</label>
-          <input
+          <label className={styles.settingLabel} htmlFor={`${id}-llm-utility-model`}>Utility Model</label>
+          <select
             id={`${id}-llm-utility-model`}
-            className={styles.modalInputMono}
-            value={utilityModel}
-            onChange={e => { const v = e.target.value; setUtilityModel(v); autoSaveLlm({ baseUrl, chatModel, utilityModel: v, researchModel }); }}
-            placeholder="defaults to chat model"
-          />
+            className={styles.select}
+            value={llmDraft.utility}
+            onChange={e => updateLlm({ utility: e.target.value })}
+          >
+            <option value="">Same as chat model</option>
+            {llmDraft.names.map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
           <span className={styles.helpText}>
             Many small background jobs: routing questions, checking claims, pulling contract terms. A small, fast model works well here.
           </span>
         </div>
 
         <div>
-          <label className={styles.settingLabel} htmlFor={`${id}-llm-research-model`}>Research Model (optional)</label>
-          <input
+          <label className={styles.settingLabel} htmlFor={`${id}-llm-research-model`}>Research Model</label>
+          <select
             id={`${id}-llm-research-model`}
-            className={styles.modalInputMono}
-            value={researchModel}
-            onChange={e => { const v = e.target.value; setResearchModel(v); autoSaveLlm({ baseUrl, chatModel, utilityModel, researchModel: v }); }}
-            placeholder="defaults to chat model"
-          />
+            className={styles.select}
+            value={llmDraft.research}
+            onChange={e => updateLlm({ research: e.target.value })}
+          >
+            <option value="">Same as chat model</option>
+            {llmDraft.names.map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
           <span className={styles.helpText}>Deep research: the plan, each research step and the final write-up.</span>
         </div>
 
         {llmStatus?.configured && llmStatus.embeddings_provider && llmStatus.embeddings_provider !== 'self_hosted' && (
           <p className={styles.bannerTextAmber}>
-            Embeddings don&apos;t use this endpoint: they go to {llmStatus.embeddings_provider}, and uploaded document
-            text is sent there when it is indexed. To keep it on your network, set EMBEDDING_BASE_URL and
-            EMBEDDING_MODEL in the server&apos;s .env, then re-index.
+            Embeddings don&apos;t use these model servers: they go to {llmStatus.embeddings_provider}, and uploaded
+            document text is sent there when it is indexed. To keep it on your network, set up a local embeddings
+            server in the Embedding tab.
           </p>
         )}
 

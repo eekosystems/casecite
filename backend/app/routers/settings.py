@@ -65,6 +65,7 @@ async def get_instance_models(
         chat_model=llm_clients.chat_model(),
         utility_model=llm_clients.utility_model(),
         research_model=llm_clients.research_model(),
+        models=llm_clients.model_names(),
     )
 
 

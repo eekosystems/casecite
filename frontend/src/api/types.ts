@@ -1164,19 +1164,28 @@ export interface ConnectorCredentialStatus {
   masked: Record<string, string | null>;
 }
 
+/** One registered model and the OpenAI-compatible server that serves it. */
+export interface LocalModelEntry {
+  name: string;
+  base_url: string;
+}
+
 export interface LocalLlmStatus {
   configured: boolean;
+  /** The chat model's server. */
   base_url: string | null;
   chat_model: string | null;
   utility_model: string | null;
   /** Deep research model; null means it follows the chat model. */
   research_model?: string | null;
+  /** Every registered model and its server. */
+  models?: LocalModelEntry[];
   /** Where embeddings go ("openai", "voyage", "cohere", "self_hosted" or a hostname). */
   embeddings_provider?: string;
 }
 
 export interface LocalLlmConfig {
-  baseUrl: string;
+  models: { name: string; baseUrl: string }[];
   chatModel: string;
   utilityModel?: string | null;
   researchModel?: string | null;
@@ -1189,6 +1198,8 @@ export interface InstanceModels {
   chat_model: string;
   utility_model: string;
   research_model: string;
+  /** Every registered model name (no server addresses). Empty when chat goes to OpenAI. */
+  models?: string[];
 }
 
 // ==================== Admin User Management Types ====================

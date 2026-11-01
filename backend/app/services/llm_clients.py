@@ -8,10 +8,16 @@ hosted OSS gateways (Together, Groq, Fireworks, OpenRouter) — instead of OpenA
 The endpoint/model are instance-wide and editable at runtime (admin UI), so the
 config lives in a small in-memory holder seeded from settings (.env) at import
 and refreshed from encrypted instance storage at startup.
+
+Admins can register several models, each on its own server (Ollama on one box,
+vLLM serving one model per server on others). Clients are built for the chat
+model's server; a call naming a model that lives on another server is sent
+there (see ``openai_chat``).
 """
 
 import json
 import logging
+from typing import Any
 
 from openai import AsyncOpenAI, OpenAI
 
@@ -22,14 +28,35 @@ logger = logging.getLogger(__name__)
 
 INSTANCE_KEY = "local_llm_config"
 
+
+def _norm_url(url: Any) -> str:
+    """A server URL in comparable form (no surrounding space or trailing slash)."""
+    return str(url or "").strip().rstrip("/")
+
+
+def _single_server_models(base_url: str | None, *names: str | None) -> list[dict[str, str]]:
+    """The registry .env and older saved configs describe: the role models on one server."""
+    if not base_url:
+        return []
+    unique = dict.fromkeys(n.strip() for n in names if n and n.strip())
+    return [{"name": n, "base_url": _norm_url(base_url)} for n in unique]
+
+
 # Effective config. base_url=None -> default OpenAI. Models fall back to settings.
-# research_model=None -> deep research uses the chat model.
-_runtime: dict[str, str | None] = {
+# research_model=None -> deep research uses the chat model. base_url is the chat
+# model's server; "models" is the registry of every model and its server.
+_runtime: dict[str, Any] = {
     "base_url": (settings.openai_base_url or "").strip() or None,
     "chat_model": settings.openai_chat_model,
     "utility_model": settings.openai_utility_model,
     "research_model": (settings.openai_research_model or "").strip() or None,
 }
+_runtime["models"] = _single_server_models(
+    _runtime["base_url"],
+    _runtime["chat_model"],
+    _runtime["utility_model"],
+    _runtime["research_model"],
+)
 
 
 def set_runtime(
@@ -37,11 +64,16 @@ def set_runtime(
     chat_model: str | None = None,
     utility_model: str | None = None,
     research_model: str | None = None,
+    models: list[dict[str, str]] | None = None,
 ) -> None:
     """Update the effective config. Pass None to leave a field unchanged.
 
     base_url="" clears the endpoint (revert to OpenAI); research_model="" clears
     the research model so deep research follows the chat model again.
+
+    ``models`` replaces the registry ([{"name", "base_url"}, ...]); base_url then
+    becomes the chat model's server. Without ``models`` the registry is rebuilt
+    as the role models on base_url (the single-server shape).
     """
     if base_url is not None:
         _runtime["base_url"] = base_url.strip() or None
@@ -51,10 +83,44 @@ def set_runtime(
         _runtime["utility_model"] = utility_model
     if research_model is not None:
         _runtime["research_model"] = research_model.strip() or None
+    if models is None:
+        _runtime["models"] = _single_server_models(
+            _runtime["base_url"],
+            _runtime["chat_model"],
+            _runtime["utility_model"],
+            _runtime["research_model"],
+        )
+        return
+    registry = [
+        {"name": str(m.get("name") or "").strip(), "base_url": _norm_url(m.get("base_url"))}
+        for m in models
+    ]
+    registry = [m for m in registry if m["name"] and m["base_url"]]
+    _runtime["models"] = registry
+    chat_server = next(
+        (m["base_url"] for m in registry if m["name"] == _runtime["chat_model"]), None
+    )
+    _runtime["base_url"] = chat_server or (registry[0]["base_url"] if registry else None)
 
 
-def get_runtime() -> dict[str, str | None]:
-    return dict(_runtime)
+def get_runtime() -> dict[str, Any]:
+    cfg = dict(_runtime)
+    cfg["models"] = [dict(m) for m in _runtime.get("models") or []]
+    return cfg
+
+
+def model_names() -> list[str]:
+    """Names of the registered models (empty when no custom endpoint is set)."""
+    return [m["name"] for m in _runtime.get("models") or []]
+
+
+def server_for(model: str | None) -> str | None:
+    """The server a registered model lives on, or None when it isn't registered."""
+    name = (model or "").strip()
+    for entry in _runtime.get("models") or []:
+        if entry["name"] == name:
+            return str(entry["base_url"])
+    return None
 
 
 def is_custom_endpoint() -> bool:
@@ -90,16 +156,16 @@ def resolve_chat_model(requested: str | None) -> str:
     - No choice ("" / None): the instance chat model.
     - A Claude or Gemini model: kept. Those are served by their own clients.
     - An OpenAI model name while a custom endpoint is configured: the endpoint's
-      chat model, unless the name is one of the models the endpoint was set up
-      with. The OpenAI client points at that endpoint, so a name like "gpt-5.5"
-      would be sent to the local server, which does not serve it.
+      chat model, unless the name is a registered model. The OpenAI client points
+      at the admin's servers, so a name like "gpt-5.5" would be sent to a local
+      server, which does not serve it.
     """
     name = (requested or "").strip()
     if not name:
         return chat_model()
     if model_family(name) != "openai" or not is_custom_endpoint():
         return name
-    if name in {chat_model(), utility_model(), research_model()}:
+    if name in {*model_names(), chat_model(), utility_model(), research_model()}:
         return name
     return chat_model()
 
@@ -163,14 +229,40 @@ def _adapt_unsupported_params(kwargs: dict, err_msg: str) -> bool:
     return False
 
 
+def client_for_model(client, model: str | None):
+    """The client that should carry a call naming ``model``.
+
+    Clients are built for the chat model's server. A registered model on a
+    different server gets a client of the same kind pointed at its server, with
+    the same key, timeout and retry budget. Anything else uses ``client``.
+    """
+    target = server_for(model)
+    if not target or _norm_url(getattr(client, "base_url", None)) == target:
+        return client
+    if isinstance(client, AsyncOpenAI):
+        cls: type = AsyncOpenAI
+    elif isinstance(client, OpenAI):
+        cls = OpenAI
+    else:  # not an OpenAI SDK client (e.g. a test double): leave it alone
+        return client
+    return cls(
+        api_key=client.api_key,
+        base_url=target,
+        timeout=client.timeout,
+        max_retries=client.max_retries,
+    )
+
+
 async def openai_chat(client, **kwargs):
     """``chat.completions.create`` with automatic parameter negotiation.
 
     Every OpenAI chat call in the app goes through here so new models that
     rename/reject parameters keep working everywhere at once — and so the AI
-    provider allowlist is enforced in one place: the client's endpoint is
-    checked before anything is sent (ProviderNotAllowedError, a ValueError).
+    provider allowlist is enforced in one place: the endpoint that will carry
+    the call is checked before anything is sent (ProviderNotAllowedError, a
+    ValueError). A registered model on another server is sent to that server.
     """
+    client = client_for_model(client, kwargs.get("model"))
     enforce_openai_client(client)
     attempts = 0
     while True:
@@ -184,6 +276,7 @@ async def openai_chat(client, **kwargs):
 
 def openai_chat_sync(client, **kwargs):
     """Sync variant of :func:`openai_chat` for code running via ``to_thread``."""
+    client = client_for_model(client, kwargs.get("model"))
     enforce_openai_client(client)
     attempts = 0
     while True:
@@ -208,8 +301,15 @@ async def load_from_storage() -> None:
                 chat_model=cfg.get("chat_model"),
                 utility_model=cfg.get("utility_model"),
                 research_model=cfg.get("research_model"),
+                # Configs saved before the model list existed have no "models":
+                # they describe one server, which set_runtime rebuilds.
+                models=cfg.get("models"),
             )
             if _runtime["base_url"]:
-                logger.info("Applied instance custom LLM endpoint: %s", _runtime["base_url"])
+                logger.info(
+                    "Applied instance custom LLM endpoint: %s (%d models)",
+                    _runtime["base_url"],
+                    len(_runtime["models"]),
+                )
     except Exception as e:
         logger.warning("Could not load instance LLM config: %s", e)
