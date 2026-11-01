@@ -101,6 +101,17 @@ describe('GenerationTab', () => {
     expect(container.textContent).toContain('Instance default (qwen3:27b)');
   });
 
+  it('lists every registered model, not only the role models', async () => {
+    const { container } = await renderWith(
+      { ...LOCAL_INSTANCE, models: ['qwen3:27b', 'qwen3:4b', 'llama-3.3-70b', 'mistral-small'] },
+      { llmModel: 'llama-3.3-70b' },
+    );
+    const options = Array.from(container.querySelectorAll('optgroup[label="Your model server"] option'))
+      .map((o) => o.getAttribute('value'));
+    expect(options).toEqual(['qwen3:27b', 'qwen3:4b', 'llama-3.3-70b', 'mistral-small']);
+    expect(container.querySelector('select')!.value).toBe('llama-3.3-70b');
+  });
+
   it('shows an old GPT default as the instance default on a model server', async () => {
     // Settings saved by earlier builds hold "gpt-5.5"; the server answers those
     // with the local chat model, so the picker says so.

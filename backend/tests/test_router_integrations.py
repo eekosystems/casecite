@@ -238,11 +238,86 @@ class TestLocalLLM:
         assert resp.json()["research_model"] is None  # deep research follows the chat model
         set_runtime.assert_called_once_with(
             base_url="http://localhost:11434/v1",
+            models=[{"name": "llama3", "base_url": "http://localhost:11434/v1"}],
             chat_model="llama3",
             utility_model="llama3",
             research_model="",
         )
         assert [e["details"]["action"] for e in audit_events] == ["local_llm_set"]
+
+    def test_models_on_several_servers_are_saved(self, client, admin, audit_events):
+        models = [
+            {"name": "qwen3:27b", "base_url": "http://ollama:11434/v1/"},
+            {"name": "qwen3:4b", "base_url": "http://ollama:11434/v1"},
+            {"name": "llama-3.3-70b", "base_url": "https://vllm.internal:8000/v1"},
+        ]
+        with (
+            patch(f"{ROUTER}.set_secret", new_callable=AsyncMock) as set_secret,
+            patch(f"{ROUTER}.llm_clients.set_runtime") as set_runtime,
+        ):
+            resp = client.post(
+                f"{BASE}/local-llm",
+                json={
+                    "models": models,
+                    "chat_model": "llama-3.3-70b",
+                    "utility_model": "qwen3:4b",
+                    "research_model": "qwen3:27b",
+                },
+                headers=headers(admin),
+            )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        # The chat model's server is the endpoint clients are built for.
+        assert body["base_url"] == "https://vllm.internal:8000/v1"
+        assert [m["base_url"] for m in body["models"]] == [
+            "http://ollama:11434/v1",
+            "http://ollama:11434/v1",
+            "https://vllm.internal:8000/v1",
+        ]
+        stored = json.loads(set_secret.call_args.args[1])
+        assert stored["models"] == body["models"]
+        assert set_runtime.call_args.kwargs["models"] == body["models"]
+        assert audit_events[-1]["details"]["models"] == ["qwen3:27b", "qwen3:4b", "llama-3.3-70b"]
+
+    @pytest.mark.parametrize(
+        ("payload", "message"),
+        [
+            (
+                {
+                    "models": [
+                        {"name": "qwen3", "base_url": "http://a:11434/v1"},
+                        {"name": "qwen3", "base_url": "http://b:11434/v1"},
+                    ],
+                    "chat_model": "qwen3",
+                },
+                "listed more than once",
+            ),
+            (
+                {
+                    "models": [{"name": "qwen3", "base_url": "http://a:11434/v1"}],
+                    "chat_model": "qwen3",
+                    "research_model": "llama3",
+                },
+                "research model 'llama3' is not in the model list",
+            ),
+            (
+                {"models": [{"name": "qwen3", "base_url": "http://a:11434/v1"}], "chat_model": "x"},
+                "chat model 'x' is not in the model list",
+            ),
+            ({"models": [], "chat_model": "qwen3"}, "at least one model"),
+            ({"chat_model": "qwen3"}, "one server URL"),
+            (
+                {"models": [{"name": "qwen3", "base_url": "ftp://a/v1"}], "chat_model": "qwen3"},
+                "http:// or https://",
+            ),
+        ],
+    )
+    def test_invalid_model_lists_are_rejected(self, client, admin, payload, message):
+        with patch(f"{ROUTER}.set_secret", new_callable=AsyncMock) as set_secret:
+            resp = client.post(f"{BASE}/local-llm", json=payload, headers=headers(admin))
+        assert resp.status_code == 422
+        assert message in resp.text
+        set_secret.assert_not_awaited()
 
     def test_research_model_is_saved_separately(self, client, admin):
         with (
@@ -287,6 +362,9 @@ class TestLocalLLM:
                 assert body["configured"] is True
                 assert body["base_url"] == "http://localhost:11434/v1"
                 assert body["chat_model"] == "llama3"
+                assert body["models"] == [
+                    {"name": "llama3", "base_url": "http://localhost:11434/v1"}
+                ]
                 status = client.get(f"{BASE}/local-llm", headers=headers(admin)).json()
                 assert {k: body[k] for k in status} == status
             finally:

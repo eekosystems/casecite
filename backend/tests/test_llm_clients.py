@@ -222,3 +222,174 @@ class TestUnknownModelOutputTokens:
             mock_settings.llm_max_output_tokens = 2048
             assert get_model_max_tokens("qwen3:27b") == 2048
             assert get_model_max_tokens("gpt-5.5") == 32768  # known models unaffected
+
+
+OLLAMA = "http://ollama:11434/v1"
+VLLM = "http://vllm.internal:8000/v1"
+GROQ = "https://api.groq.com/openai/v1"
+
+
+class TestModelRegistry:
+    """Several models, each on its own server; each call goes to its model's server."""
+
+    REGISTRY = {
+        "base_url": OLLAMA,
+        "chat_model": "qwen3:27b",
+        "utility_model": "qwen3:4b",
+        "research_model": "llama-3.3-70b",
+        "models": [
+            {"name": "qwen3:27b", "base_url": OLLAMA},
+            {"name": "qwen3:4b", "base_url": OLLAMA},
+            {"name": "llama-3.3-70b", "base_url": VLLM},
+        ],
+    }
+
+    def test_model_list_sets_the_chat_models_server_as_the_endpoint(self):
+        from app.services.llm_clients import get_runtime, model_names, set_runtime
+
+        with patch.dict("app.services.llm_clients._runtime", self.REGISTRY):
+            set_runtime(
+                chat_model="llama-3.3-70b",
+                models=[
+                    {"name": "qwen3:27b", "base_url": OLLAMA + "/"},
+                    {"name": "llama-3.3-70b", "base_url": VLLM},
+                    {"name": "", "base_url": VLLM},  # incomplete rows are dropped
+                ],
+            )
+            cfg = get_runtime()
+            assert cfg["base_url"] == VLLM
+            assert model_names() == ["qwen3:27b", "llama-3.3-70b"]
+            assert cfg["models"][0]["base_url"] == OLLAMA  # trailing slash normalised
+
+    def test_single_server_config_becomes_a_registry(self):
+        """.env and configs saved before the model list describe one server."""
+        from app.services.llm_clients import get_runtime, set_runtime
+
+        with patch.dict("app.services.llm_clients._runtime", self.REGISTRY):
+            set_runtime(
+                base_url=OLLAMA,
+                chat_model="llama3",
+                utility_model="llama3",
+                research_model="qwen3:32b",
+            )
+            assert get_runtime()["models"] == [
+                {"name": "llama3", "base_url": OLLAMA},
+                {"name": "qwen3:32b", "base_url": OLLAMA},
+            ]
+            set_runtime(base_url="")  # back to OpenAI: no registry
+            assert get_runtime()["models"] == []
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("stored", "expected"),
+        [
+            (
+                {"base_url": OLLAMA, "chat_model": "llama3", "utility_model": "llama3"},
+                [{"name": "llama3", "base_url": OLLAMA}],
+            ),
+            (
+                {
+                    "base_url": VLLM,
+                    "chat_model": "llama-3.3-70b",
+                    "utility_model": "qwen3:4b",
+                    "research_model": "",
+                    "models": [
+                        {"name": "qwen3:4b", "base_url": OLLAMA},
+                        {"name": "llama-3.3-70b", "base_url": VLLM},
+                    ],
+                },
+                [
+                    {"name": "qwen3:4b", "base_url": OLLAMA},
+                    {"name": "llama-3.3-70b", "base_url": VLLM},
+                ],
+            ),
+        ],
+    )
+    async def test_saved_config_loads_with_and_without_a_model_list(self, stored, expected):
+        import json
+        from unittest.mock import AsyncMock
+
+        from app.services.llm_clients import get_runtime, load_from_storage
+
+        # No research model from .env, as on a default install.
+        runtime = {**self.REGISTRY, "research_model": None}
+        with (
+            patch.dict("app.services.llm_clients._runtime", runtime),
+            patch(
+                "app.services.instance_settings.get_secret",
+                AsyncMock(return_value=json.dumps(stored)),
+            ),
+        ):
+            await load_from_storage()
+            cfg = get_runtime()
+        assert cfg["models"] == expected
+        assert cfg["base_url"] == stored["base_url"]
+
+    def test_every_registered_model_is_a_valid_chat_choice(self):
+        from app.services.llm_clients import resolve_chat_model
+
+        runtime = {**self.REGISTRY, "research_model": None}
+        with patch.dict("app.services.llm_clients._runtime", runtime):
+            assert resolve_chat_model("llama-3.3-70b") == "llama-3.3-70b"
+            assert resolve_chat_model("gpt-5.5") == "qwen3:27b"
+
+    @pytest.mark.parametrize("sync", [False, True])
+    def test_client_is_retargeted_to_the_models_server(self, sync):
+        from app.services.llm_clients import client_for_model, make_openai
+
+        with patch.dict("app.services.llm_clients._runtime", self.REGISTRY):
+            client = make_openai("sk-local-placeholder", async_=not sync, timeout=33.0)
+            other = client_for_model(client, "llama-3.3-70b")
+            assert type(other) is type(client)
+            assert str(other.base_url).rstrip("/") == VLLM
+            assert other.api_key == client.api_key
+            assert (other.timeout, other.max_retries) == (33.0, client.max_retries)
+            # Same server, or a name that isn't registered: the client as given.
+            assert client_for_model(client, "qwen3:4b") is client
+            assert client_for_model(client, "unknown") is client
+
+    @pytest.mark.asyncio
+    async def test_openai_chat_sends_to_the_models_server(self):
+        from app.services.llm_clients import make_openai, openai_chat
+        from openai.resources.chat.completions import AsyncCompletions
+
+        sent_to: list[str] = []
+
+        async def fake_create(self, **kwargs):
+            sent_to.append(str(self._client.base_url).rstrip("/"))
+            return "ok"
+
+        with (
+            patch.dict("app.services.llm_clients._runtime", self.REGISTRY),
+            patch.object(AsyncCompletions, "create", fake_create),
+            patch("app.services.llm_clients.enforce_openai_client") as enforce,
+        ):
+            client = make_openai(None, async_=True)
+            assert await openai_chat(client, model="llama-3.3-70b", messages=[]) == "ok"
+            assert await openai_chat(client, model="qwen3:4b", messages=[]) == "ok"
+        assert sent_to == [VLLM, OLLAMA]
+        checked = [str(c.args[0].base_url).rstrip("/") for c in enforce.call_args_list]
+        assert checked == [VLLM, OLLAMA]  # the allowlist sees the client that sends
+
+    def test_allowlist_applies_to_the_retargeted_server(self):
+        """A local chat server is approved; a model registered on a hosted gateway is not."""
+        from app.services.llm_clients import make_openai, openai_chat_sync
+        from app.services.provider_policy import ProviderNotAllowedError
+        from openai.resources.chat.completions import Completions
+
+        runtime = {
+            **self.REGISTRY,
+            "models": [*self.REGISTRY["models"], {"name": "llama-groq", "base_url": GROQ}],
+        }
+        with (
+            patch.dict("app.services.llm_clients._runtime", runtime),
+            patch.object(Completions, "create", autospec=True, return_value="ok") as create,
+            patch("app.services.provider_policy.settings") as policy,
+        ):
+            policy.hipaa_enforcement_enabled = True
+            policy.approved_ai_providers = ["self_hosted"]
+            client = make_openai(None)
+            assert openai_chat_sync(client, model="qwen3:4b", messages=[]) == "ok"
+            with pytest.raises(ProviderNotAllowedError, match="api.groq.com"):
+                openai_chat_sync(client, model="llama-groq", messages=[])
+        assert create.call_count == 1
