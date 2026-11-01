@@ -1176,8 +1176,10 @@ export interface LocalLlmStatus {
   base_url: string | null;
   chat_model: string | null;
   utility_model: string | null;
-  /** Deep research model; null means it follows the chat model. */
+  /** Deep research model; null means it follows the utility model. */
   research_model?: string | null;
+  /** Drafting model; null means it follows the chat model. */
+  drafting_model?: string | null;
   /** Every registered model and its server. */
   models?: LocalModelEntry[];
   /** Where embeddings go ("openai", "voyage", "cohere", "self_hosted" or a hostname). */
@@ -1189,6 +1191,7 @@ export interface LocalLlmConfig {
   chatModel: string;
   utilityModel?: string | null;
   researchModel?: string | null;
+  draftingModel?: string | null;
 }
 
 /** GET /settings/models — the instance's configured models, for the model picker. */
@@ -1198,6 +1201,7 @@ export interface InstanceModels {
   chat_model: string;
   utility_model: string;
   research_model: string;
+  drafting_model?: string;
   /** Every registered model name (no server addresses). Empty when chat goes to OpenAI. */
   models?: string[];
 }

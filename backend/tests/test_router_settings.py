@@ -194,6 +194,7 @@ class TestInstanceModels:
             "chat_model": "qwen3:27b",
             "utility_model": "qwen3:4b",
             "research_model": None,
+            "drafting_model": None,
             "models": [
                 {"name": "qwen3:27b", "base_url": "http://ollama.internal:11434/v1"},
                 {"name": "qwen3:4b", "base_url": "http://ollama.internal:11434/v1"},
@@ -207,7 +208,8 @@ class TestInstanceModels:
             "custom_endpoint": True,
             "chat_model": "qwen3:27b",
             "utility_model": "qwen3:4b",
-            "research_model": "qwen3:27b",
+            "research_model": "qwen3:4b",  # follows the utility model
+            "drafting_model": "qwen3:27b",  # follows the chat model
             "models": ["qwen3:27b", "qwen3:4b", "llama-3.3-70b"],
         }
         assert "internal" not in response.text  # server addresses are admin-only

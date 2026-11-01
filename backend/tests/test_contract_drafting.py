@@ -30,6 +30,16 @@ class TestDraftDocument:
         assert result["text"] == payload["text"]
 
     @pytest.mark.asyncio
+    async def test_drafts_use_the_drafting_model(self, monkeypatch):
+        """Drafting can run on its own model, apart from chat (issue #59)."""
+        from app.services import llm_clients
+
+        monkeypatch.setitem(llm_clients._runtime, "drafting_model", "gemma4:31b")
+        client = _client_returning(json.dumps({"title": "Letter", "text": "Body"}))
+        await draft_document(client, "Draft a demand letter")
+        assert client.chat.completions.create.call_args.kwargs["model"] == "gemma4:31b"
+
+    @pytest.mark.asyncio
     async def test_non_json_response_falls_back_to_draft_title(self):
         raw = "DEMAND LETTER\n\nDear [RECIPIENT],\n\nPlease remit payment of [AMOUNT]."
         client = _client_returning(raw)

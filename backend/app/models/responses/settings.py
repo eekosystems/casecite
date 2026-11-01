@@ -59,6 +59,7 @@ class InstanceModelsResponse(BaseModel):
     chat_model: str
     utility_model: str
     research_model: str
+    drafting_model: str
     # Every model registered on the admin's servers (names only; empty when chat
     # goes to OpenAI itself).
     models: list[str] = []

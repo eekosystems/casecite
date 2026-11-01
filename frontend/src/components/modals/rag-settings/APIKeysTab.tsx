@@ -34,8 +34,9 @@ const SaveHint = ({ state, styles }: { state: SaveState | undefined; styles: Rec
 /** One row of the local model list: a model and the server that runs it. */
 interface ModelRow { key: number; name: string; baseUrl: string }
 
-/** The local model form as typed. utility/research '' = same as the chat model. */
-interface LlmDraft { rows: ModelRow[]; chat: string; utility: string; research: string }
+/** The local model form as typed. '' = the role's default: utility and drafting
+ * follow the chat model, research follows the utility model. */
+interface LlmDraft { rows: ModelRow[]; chat: string; utility: string; research: string; drafting: string }
 
 /** What the form would save: complete rows, unique names, and a valid model per role. */
 function resolveLlmDraft(d: LlmDraft) {
@@ -52,6 +53,7 @@ function resolveLlmDraft(d: LlmDraft) {
     chat: pick(d.chat) || names[0] || '',
     utility: pick(d.utility),
     research: pick(d.research),
+    drafting: pick(d.drafting),
   };
 }
 
@@ -70,13 +72,14 @@ export const APIKeysTab = ({ local: _local, setLocal: _setLocal, showKeys, setSh
   const [clToken, setClToken] = useState('');
 
   // Local / custom OpenAI-compatible models: a list of (server, model) rows and
-  // the model chosen for each role. '' for utility/research = same as chat.
+  // the model chosen for each role. '' = the role's default (see LlmDraft).
   const [llmStatus, setLlmStatus] = useState<LocalLlmStatus | null>(null);
   const rowKey = useRef(0);
   const [modelRows, setModelRows] = useState<ModelRow[]>([{ key: 0, name: '', baseUrl: '' }]);
   const [chatModel, setChatModel] = useState('');
   const [utilityModel, setUtilityModel] = useState('');
   const [researchModel, setResearchModel] = useState('');
+  const [draftingModel, setDraftingModel] = useState('');
 
   const newRow = useCallback((baseUrl = ''): ModelRow => ({ key: ++rowKey.current, name: '', baseUrl }), []);
 
@@ -92,6 +95,7 @@ export const APIKeysTab = ({ local: _local, setLocal: _setLocal, showKeys, setSh
     setChatModel(llm.configured ? llm.chat_model || '' : '');
     setUtilityModel(llm.configured && llm.utility_model && llm.utility_model !== llm.chat_model ? llm.utility_model : '');
     setResearchModel(llm.configured ? llm.research_model || '' : '');
+    setDraftingModel(llm.configured ? llm.drafting_model || '' : '');
   }, [newRow]);
 
   const loadIntegrations = useCallback(async () => {
@@ -275,6 +279,7 @@ export const APIKeysTab = ({ local: _local, setLocal: _setLocal, showKeys, setSh
           chatModel: draft.chat,
           utilityModel: draft.utility || null,
           researchModel: draft.research || null,
+          draftingModel: draft.drafting || null,
         });
         setLlmStatus((prev) => ({
           ...prev,
@@ -284,6 +289,7 @@ export const APIKeysTab = ({ local: _local, setLocal: _setLocal, showKeys, setSh
           chat_model: saved.chat_model ?? draft.chat,
           utility_model: saved.utility_model ?? (draft.utility || draft.chat),
           research_model: saved.research_model ?? (draft.research || null),
+          drafting_model: saved.drafting_model ?? (draft.drafting || null),
           models: saved.models ?? models.map((m) => ({ name: m.name, base_url: m.baseUrl })),
         }));
         markSaved('local', 'saved');
@@ -296,11 +302,12 @@ export const APIKeysTab = ({ local: _local, setLocal: _setLocal, showKeys, setSh
 
   /** Change the form and schedule a save with the new values. */
   const updateLlm = (change: Partial<LlmDraft>) => {
-    const next: LlmDraft = { rows: modelRows, chat: chatModel, utility: utilityModel, research: researchModel, ...change };
+    const next: LlmDraft = { rows: modelRows, chat: chatModel, utility: utilityModel, research: researchModel, drafting: draftingModel, ...change };
     if (change.rows) setModelRows(change.rows);
     if (change.chat !== undefined) setChatModel(change.chat);
     if (change.utility !== undefined) setUtilityModel(change.utility);
     if (change.research !== undefined) setResearchModel(change.research);
+    if (change.drafting !== undefined) setDraftingModel(change.drafting);
     autoSaveLlm(next);
   };
   const updateRow = (key: number, field: 'name' | 'baseUrl', value: string) =>
@@ -311,7 +318,7 @@ export const APIKeysTab = ({ local: _local, setLocal: _setLocal, showKeys, setSh
     const rows = modelRows.filter((r) => r.key !== key);
     updateLlm({ rows: rows.length ? rows : [newRow()] });
   };
-  const llmDraft = resolveLlmDraft({ rows: modelRows, chat: chatModel, utility: utilityModel, research: researchModel });
+  const llmDraft = resolveLlmDraft({ rows: modelRows, chat: chatModel, utility: utilityModel, research: researchModel, drafting: draftingModel });
 
   const handleClearLlm = () => {
     showConfirm({
@@ -672,7 +679,21 @@ export const APIKeysTab = ({ local: _local, setLocal: _setLocal, showKeys, setSh
             {!llmDraft.names.length && <option value="">Add a model above</option>}
             {llmDraft.names.map((n) => <option key={n} value={n}>{n}</option>)}
           </select>
-          <span className={styles.helpText}>Answers in chat and drafting.</span>
+          <span className={styles.helpText}>Answers in chat.</span>
+        </div>
+
+        <div>
+          <label className={styles.settingLabel} htmlFor={`${id}-llm-drafting-model`}>Drafting Model</label>
+          <select
+            id={`${id}-llm-drafting-model`}
+            className={styles.select}
+            value={llmDraft.drafting}
+            onChange={e => updateLlm({ drafting: e.target.value })}
+          >
+            <option value="">Same as chat model</option>
+            {llmDraft.names.map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
+          <span className={styles.helpText}>Drafting documents: the drafting workspace, draft mode in contract chat, and workflow draft steps.</span>
         </div>
 
         <div>
@@ -699,7 +720,7 @@ export const APIKeysTab = ({ local: _local, setLocal: _setLocal, showKeys, setSh
             value={llmDraft.research}
             onChange={e => updateLlm({ research: e.target.value })}
           >
-            <option value="">Same as chat model</option>
+            <option value="">Same as utility model</option>
             {llmDraft.names.map((n) => <option key={n} value={n}>{n}</option>)}
           </select>
           <span className={styles.helpText}>Deep research: the plan, each research step and the final write-up.</span>

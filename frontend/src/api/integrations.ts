@@ -57,6 +57,7 @@ Object.assign(api, {
         chat_model: config.chatModel,
         utility_model: config.utilityModel || null,
         research_model: config.researchModel || null,
+        drafting_model: config.draftingModel || null,
       }),
     });
   },

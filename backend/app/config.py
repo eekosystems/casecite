@@ -368,10 +368,15 @@ class Settings(BaseSettings):
     openai_utility_model: str = (
         "gpt-5.4-mini"  # cheaper model for high-volume utility/extraction calls
     )
-    # Model for deep research (planning, each research step, the synthesis).
-    # Unset: the chat model. Kept apart from the utility model so a strong model
-    # can do research while the many small background calls stay on a fast one.
+    # Model for deep research (planning, each research step, the synthesis), so a
+    # strong model can do research while the many small background calls stay on
+    # a fast one. Unset: the utility model, as before this setting existed.
+    # OPENAI_DEEP_RESEARCH_MODEL is read too (the name proposed in issue #59).
     openai_research_model: str | None = None
+    openai_deep_research_model: str | None = None
+    # Model for drafting documents (the drafting workspace, contract chat's draft
+    # mode, workflow draft steps). Unset: the chat model.
+    openai_drafting_model: str | None = None
     # Point the OpenAI-compatible client at a custom endpoint to use local/open models
     # (Ollama http://host:11434/v1, LM Studio, vLLM) or hosted OSS gateways (Together,
     # Groq, OpenRouter). Leave unset for OpenAI. Also editable at runtime via the admin UI.

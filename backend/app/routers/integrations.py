@@ -230,8 +230,10 @@ class LocalLLMRequest(BaseModel):
     base_url: str | None = Field(None, min_length=4, max_length=400)
     chat_model: str = Field(..., min_length=1, max_length=120)
     utility_model: str | None = Field(None, max_length=120)
-    # Deep research. Blank: follows the chat model.
+    # Deep research. Blank: follows the utility model.
     research_model: str | None = Field(None, max_length=120)
+    # Drafting documents. Blank: follows the chat model.
+    drafting_model: str | None = Field(None, max_length=120)
 
     @field_validator("base_url")
     @classmethod
@@ -245,7 +247,12 @@ class LocalLLMRequest(BaseModel):
                 raise ValueError("Send the model list (models) or one server URL (base_url).")
             role_models = dict.fromkeys(
                 n.strip()
-                for n in (self.chat_model, self.utility_model, self.research_model)
+                for n in (
+                    self.chat_model,
+                    self.utility_model,
+                    self.research_model,
+                    self.drafting_model,
+                )
                 if n and n.strip()
             )
             self.models = [LocalModelEntry(name=n, base_url=self.base_url) for n in role_models]
@@ -262,6 +269,7 @@ class LocalLLMRequest(BaseModel):
             ("chat", self.chat_model),
             ("utility", self.utility_model),
             ("research", self.research_model),
+            ("drafting", self.drafting_model),
         ):
             if value and value.strip() and value.strip() not in names:
                 raise ValueError(f"The {role} model '{value.strip()}' is not in the model list.")
@@ -290,6 +298,7 @@ def _local_llm_status() -> dict:
         "chat_model": cfg.get("chat_model"),
         "utility_model": cfg.get("utility_model"),
         "research_model": cfg.get("research_model"),
+        "drafting_model": cfg.get("drafting_model"),
         "models": cfg.get("models") or [],
         "embeddings_provider": _embeddings_provider(),
     }
@@ -319,12 +328,14 @@ async def set_local_llm(
     utility = (body.utility_model or "").strip() or chat
     # "" (not None) so a cleared field is stored as cleared and survives a restart.
     research = (body.research_model or "").strip()
+    drafting = (body.drafting_model or "").strip()
     payload = {
         "base_url": base_url,
         "models": models,
         "chat_model": chat,
         "utility_model": utility,
         "research_model": research,
+        "drafting_model": drafting,
     }
     await set_secret(LLM_SECRET, json.dumps(payload))
     llm_clients.set_runtime(
@@ -333,6 +344,7 @@ async def set_local_llm(
         chat_model=chat,
         utility_model=utility,
         research_model=research,
+        drafting_model=drafting,
     )
     await audit_service.log_event(
         event_type=AuditEventType.SETTINGS_CHANGE,
@@ -354,6 +366,7 @@ async def set_local_llm(
         "configured": True,
         **payload,
         "research_model": payload["research_model"] or None,
+        "drafting_model": payload["drafting_model"] or None,
         "embeddings_provider": _embeddings_provider(),
     }
 
@@ -372,7 +385,8 @@ async def clear_local_llm(
         base_url=settings.openai_base_url or "",
         chat_model=settings.openai_chat_model,
         utility_model=settings.openai_utility_model,
-        research_model=settings.openai_research_model or "",
+        research_model=settings.openai_research_model or settings.openai_deep_research_model or "",
+        drafting_model=settings.openai_drafting_model or "",
     )
     await audit_service.log_event(
         event_type=AuditEventType.SETTINGS_CHANGE,

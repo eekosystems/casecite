@@ -135,13 +135,38 @@ class TestModelSlots:
         "chat_model": "qwen3:27b",
         "utility_model": "qwen3:4b",
         "research_model": None,
+        "drafting_model": None,
     }
 
-    def test_research_model_follows_chat_model_when_unset(self):
+    def test_research_model_follows_utility_model_when_unset(self):
+        """Unset keeps the behavior from before the setting existed (issue #59)."""
         from app.services.llm_clients import research_model
 
         with patch.dict("app.services.llm_clients._runtime", self.LOCAL):
-            assert research_model() == "qwen3:27b"
+            assert research_model() == "qwen3:4b"
+
+    def test_drafting_model_follows_chat_model_until_set(self):
+        from app.services.llm_clients import drafting_model, set_runtime
+
+        with patch.dict("app.services.llm_clients._runtime", self.LOCAL):
+            assert drafting_model() == "qwen3:27b"
+            set_runtime(drafting_model="gemma4:31b")
+            assert drafting_model() == "gemma4:31b"
+            set_runtime(drafting_model=None)  # None leaves it unchanged
+            assert drafting_model() == "gemma4:31b"
+            set_runtime(drafting_model="")
+            assert drafting_model() == "qwen3:27b"
+
+    def test_deep_research_model_env_name_is_read(self):
+        """OPENAI_DEEP_RESEARCH_MODEL (the name proposed in issue #59) works too."""
+        from app.services import llm_clients
+
+        with patch.object(llm_clients, "settings") as mock_settings:
+            mock_settings.openai_research_model = None
+            mock_settings.openai_deep_research_model = "qwen3.8:27b-xhigh"
+            assert llm_clients._env_research_model() == "qwen3.8:27b-xhigh"
+            mock_settings.openai_research_model = "preferred"
+            assert llm_clients._env_research_model() == "preferred"
 
     def test_research_model_is_independent_of_utility_model(self):
         from app.services.llm_clients import research_model, utility_model
@@ -159,7 +184,7 @@ class TestModelSlots:
             set_runtime(research_model=None)  # None leaves it unchanged
             assert research_model() == "qwen3:32b"
             set_runtime(research_model="")
-            assert research_model() == "qwen3:27b"
+            assert research_model() == "qwen3:4b"
 
     @pytest.mark.parametrize("requested", ["", None, "  "])
     def test_no_choice_uses_instance_chat_model(self, requested):

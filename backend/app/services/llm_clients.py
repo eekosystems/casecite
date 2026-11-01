@@ -42,21 +42,23 @@ def _single_server_models(base_url: str | None, *names: str | None) -> list[dict
     return [{"name": n, "base_url": _norm_url(base_url)} for n in unique]
 
 
+def _env_research_model() -> str:
+    return (settings.openai_research_model or settings.openai_deep_research_model or "").strip()
+
+
 # Effective config. base_url=None -> default OpenAI. Models fall back to settings.
-# research_model=None -> deep research uses the chat model. base_url is the chat
-# model's server; "models" is the registry of every model and its server.
+# research_model=None -> deep research uses the utility model; drafting_model=None
+# -> drafting uses the chat model. base_url is the chat model's server; "models"
+# is the registry of every model and its server.
 _runtime: dict[str, Any] = {
     "base_url": (settings.openai_base_url or "").strip() or None,
     "chat_model": settings.openai_chat_model,
     "utility_model": settings.openai_utility_model,
-    "research_model": (settings.openai_research_model or "").strip() or None,
+    "research_model": _env_research_model() or None,
+    "drafting_model": (settings.openai_drafting_model or "").strip() or None,
 }
-_runtime["models"] = _single_server_models(
-    _runtime["base_url"],
-    _runtime["chat_model"],
-    _runtime["utility_model"],
-    _runtime["research_model"],
-)
+_ROLES = ("chat_model", "utility_model", "research_model", "drafting_model")
+_runtime["models"] = _single_server_models(_runtime["base_url"], *(_runtime[r] for r in _ROLES))
 
 
 def set_runtime(
@@ -65,11 +67,13 @@ def set_runtime(
     utility_model: str | None = None,
     research_model: str | None = None,
     models: list[dict[str, str]] | None = None,
+    drafting_model: str | None = None,
 ) -> None:
     """Update the effective config. Pass None to leave a field unchanged.
 
     base_url="" clears the endpoint (revert to OpenAI); research_model="" clears
-    the research model so deep research follows the chat model again.
+    the research model so deep research follows the utility model again, and
+    drafting_model="" lets drafting follow the chat model again.
 
     ``models`` replaces the registry ([{"name", "base_url"}, ...]); base_url then
     becomes the chat model's server. Without ``models`` the registry is rebuilt
@@ -83,12 +87,11 @@ def set_runtime(
         _runtime["utility_model"] = utility_model
     if research_model is not None:
         _runtime["research_model"] = research_model.strip() or None
+    if drafting_model is not None:
+        _runtime["drafting_model"] = drafting_model.strip() or None
     if models is None:
         _runtime["models"] = _single_server_models(
-            _runtime["base_url"],
-            _runtime["chat_model"],
-            _runtime["utility_model"],
-            _runtime["research_model"],
+            _runtime["base_url"], *(_runtime[r] for r in _ROLES)
         )
         return
     registry = [
@@ -136,8 +139,13 @@ def utility_model() -> str:
 
 
 def research_model() -> str:
-    """Model for deep research: the research model if one is set, else the chat model."""
-    return _runtime["research_model"] or chat_model()
+    """Model for deep research: the research model if one is set, else the utility model."""
+    return _runtime["research_model"] or utility_model()
+
+
+def drafting_model() -> str:
+    """Model for drafting documents: the drafting model if one is set, else the chat model."""
+    return _runtime.get("drafting_model") or chat_model()
 
 
 def model_family(model: str | None) -> str:
@@ -165,7 +173,7 @@ def resolve_chat_model(requested: str | None) -> str:
         return chat_model()
     if model_family(name) != "openai" or not is_custom_endpoint():
         return name
-    if name in {*model_names(), chat_model(), utility_model(), research_model()}:
+    if name in {*model_names(), chat_model(), utility_model(), research_model(), drafting_model()}:
         return name
     return chat_model()
 
@@ -301,6 +309,7 @@ async def load_from_storage() -> None:
                 chat_model=cfg.get("chat_model"),
                 utility_model=cfg.get("utility_model"),
                 research_model=cfg.get("research_model"),
+                drafting_model=cfg.get("drafting_model"),
                 # Configs saved before the model list existed have no "models":
                 # they describe one server, which set_runtime rebuilds.
                 models=cfg.get("models"),

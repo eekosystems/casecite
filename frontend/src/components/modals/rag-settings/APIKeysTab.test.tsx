@@ -148,6 +148,7 @@ describe('APIKeysTab', () => {
       fireEvent.change(view.getByLabelText('Chat Model'), { target: { value: 'llama-3.3-70b' } });
       fireEvent.change(view.getByLabelText('Utility Model'), { target: { value: 'qwen3:4b' } });
       fireEvent.change(view.getByLabelText('Research Model'), { target: { value: 'qwen3:27b' } });
+      fireEvent.change(view.getByLabelText('Drafting Model'), { target: { value: 'qwen3:27b' } });
       await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
 
       const bodies = savedBodies();
@@ -161,6 +162,7 @@ describe('APIKeysTab', () => {
         chat_model: 'llama-3.3-70b',
         utility_model: 'qwen3:4b',
         research_model: 'qwen3:27b',
+        drafting_model: 'qwen3:27b',
       });
     });
 
@@ -200,6 +202,7 @@ describe('APIKeysTab', () => {
         chat_model: 'qwen3:27b',
         utility_model: null,
         research_model: null,
+        drafting_model: null,
       });
     });
 

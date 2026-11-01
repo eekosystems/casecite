@@ -242,8 +242,40 @@ class TestLocalLLM:
             chat_model="llama3",
             utility_model="llama3",
             research_model="",
+            drafting_model="",
         )
         assert [e["details"]["action"] for e in audit_events] == ["local_llm_set"]
+
+    def test_drafting_model_is_saved_and_must_be_listed(self, client, admin):
+        models = [
+            {"name": "muse-glimmer:30b", "base_url": "http://ollama:11434/v1"},
+            {"name": "gemma4:31b", "base_url": "http://ollama:11434/v1"},
+        ]
+        with (
+            patch(f"{ROUTER}.set_secret", new_callable=AsyncMock) as set_secret,
+            patch(f"{ROUTER}.llm_clients.set_runtime") as set_runtime,
+        ):
+            resp = client.post(
+                f"{BASE}/local-llm",
+                json={
+                    "models": models,
+                    "chat_model": "muse-glimmer:30b",
+                    "drafting_model": "gemma4:31b",
+                },
+                headers=headers(admin),
+            )
+            assert resp.status_code == 200
+            assert resp.json()["drafting_model"] == "gemma4:31b"
+            assert set_runtime.call_args.kwargs["drafting_model"] == "gemma4:31b"
+            assert json.loads(set_secret.call_args.args[1])["drafting_model"] == "gemma4:31b"
+
+            unknown = client.post(
+                f"{BASE}/local-llm",
+                json={"models": models, "chat_model": "muse-glimmer:30b", "drafting_model": "nope"},
+                headers=headers(admin),
+            )
+        assert unknown.status_code == 422
+        assert "drafting model" in unknown.text
 
     def test_models_on_several_servers_are_saved(self, client, admin, audit_events):
         models = [

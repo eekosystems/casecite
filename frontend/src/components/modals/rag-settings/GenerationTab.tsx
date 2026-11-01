@@ -36,7 +36,7 @@ export const GenerationTab = ({ local, setLocal, styles }: GenerationTabProps) =
   const endpointModels = models && custom
     ? Array.from(new Set(models.models?.length
       ? models.models
-      : [models.chat_model, models.utility_model, models.research_model].filter(Boolean)))
+      : [models.chat_model, models.utility_model, models.research_model, models.drafting_model].filter(Boolean)))
     : [];
   // Mirrors the server (resolve_chat_model): on a custom endpoint, an OpenAI
   // name the endpoint doesn't serve is answered by the instance default.
