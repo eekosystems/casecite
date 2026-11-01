@@ -19,9 +19,9 @@ InfoSec team can assess and control it.
 
 | Recipient | When | Data sent | How to control |
 |-----------|------|-----------|----------------|
-| **OpenAI** (`api.openai.com`) | Chat/analysis with an OpenAI model; embeddings by default | Questions, prompts, retrieved document excerpts, full document text for analysis and embedding | Don't configure an OpenAI key; or set `OPENAI_BASE_URL` (chat) **and** `EMBEDDING_BASE_URL` (embeddings) to servers you run |
-| **Anthropic** | Chat/analysis with a Claude model | Questions, prompts, document excerpts and text | Don't configure an Anthropic key |
-| **Google (Gemini API)** | Chat/analysis with a Gemini model (per-user key only) | Questions, prompts, document excerpts and text | Users don't save a Gemini key; or exclude `google` with the provider allowlist |
+| **OpenAI** (`api.openai.com`) | Chat/analysis with an OpenAI model; embeddings by default | Questions, prompts, earlier messages of the chat, the matter's Facts, retrieved document excerpts, full document text for analysis and embedding | Don't configure an OpenAI key; or set `OPENAI_BASE_URL` (chat) **and** `EMBEDDING_BASE_URL` (embeddings) to servers you run |
+| **Anthropic** | Chat/analysis with a Claude model | Questions, prompts, earlier messages of the chat, the matter's Facts, document excerpts and text | Don't configure an Anthropic key |
+| **Google (Gemini API)** | Chat/analysis with a Gemini model (per-user key only) | Questions, prompts, earlier messages of the chat, the matter's Facts, document excerpts and text | Users don't save a Gemini key; or exclude `google` with the provider allowlist |
 | **Voyage AI** | Embeddings, when `VOYAGE_API_KEY` and a `voyage-*` model are set | Document text chunks, search queries | Optional; don't configure |
 | **Cohere** | Embeddings, when `COHERE_API_KEY` is set and selected | Document text chunks, search queries | Optional; don't configure |
 | **Pinecone** | Only when `VECTOR_DB=pinecone` | Embedding vectors **and document text chunks** (stored as vector metadata), with document and owner identifiers | Optional; the default `VECTOR_DB=chroma` keeps the index on your own disk |

@@ -29,6 +29,7 @@ from app.services.provider_policy import (
 )
 from app.services.rag import search as rag_search
 from app.services.rag.citations import build_case_law_citations, build_document_citations
+from app.services.rag.conversation import ConversationContext
 from app.services.rag.generation import call_llm, chosen_provider_text, strip_json_fences
 from app.services.rag.search import (
     SearchUnavailableError,
@@ -342,24 +343,39 @@ def _quiet_post_processing():
 
 class TestGenerateResponse:
     @pytest.mark.asyncio
-    async def test_empty_scope_is_answered_as_empty_scope(self):
-        """A scope that resolved to no indexed documents must say so — and must
-        not search the rest of the knowledge base or call the model."""
-        llm = _llm_client()
+    async def test_empty_scope_is_answered_without_widening_the_search(self):
+        """A scope that resolved to no indexed documents must not search the rest
+        of the knowledge base. The model answers from the conversation and the
+        matter's facts, and the answer says no documents were used and why."""
+        llm = _llm_client("Based on the facts you gave, the deposit claim is strong.")
         service = _service(openai=llm)
+        conversation = ConversationContext(
+            history=[
+                {"role": "user", "content": "The landlord kept the deposit."},
+                {"role": "assistant", "content": "Noted."},
+            ],
+            matter_facts=[{"matter_id": "m1", "name": "Acme", "facts": "Lease signed 2024."}],
+        )
 
         with patch("app.services.rag.service.search_documents", AsyncMock()) as search:
             result = await service.generate_response(
-                query="What is the notice period?",
+                query="Is the deposit claim strong?",
                 document_ids=[],
                 user_id="user-1",
                 rag_settings=RAGSettings(query_expansion=False),
+                conversation=conversation,
             )
 
-        assert "no indexed documents in the scope you selected" in result["content"]
-        assert result["citations"] == []
         search.assert_not_called()
-        llm.chat.completions.create.assert_not_called()
+        assert result["citations"] == []
+        assert result["content"].startswith(
+            "> **No documents used:** the matter or files you selected"
+        )
+        assert "recorded facts" in result["content"]
+        sent = llm.chat.completions.create.call_args.kwargs["messages"]
+        assert [m["role"] for m in sent] == ["system", "user", "assistant", "user"]
+        assert "Lease signed 2024." in sent[0]["content"]  # the facts reach the model
+        assert "NO SOURCES" in sent[0]["content"]
 
     @pytest.mark.asyncio
     async def test_scope_is_passed_to_the_search(self):

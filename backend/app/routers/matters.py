@@ -14,6 +14,7 @@ defined before the parameterized /{matter_id} catch-alls.
 """
 
 import logging
+from typing import Any
 
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import or_, select
@@ -150,6 +151,17 @@ def _personal_owner(matter: Matter) -> str | None:
     return str(matter.owner_id) if matter.is_personal else None
 
 
+def _facts_fields(matter: Matter | None) -> dict[str, Any]:
+    """A matter's facts fields for a response (columns read as plain values)."""
+    if matter is None:
+        return {}
+    return {
+        "facts": matter.facts,
+        "facts_updated_at": matter.facts_updated_at,
+        "facts_updated_by": matter.facts_updated_by,
+    }
+
+
 async def _detail_response(
     db: AsyncSession, matter: Matter, matter_id: str, caller_id: str
 ) -> MatterDetailResponse:
@@ -157,9 +169,7 @@ async def _detail_response(
     return MatterDetailResponse(
         **base.model_dump(),
         members=await _members_with_identity(db, matter_id),
-        facts=matter.facts,
-        facts_updated_at=matter.facts_updated_at,
-        facts_updated_by=matter.facts_updated_by,
+        **_facts_fields(matter),
     )
 
 
@@ -244,9 +254,7 @@ async def get_matter(
     return MatterDetailResponse(
         **base.model_dump(),
         members=await _members_with_identity(db, matter_id),
-        facts=matter.facts,
-        facts_updated_at=matter.facts_updated_at,
-        facts_updated_by=matter.facts_updated_by,
+        **_facts_fields(matter),
     )
 
 
@@ -273,11 +281,7 @@ async def set_matter_facts(
         matter_id,
         {"action": "matter_facts_updated", "length": len(matter.facts or "")},
     )
-    return MatterFactsResponse(
-        facts=matter.facts,
-        facts_updated_at=matter.facts_updated_at,
-        facts_updated_by=matter.facts_updated_by,
-    )
+    return MatterFactsResponse(**_facts_fields(matter))
 
 
 @router.post("/{matter_id}/members", response_model=MatterDetailResponse)
@@ -328,9 +332,7 @@ async def add_matter_member(
     return MatterDetailResponse(
         **base.model_dump(),
         members=await _members_with_identity(db, matter_id),
-        facts=matter.facts,
-        facts_updated_at=matter.facts_updated_at,
-        facts_updated_by=matter.facts_updated_by,
+        **_facts_fields(matter),
     )
 
 
@@ -363,9 +365,7 @@ async def remove_matter_member(
     return MatterDetailResponse(
         **base.model_dump(),
         members=await _members_with_identity(db, matter_id),
-        facts=matter.facts,
-        facts_updated_at=matter.facts_updated_at,
-        facts_updated_by=matter.facts_updated_by,
+        **_facts_fields(matter),
     )
 
 

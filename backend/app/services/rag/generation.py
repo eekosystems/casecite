@@ -109,8 +109,12 @@ async def call_llm(
     user_prompt: str,
     max_tokens: int,
     temperature: float = 0.1,
+    history: list[dict[str, str]] | None = None,
 ) -> str:
     """Call the provider that serves ``model`` and return the response text.
+
+    ``history`` holds earlier turns of the conversation (``{"role", "content"}``,
+    oldest first, starting with the user); they are sent before ``user_prompt``.
 
     The model name picks the provider and the request never silently moves to
     a different one: a Claude model needs an Anthropic client, a Gemini model
@@ -124,6 +128,7 @@ async def call_llm(
     allowed.
     """
     family = provider_of_model(model)
+    turns = _alternating(history or [])
 
     if family == "anthropic" and anthropic_client:
         enforce_provider_allowed("anthropic", "AI request")
@@ -131,12 +136,16 @@ async def call_llm(
             model=model,
             max_tokens=max_tokens,
             system=system_prompt,
-            messages=[{"role": "user", "content": user_prompt}],
+            messages=_alternating([*turns, {"role": "user", "content": user_prompt}]),
         )
         return response.content[0].text
     if family == "google" and gemini_model:
         enforce_provider_allowed("google", "AI request")
-        full_prompt = f"{system_prompt}\n\n{user_prompt}"
+        transcript = "\n\n".join(
+            f"{'User' if t['role'] == 'user' else 'Assistant'}: {t['content']}" for t in turns
+        )
+        earlier = f"CONVERSATION SO FAR:\n{transcript}\n\n" if transcript else ""
+        full_prompt = f"{system_prompt}\n\n{earlier}{user_prompt}"
         response = await asyncio.to_thread(gemini_model.generate_content, full_prompt)
         return response.text
 
@@ -160,6 +169,7 @@ async def call_llm(
             model=model,
             messages=[
                 {"role": "system", "content": system_prompt},
+                *turns,
                 {"role": "user", "content": user_prompt},
             ],
             temperature=temperature,
@@ -170,6 +180,22 @@ async def call_llm(
         "No LLM configured. Please provide an API key in Settings, "
         "or set OPENAI_API_KEY or ANTHROPIC_API_KEY environment variable."
     )
+
+
+def _alternating(turns: list[dict[str, str]]) -> list[dict[str, str]]:
+    """Turns that start with the user and alternate roles (Anthropic requires it):
+    leading assistant turns are dropped, consecutive same-role turns joined."""
+    out: list[dict[str, str]] = []
+    for t in turns:
+        if t.get("role") not in ("user", "assistant") or not t.get("content"):
+            continue
+        if not out and t["role"] != "user":
+            continue
+        if out and out[-1]["role"] == t["role"]:
+            out[-1] = {"role": t["role"], "content": f"{out[-1]['content']}\n\n{t['content']}"}
+        else:
+            out.append({"role": t["role"], "content": t["content"]})
+    return out
 
 
 _server_anthropic_client = None

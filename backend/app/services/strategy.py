@@ -243,7 +243,9 @@ class StrategyService:
                 grouped[doc_id] = [chunk]
         return grouped
 
-    async def _synthesize(self, client, question: str, passages: list[dict[str, Any]]) -> dict:
+    async def _synthesize(
+        self, client, question: str, passages: list[dict[str, Any]], context_notes: str = ""
+    ) -> dict:
         # The model reads each passage in full (a 400-character opening is not
         # enough to assess a clause); only when the scope is very large does
         # every passage shrink, equally, to fit the budget.
@@ -258,7 +260,16 @@ class StrategyService:
             "You are a senior litigation strategist. Using ONLY the passages below from the "
             "client's own documents, assess the client's position on the question.\n\n"
             f"QUESTION: {question}\n\n"
-            'Every strength, weakness and next step MUST list the refs (e.g. "d0") of the '
+            + (
+                "THE CASE TEAM'S OWN ACCOUNT (facts they recorded and what they said in this "
+                "conversation): use it to understand the matter and what the client wants, "
+                "but it is not a source: every point must still rest on the passages, and "
+                "say where the passages contradict it.\n"
+                f"{context_notes[:8_000]}\n\n"
+                if context_notes
+                else ""
+            )
+            + 'Every strength, weakness and next step MUST list the refs (e.g. "d0") of the '
             "passages it relies on. Use only refs that appear below — never invent refs.\n\n"
             'Return STRICT JSON: {"position":"2-4 sentence assessment",'
             '"strengths":[{"point":"...","refs":["d0"]}],'
@@ -535,10 +546,15 @@ class StrategyService:
         user_id: str,
         user_keys=None,
         accessible_matter_ids: set[str] | None = None,
+        context_notes: str = "",
     ) -> dict[str, Any]:
         """``accessible_matter_ids`` are the matters the caller belongs to: a
         colleague's document filed under one of them is read like the caller's
-        own (owner-only when None)."""
+        own (owner-only when None).
+
+        ``context_notes`` is the case team's own account (the matter's recorded
+        facts and the recent conversation): background for the assessment, never
+        a source a point can cite."""
         client = make_openai(self._api_key(user_keys), async_=True)
         if client is None:
             raise ValueError(
@@ -581,7 +597,7 @@ class StrategyService:
             raise LookupError("No indexed content is available for the selected documents.")
 
         try:
-            llm_data = await self._synthesize(client, question, passages)
+            llm_data = await self._synthesize(client, question, passages, context_notes)
         except Exception as e:  # any LLM/parse failure maps to one clean 502
             logger.error(f"Strategy brief synthesis failed for user {user_id}: {e}")
             raise StrategySynthesisError(

@@ -34,6 +34,8 @@ from app.services.rag.citations import (
     extract_cited_cases,
 )
 from app.services.rag.claim_grounding import ground_answer
+from app.services.rag.conversation import NO_SOURCES_RULE, ConversationContext
+from app.services.rag.conversation import system_addendum as conversation_addendum
 from app.services.rag.enhancements import (
     annotate_source_locations,
     compress_context_results,
@@ -393,14 +395,21 @@ class RAGService:
         user_id: str = "",
         rag_settings: Any | None = None,
         matter_ids: list[str] | None = None,
+        conversation: ConversationContext | None = None,
+        search_query: str | None = None,
     ) -> dict[str, Any]:
         """Generate a RAG response with citations from documents and case law.
 
         ``matter_ids`` are the shared matters the caller belongs to: retrieval
         then spans the caller's own documents OR documents filed under those
         matters (see ``tenant_scope``), so matter-shared files are searchable.
+
+        ``conversation`` carries the earlier turns and the matters' facts, sent
+        with the answer; ``search_query`` is the follow-up rewritten to stand on
+        its own, used for searching (the answer still replies to ``query``).
         """
         start_time = time.time()
+        retrieval_query = (search_query or "").strip() or query
 
         # Resolve effective per-user settings up front so the model choice and
         # retrieval toggles apply to every code path below (including no-results).
@@ -414,19 +423,26 @@ class RAGService:
         # whole knowledge base: the user asked about Client A's folder, and
         # an answer drawn from Client B's files would be wrong and unseen.
         if include_documents and document_ids is not None and not document_ids:
-            return _empty_response(
-                "There are no indexed documents in the scope you selected, so "
-                "there was nothing to search. The folder or files may be empty, "
-                "or still being indexed — check their status in the knowledge "
-                "base, or widen the scope and ask again.",
+            return await self._handle_no_results(
+                query,
+                mode,
+                model,
+                include_documents,
+                include_case_law,
+                openai_client,
+                anthropic_client,
+                gemini_model,
                 start_time,
+                effective_settings,
+                conversation=conversation,
+                empty_scope=True,
             )
 
         # Search for relevant documents. Infrastructure failures surface as an
         # honest "search is down" answer — never as "no relevant documents".
         try:
             search_results = await self._retrieve_documents(
-                query=query,
+                query=retrieval_query,
                 include_documents=include_documents,
                 document_ids=document_ids,
                 top_k=top_k,
@@ -450,7 +466,7 @@ class RAGService:
             )
 
         case_law_results = await _search_case_law_within_budget(
-            query=query,
+            query=retrieval_query,
             include_case_law=include_case_law,
             case_law_query=case_law_query,
             case_law_limit=case_law_limit,
@@ -461,7 +477,7 @@ class RAGService:
         )
 
         threshold_response = await self._explain_threshold_misses(
-            query=query,
+            query=retrieval_query,
             search_results=search_results,
             case_law_results=case_law_results,
             include_documents=include_documents,
@@ -489,6 +505,7 @@ class RAGService:
                 start_time,
                 effective_settings,
                 scoped=bool(document_ids),
+                conversation=conversation,
             )
 
         return await self._answer_with_sources(
@@ -508,6 +525,8 @@ class RAGService:
             gemini_model=gemini_model,
             start_time=start_time,
             matter_ids=matter_ids,
+            conversation=conversation,
+            search_query=retrieval_query,
         )
 
     async def _answer_with_sources(
@@ -529,11 +548,14 @@ class RAGService:
         gemini_model: Any,
         start_time: float,
         matter_ids: list[str] | None = None,
+        conversation: ConversationContext | None = None,
+        search_query: str | None = None,
     ) -> dict[str, Any]:
         """Generate the grounded answer from retrieved sources and assemble its citations and stats."""
         system_prompt, user_prompt, query_intent = self._build_prompts(
             query, mode, search_results, case_law_results, effective_settings
         )
+        system_prompt += conversation_addendum(conversation)
 
         # Generate LLM response (model already resolved from user settings
         # above). The provider allowlist is enforced inside call_llm, against
@@ -550,6 +572,7 @@ class RAGService:
                 user_prompt,
                 max_tokens,
                 effective_settings.temperature,
+                history=conversation.history if conversation else None,
             )
         except Exception as e:  # provider SDK errors share no builtin base class
             return self._llm_failure_response(e, start_time)
@@ -558,7 +581,7 @@ class RAGService:
 
         citations, cited_cases, grounding_notice = await _build_answer_citations(
             content=content,
-            query=query,
+            query=search_query or query,
             mode=mode,
             search_results=search_results,
             case_law_results=case_law_results,
@@ -781,95 +804,78 @@ class RAGService:
         start_time,
         effective_settings=None,
         scoped: bool = False,
+        conversation: ConversationContext | None = None,
+        empty_scope: bool = False,
     ) -> dict[str, Any]:
-        """Handle case when no search results are found."""
+        """Answer when there are no sources to answer from.
+
+        Either sources were switched off, or the search found nothing: no
+        documents in the selected scope, an empty index, or no match. The model
+        answers from the conversation, the matter's recorded facts and general
+        knowledge, and the answer says plainly that no documents were used and
+        why. (It used to refuse, so a matter with facts but no documents could
+        not be discussed at all.)
+        """
         effective_settings = effective_settings or RAGSettings()
-        if not include_documents and not include_case_law:
-            # RAG was disabled intentionally, just use LLM directly
-            drafting_keywords = [
-                "draft",
-                "generate a",
-                "write a",
-                "motion to",
-                "complaint",
-                "document drafter",
-                "begin the document",
-                "ready-to-file",
-            ]
-            is_drafting = any(kw in query.lower() for kw in drafting_keywords)
-
-            system_prompt = get_system_prompt(mode, is_drafting=is_drafting)
-            model = resolve_chat_model(model or effective_settings.llm_model)
-            # Respect the user's max-tokens setting, capped by the model ceiling.
-            max_tokens = min(effective_settings.max_tokens, get_model_max_tokens(model))
-            # Drafting needs a little more creativity; treat 0.3 as a floor there.
-            temperature = (
-                max(effective_settings.temperature, 0.3)
-                if is_drafting
-                else effective_settings.temperature
+        label = ""
+        if include_documents or include_case_law:
+            label = await self._no_sources_label(
+                include_documents, scoped, empty_scope, conversation
             )
 
-            try:
-                content = await call_llm(
-                    openai_client,
-                    anthropic_client,
-                    gemini_model,
-                    model,
-                    system_prompt,
-                    query,
-                    max_tokens,
-                    temperature,
-                )
-            except Exception as e:  # provider SDK errors share no builtin base class
-                return self._llm_failure_response(e, start_time)
+        drafting_keywords = [
+            "draft",
+            "generate a",
+            "write a",
+            "motion to",
+            "complaint",
+            "document drafter",
+            "begin the document",
+            "ready-to-file",
+        ]
+        is_drafting = any(kw in query.lower() for kw in drafting_keywords)
 
-            # Direct-LLM path has no retrieved sources at all, so no case
-            # reference the model produces here can be verified — remove all.
-            content, removed_refs = redact_unverified_case_law(content)
-            if removed_refs:
-                logger.warning(
-                    f"[CaseLawGuard] Removed {len(removed_refs)} unverified case "
-                    f"reference(s) from direct answer: {removed_refs}"
-                )
-
-            return {
-                "content": content,
-                "citations": [],
-                "stats": ChatStats(
-                    docs_searched=0,
-                    chunks_retrieved=0,
-                    processing_time=f"{time.time() - start_time:.2f}s",
-                    case_law_searched=0,
-                    case_law_included=0,
-                ),
-            }
-
-        # RAG was enabled but nothing was found. An EMPTY index and "no match"
-        # are different truths — never report an empty library as a bad query.
-        content = (
-            "I couldn't find any relevant documents in the knowledge base or "
-            "case law for your query. Please try rephrasing or ensure relevant "
-            "documents have been indexed."
+        system_prompt = (
+            get_system_prompt(mode, is_drafting=is_drafting)
+            + ("\n\n" + NO_SOURCES_RULE if label else "")
+            + conversation_addendum(conversation)
         )
-        if scoped:
-            content = (
-                "I searched the files you selected and found no passages to answer "
-                "from. They may have no extractable text (for example a scanned PDF "
-                "without OCR) — check their status in the knowledge base."
+        model = resolve_chat_model(model or effective_settings.llm_model)
+        # Respect the user's max-tokens setting, capped by the model ceiling.
+        max_tokens = min(effective_settings.max_tokens, get_model_max_tokens(model))
+        # Drafting needs a little more creativity; treat 0.3 as a floor there.
+        temperature = (
+            max(effective_settings.temperature, 0.3)
+            if is_drafting
+            else effective_settings.temperature
+        )
+
+        try:
+            content = await call_llm(
+                openai_client,
+                anthropic_client,
+                gemini_model,
+                model,
+                system_prompt,
+                query,
+                max_tokens,
+                temperature,
+                history=conversation.history if conversation else None,
             )
-        elif include_documents and self.vector_db is not None:
-            try:
-                db_stats = await self.vector_db.get_stats()
-                if db_stats.get("total_chunks", 0) == 0:
-                    content = (
-                        "⚠ Your document search index is empty — there is nothing "
-                        "to search yet. If you previously uploaded documents, the "
-                        "index may have been reset; re-indexing runs automatically "
-                        "at startup, or you can re-upload. Check each document's "
-                        "status in the knowledge base."
-                    )
-            except Exception:  # nosec B110 - stats are best-effort; keep the generic message
-                pass
+        except Exception as e:  # provider SDK errors share no builtin base class
+            return self._llm_failure_response(e, start_time)
+
+        # Direct-LLM path has no retrieved sources at all, so no case
+        # reference the model produces here can be verified — remove all.
+        content, removed_refs = redact_unverified_case_law(content)
+        if removed_refs:
+            logger.warning(
+                f"[CaseLawGuard] Removed {len(removed_refs)} unverified case "
+                f"reference(s) from direct answer: {removed_refs}"
+            )
+        if label:
+            content = f"> {label}\n\n{content}"
+
         return {
             "content": content,
             "citations": [],
@@ -881,6 +887,42 @@ class RAGService:
                 case_law_included=0,
             ),
         }
+
+    async def _no_sources_label(
+        self,
+        include_documents: bool,
+        scoped: bool,
+        empty_scope: bool,
+        conversation: ConversationContext | None,
+    ) -> str:
+        """One line saying why the answer has no sources and what it rests on."""
+        has_facts = bool(conversation and conversation.matter_facts)
+        basis = (
+            "our conversation, the matter's recorded facts and general knowledge"
+            if has_facts
+            else "our conversation and general knowledge"
+        )
+        tail = f"so this answer is based on {basis}, not on your documents."
+        if empty_scope:
+            return f"**No documents used:** the matter or files you selected have no indexed documents yet, {tail}"
+        if scoped:
+            return (
+                "**No documents used:** the files you selected had no passages for this "
+                "question (a scanned PDF without text would explain it; check each file's "
+                f"status in the knowledge base), {tail}"
+            )
+        if include_documents and self.vector_db is not None:
+            try:
+                db_stats = await self.vector_db.get_stats()
+                if db_stats.get("total_chunks", 0) == 0:
+                    return (
+                        "**No documents used:** there are no indexed documents to search yet "
+                        "(if you uploaded some, the index may be rebuilding; check each "
+                        f"document's status in the knowledge base), {tail}"
+                    )
+            except Exception:  # nosec B110 - stats are best-effort; keep the generic label
+                pass
+        return f"**No documents used:** nothing in your documents or the case law searched matched this question, {tail}"
 
     @staticmethod
     def _llm_failure_response(error: Exception, start_time: float) -> dict[str, Any]:
