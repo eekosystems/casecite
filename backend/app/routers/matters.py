@@ -35,6 +35,8 @@ from app.models.schemas import (
     MatterAnalysesResponse,
     MatterAnalysisItem,
     MatterDetailResponse,
+    MatterFactsRequest,
+    MatterFactsResponse,
     MatterListResponse,
     MatterMemberResponse,
     MatterResponse,
@@ -155,6 +157,9 @@ async def _detail_response(
     return MatterDetailResponse(
         **base.model_dump(),
         members=await _members_with_identity(db, matter_id),
+        facts=matter.facts,
+        facts_updated_at=matter.facts_updated_at,
+        facts_updated_by=matter.facts_updated_by,
     )
 
 
@@ -239,6 +244,39 @@ async def get_matter(
     return MatterDetailResponse(
         **base.model_dump(),
         members=await _members_with_identity(db, matter_id),
+        facts=matter.facts,
+        facts_updated_at=matter.facts_updated_at,
+        facts_updated_by=matter.facts_updated_by,
+    )
+
+
+@router.put("/{matter_id}/facts", response_model=MatterFactsResponse)
+async def set_matter_facts(
+    matter_id: str,
+    body: MatterFactsRequest,
+    request: Request,
+    current_user: TokenData = require_permission("documents.upload"),
+    db: AsyncSession = Depends(get_db),
+) -> MatterFactsResponse:
+    """Replace the matter's facts. Any member who may add content to it may edit them.
+
+    Every chat and strategy brief in the matter reads these facts as the case
+    team's account, so the audit trail records who changed them, never the text.
+    """
+    matter = await _require_member_matter(db, matter_id, current_user.user_id)
+    await matters_service.set_matter_facts(db, matter, body.facts, current_user.user_id)
+    await db.commit()
+    await _audit(
+        request,
+        current_user,
+        AuditEventType.DATA_MODIFICATION,
+        matter_id,
+        {"action": "matter_facts_updated", "length": len(matter.facts or "")},
+    )
+    return MatterFactsResponse(
+        facts=matter.facts,
+        facts_updated_at=matter.facts_updated_at,
+        facts_updated_by=matter.facts_updated_by,
     )
 
 
@@ -290,6 +328,9 @@ async def add_matter_member(
     return MatterDetailResponse(
         **base.model_dump(),
         members=await _members_with_identity(db, matter_id),
+        facts=matter.facts,
+        facts_updated_at=matter.facts_updated_at,
+        facts_updated_by=matter.facts_updated_by,
     )
 
 
@@ -322,6 +363,9 @@ async def remove_matter_member(
     return MatterDetailResponse(
         **base.model_dump(),
         members=await _members_with_identity(db, matter_id),
+        facts=matter.facts,
+        facts_updated_at=matter.facts_updated_at,
+        facts_updated_by=matter.facts_updated_by,
     )
 
 

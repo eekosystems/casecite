@@ -306,6 +306,25 @@ class MatterListResponse(BaseModel):
 
 class MatterDetailResponse(MatterResponse):
     members: list[MatterMemberResponse]
+    # The case team's facts (Matter → Facts); read by chat and strategy.
+    facts: str | None = None
+    facts_updated_at: datetime | None = None
+    facts_updated_by: str | None = None
+
+
+MAX_MATTER_FACTS_CHARS = 20_000
+
+
+class MatterFactsRequest(BaseModel):
+    """Replace a matter's facts. An empty string clears them."""
+
+    facts: str = Field(..., max_length=MAX_MATTER_FACTS_CHARS)
+
+
+class MatterFactsResponse(BaseModel):
+    facts: str | None = None
+    facts_updated_at: datetime | None = None
+    facts_updated_by: str | None = None
 
 
 class UpdateMatterRequest(BaseModel):

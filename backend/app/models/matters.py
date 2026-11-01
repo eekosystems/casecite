@@ -20,6 +20,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     String,
+    Text,
     UniqueConstraint,
 )
 
@@ -49,6 +50,12 @@ class Matter(Base):
     # shown as a shareable matter and never deletable. Preserves single-user
     # behavior: all of a solo user's data lives in their personal matter.
     is_personal = Column(Boolean, default=False, nullable=False)
+    # The case team's account of the matter (parties, dates, what happened,
+    # the client's goals), written in Matter → Facts. Every chat and strategy
+    # brief in the matter reads it as facts the user stated, never as a source.
+    facts = Column(Text, nullable=True)
+    facts_updated_at = Column(DateTime, nullable=True)
+    facts_updated_by = Column(String(36), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
