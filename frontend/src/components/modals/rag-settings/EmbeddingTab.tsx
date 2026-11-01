@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useState } from 'react';
 import { api } from '../../../api';
 import { useUIStore } from '../../../stores/uiStore';
+import { InfoTip } from '../../shared/InfoTip';
 import type { EmbeddingInfo, EmbeddingReindexStatus, EmbeddingStatus } from '../../../api/types';
 
 interface EmbeddingTabProps {
@@ -148,10 +149,17 @@ export const EmbeddingTab = ({ isAdmin, styles }: EmbeddingTabProps) => {
 
   return (
     <div className={styles.settingsGrid}>
-      <div className={styles.settingGroup}>
-        <span className={styles.settingLabel}>Embedding model in use</span>
+      <div className={`${styles.settingGroup} ${styles.fullWidth}`}>
+        <div className={styles.labelRow}>
+          <span className={styles.settingLabel}>Embedding model in use</span>
+          <InfoTip label="About embeddings">
+            Embeddings turn text into numbers so search can find passages by meaning, not only by exact words.
+            Every document and every question is embedded with this model, and the text of each uploaded
+            document is sent to the provider named here when it is indexed.
+          </InfoTip>
+        </div>
         {current ? (
-          <p className={styles.localModelDesc}>
+          <p className={styles.summaryText}>
             Documents are embedded with <strong className="mono">{current.model}</strong> ({current.dimensions} dimensions)
             {' '}{providerLabel(current.provider)}.{' '}
             {current.source === 'instance' ? 'Set by an administrator here.' : 'Set in the server\'s .env.'}
@@ -179,7 +187,14 @@ export const EmbeddingTab = ({ isAdmin, styles }: EmbeddingTabProps) => {
             vLLM, LM Studio or text-embeddings-inference — so document text is embedded on your own network.
           </p>
           <div>
-            <label className={styles.settingLabel} htmlFor={`${id}-emb-url`}>Server URL</label>
+            <div className={styles.labelRow}>
+              <label className={styles.settingLabel} htmlFor={`${id}-emb-url`}>Server URL</label>
+              <InfoTip label="About the embedding server URL">
+                An OpenAI-compatible embeddings endpoint, usually ending in /v1 (Ollama:
+                http://localhost:11434/v1). It can differ from your chat model servers. The server is sent a
+                test request before anything changes.
+              </InfoTip>
+            </div>
             <input
               id={`${id}-emb-url`}
               className={styles.modalInputMono}
@@ -189,7 +204,14 @@ export const EmbeddingTab = ({ isAdmin, styles }: EmbeddingTabProps) => {
             />
           </div>
           <div>
-            <label className={styles.settingLabel} htmlFor={`${id}-emb-model`}>Model</label>
+            <div className={styles.labelRow}>
+              <label className={styles.settingLabel} htmlFor={`${id}-emb-model`}>Model</label>
+              <InfoTip label="About the embedding model">
+                The embedding model&apos;s name exactly as your server lists it, for example nomic-embed-text,
+                mxbai-embed-large or Qwen3-Embedding-8B. It must be an embedding model; a chat model fails the
+                server check.
+              </InfoTip>
+            </div>
             <input
               id={`${id}-emb-model`}
               className={styles.modalInputMono}
@@ -199,7 +221,14 @@ export const EmbeddingTab = ({ isAdmin, styles }: EmbeddingTabProps) => {
             />
           </div>
           <div>
-            <label className={styles.settingLabel} htmlFor={`${id}-emb-dims`}>Dimensions (optional)</label>
+            <div className={styles.labelRow}>
+              <label className={styles.settingLabel} htmlFor={`${id}-emb-dims`}>Dimensions (optional)</label>
+              <InfoTip label="About embedding dimensions">
+                How many numbers the model returns per piece of text. Leave it blank and it is read from the
+                server&apos;s answer. If you fill it in and the server returns a different size, saving is
+                refused, which catches a wrong model name.
+              </InfoTip>
+            </div>
             <input
               id={`${id}-emb-dims`}
               type="number"
@@ -211,7 +240,14 @@ export const EmbeddingTab = ({ isAdmin, styles }: EmbeddingTabProps) => {
             />
           </div>
           <div>
-            <label className={styles.settingLabel} htmlFor={`${id}-emb-key`}>API key (optional)</label>
+            <div className={styles.labelRow}>
+              <label className={styles.settingLabel} htmlFor={`${id}-emb-key`}>API key (optional)</label>
+              <InfoTip label="About the embedding server key">
+                Only if your server needs one; local servers usually don&apos;t. It is stored encrypted and
+                sent only to this server, never the instance&apos;s OpenAI key. Leave it blank to keep a key
+                that is already saved.
+              </InfoTip>
+            </div>
             <input
               id={`${id}-emb-key`}
               type="password"
@@ -224,14 +260,35 @@ export const EmbeddingTab = ({ isAdmin, styles }: EmbeddingTabProps) => {
           </div>
           <div className={styles.boxActions}>
             {status.source === 'instance' && (
-              <button className={styles.brandingResetBtn} onClick={revert}>Use .env settings</button>
+              <span className={styles.actionWithTip}>
+                <button className={styles.brandingResetBtn} onClick={revert}>Use .env settings</button>
+                <InfoTip label="What using the .env settings does">
+                  Goes back to the embedding model in the server&apos;s .env. Documents already embedded with it
+                  are searchable again at once; only documents added since then are re-embedded.
+                </InfoTip>
+              </span>
             )}
             {status.reindex.state !== 'running' && status.reindex.failed > 0 && (
-              <button className={styles.btnSecondarySmall} onClick={retry}>Retry failed documents</button>
+              <span className={styles.actionWithTip}>
+                <button className={styles.btnSecondarySmall} onClick={retry}>Retry failed documents</button>
+                <InfoTip label="What retrying does">
+                  Re-embeds the documents that failed, for example because the server was down. Each failed
+                  document shows its reason in the knowledge base.
+                </InfoTip>
+              </span>
             )}
-            <button className={styles.btnPrimary} onClick={confirmSave} disabled={!canSave}>
-              {saving ? 'Checking server…' : 'Save and re-index'}
-            </button>
+            <span className={styles.actionWithTip}>
+              <button className={styles.btnPrimary} onClick={confirmSave} disabled={!canSave}>
+                {saving ? 'Checking server…' : 'Save and re-index'}
+              </button>
+              <InfoTip label="What saving does" tone="warning">
+                The server is tested first; if it fails, nothing changes. Then every document is re-embedded
+                with the new model in the background, which can take a while for a large library and keeps the
+                server busy. Until a document is done, keyword search finds it but meaning-based search
+                doesn&apos;t. An upload in progress at that moment may need uploading again. Switching back to
+                a model used before is quick.
+              </InfoTip>
+            </span>
           </div>
         </div>
       )}

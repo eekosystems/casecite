@@ -1,5 +1,6 @@
 import { useEffect, useId, useState } from 'react';
 import { api } from '../../../api';
+import { InfoTip } from '../../shared/InfoTip';
 import type { InstanceModels } from '../../../api/types';
 import type { RagSettings } from '../../../types';
 
@@ -46,7 +47,14 @@ export const GenerationTab = ({ local, setLocal, styles }: GenerationTabProps) =
   return (
   <div className={styles.settingsGrid}>
     <div className={styles.settingGroup}>
-      <label className={styles.settingLabel} htmlFor={`${id}-llm-model`}>LLM Model</label>
+      <div className={styles.labelRow}>
+        <label className={styles.settingLabel} htmlFor={`${id}-llm-model`}>LLM Model</label>
+        <InfoTip label="About the chat model choice">
+          {custom
+            ? 'Instance default uses the model your administrator chose on your firm\'s model server. OpenAI models aren\'t listed because requests go to that server; an OpenAI model chosen earlier is answered by the instance default. Claude and Gemini need a key in the API Keys tab and send your question and document excerpts to Anthropic or Google.'
+            : 'Instance default uses the model your administrator chose. Claude and Gemini need a key in the API Keys tab and send your question and document excerpts to Anthropic or Google.'}
+        </InfoTip>
+      </div>
       <select id={`${id}-llm-model`} className={styles.select} value={value} onChange={e => setLocal({...local, llmModel: e.target.value})}>
         <option value="">{models ? `Instance default (${models.chat_model})` : 'Instance default'}</option>
         {custom ? (
@@ -83,7 +91,14 @@ export const GenerationTab = ({ local, setLocal, styles }: GenerationTabProps) =
     </div>
     <div className={styles.settingGroup}>
       <div className={styles.sliderHeader}>
-        <label className={styles.settingLabel} htmlFor={`${id}-max-tokens`}>Max Tokens</label>
+        <div className={styles.labelRow}>
+          <label className={styles.settingLabel} htmlFor={`${id}-max-tokens`}>Max Tokens</label>
+          <InfoTip label="About max tokens">
+            The longest answer the model may write (about 750 words per 1,000 tokens). Hosted models are also
+            held to their own limit. A local model follows this setting, so if its server rejects long answers,
+            lower it or ask your administrator to set LLM_MAX_OUTPUT_TOKENS.
+          </InfoTip>
+        </div>
         <span className={`${styles.sliderValue} mono`}>{local.maxTokens || 4096}</span>
       </div>
       {/* 4096 is the server default; the range covers values saved by earlier builds. */}

@@ -109,6 +109,18 @@
   gap: 16px;
 }
 
+/* One column on phones: two would squeeze every label and explanation. */
+@media (max-width: 600px) {
+  .settingsGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* A settings block that spans both columns. */
+.fullWidth {
+  grid-column: 1 / -1;
+}
+
 .settingGroup {
   margin-bottom: 0;
 }
@@ -473,6 +485,33 @@
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+/* A setting's label with its (i) explanation beside it. */
+.labelRow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.labelRow > .settingLabel {
+  margin-bottom: 0;
+}
+
+/* Plain-language status sentence (neutral, unlike the amber notices). */
+.summaryText {
+  font-size: 12px;
+  color: var(--gray-700);
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* A button with its (i) explanation: kept together when actions wrap. */
+.actionWithTip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
 }
 
 .providerIcon {

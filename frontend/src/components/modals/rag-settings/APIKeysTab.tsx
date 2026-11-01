@@ -2,6 +2,7 @@ import { useRef, useCallback, useState, useEffect, useId } from 'react';
 import { api } from '../../../api';
 import { useUIStore } from '../../../stores/uiStore';
 import { Icon } from '../../shared/Icon';
+import { InfoTip } from '../../shared/InfoTip';
 import type { RagSettings } from '../../../types';
 import type { CourtListenerStatus, LocalLlmStatus } from '../../../api/types';
 
@@ -618,6 +619,11 @@ export const APIKeysTab = ({ local: _local, setLocal: _setLocal, showKeys, setSh
         <div className={styles.localModelHeader}>
           <Icon name="Server" size={16} className={styles.bannerIconAmber} />
           <span className={styles.localModelTitle}>Local / Self-Hosted Models</span>
+          <InfoTip label="About local and self-hosted models">
+            Changes save automatically and apply to every user right away. Prompts and document excerpts are
+            sent to the servers listed here instead of OpenAI. A Claude or Gemini model a user picks in
+            Settings → Generation still goes to Anthropic or Google.
+          </InfoTip>
           {llmStatus?.configured && <Icon name="CheckCircle" size={14} className={styles.checkIcon} />}
           <SaveHint state={savedState["local"]} styles={styles} />
         </div>
@@ -628,7 +634,14 @@ export const APIKeysTab = ({ local: _local, setLocal: _setLocal, showKeys, setSh
         </p>
 
         <div className={styles.localModelList}>
-          <span className={styles.settingLabel}>Models (server URL and model name)</span>
+          <div className={styles.labelRow}>
+            <span className={styles.settingLabel}>Models (server URL and model name)</span>
+            <InfoTip label="About the model list">
+              One row per model. Type the model name exactly as the server lists it (for Ollama, as
+              in <code>ollama list</code>); the server URL usually ends in /v1. Several models can share a
+              server, and each name can be listed once. Removing a model resets any role it filled to its default.
+            </InfoTip>
+          </div>
           {modelRows.map((row, i) => (
             <div key={row.key} className={styles.localModelRow}>
               <input
@@ -668,7 +681,13 @@ export const APIKeysTab = ({ local: _local, setLocal: _setLocal, showKeys, setSh
         </div>
 
         <div>
-          <label className={styles.settingLabel} htmlFor={`${id}-llm-chat-model`}>Chat Model</label>
+          <div className={styles.labelRow}>
+            <label className={styles.settingLabel} htmlFor={`${id}-llm-chat-model`}>Chat Model</label>
+            <InfoTip label="About the chat model">
+              Answers questions in chat for every user who leaves their own model on the instance default
+              (Settings → Generation). Users can still pick a Claude or Gemini model when a key for it is set up.
+            </InfoTip>
+          </div>
           <select
             id={`${id}-llm-chat-model`}
             className={styles.select}
@@ -683,7 +702,14 @@ export const APIKeysTab = ({ local: _local, setLocal: _setLocal, showKeys, setSh
         </div>
 
         <div>
-          <label className={styles.settingLabel} htmlFor={`${id}-llm-drafting-model`}>Drafting Model</label>
+          <div className={styles.labelRow}>
+            <label className={styles.settingLabel} htmlFor={`${id}-llm-drafting-model`}>Drafting Model</label>
+            <InfoTip label="About the drafting model">
+              Writes documents: the drafting workspace, draft mode in contract chat, and workflow draft steps.
+              Long documents make many calls, so a large model takes longer here. &ldquo;Same as chat
+              model&rdquo; keeps drafting on the chat model, as before this setting existed.
+            </InfoTip>
+          </div>
           <select
             id={`${id}-llm-drafting-model`}
             className={styles.select}
@@ -697,7 +723,14 @@ export const APIKeysTab = ({ local: _local, setLocal: _setLocal, showKeys, setSh
         </div>
 
         <div>
-          <label className={styles.settingLabel} htmlFor={`${id}-llm-utility-model`}>Utility Model</label>
+          <div className={styles.labelRow}>
+            <label className={styles.settingLabel} htmlFor={`${id}-llm-utility-model`}>Utility Model</label>
+            <InfoTip label="About the utility model">
+              Runs the small background steps behind almost every question and review: routing the question,
+              checking claims against their sources, pulling contract terms, filling review tables. They run
+              often, so a large or slow model here slows the whole app down. OCR and PDF import don&apos;t use it.
+            </InfoTip>
+          </div>
           <select
             id={`${id}-llm-utility-model`}
             className={styles.select}
@@ -713,7 +746,14 @@ export const APIKeysTab = ({ local: _local, setLocal: _setLocal, showKeys, setSh
         </div>
 
         <div>
-          <label className={styles.settingLabel} htmlFor={`${id}-llm-research-model`}>Research Model</label>
+          <div className={styles.labelRow}>
+            <label className={styles.settingLabel} htmlFor={`${id}-llm-research-model`}>Research Model</label>
+            <InfoTip label="About the research model">
+              Plans each deep research run, researches every sub-question and writes the final answer. A run
+              makes many calls, so a large reasoning model makes it slower but more thorough. &ldquo;Same as
+              utility model&rdquo; keeps deep research on the utility model, as before this setting existed.
+            </InfoTip>
+          </div>
           <select
             id={`${id}-llm-research-model`}
             className={styles.select}
@@ -736,7 +776,14 @@ export const APIKeysTab = ({ local: _local, setLocal: _setLocal, showKeys, setSh
 
         {llmStatus?.configured && (
           <div className={styles.boxActions}>
-            <button className={styles.brandingResetBtn} onClick={handleClearLlm}>Revert to OpenAI</button>
+            <span className={styles.actionWithTip}>
+              <button className={styles.brandingResetBtn} onClick={handleClearLlm}>Revert to OpenAI</button>
+              <InfoTip label="What reverting to OpenAI does" tone="warning">
+                Removes this model list for everyone. Chat, drafting, research and background steps go back to
+                the models in the server&apos;s .env, which is OpenAI unless OPENAI_BASE_URL says otherwise, so
+                prompts and document excerpts may go to OpenAI again.
+              </InfoTip>
+            </span>
           </div>
         )}
       </div>

@@ -1,4 +1,5 @@
 export { Icon } from './shared/Icon';
+export { InfoTip } from './shared/InfoTip';
 export { JudgeMetricsSection } from './shared/JudgeMetricsSection';
 export { CitationModal } from './modals/CitationModal';
 export { DocumentPanel } from './shared/DocumentPanel';
