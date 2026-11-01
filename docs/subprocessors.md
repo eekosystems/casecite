@@ -57,10 +57,12 @@ application, and no script is fetched from a CDN on page load.
   server on your network (Ollama, vLLM, LM Studio). Admins can also set this at
   runtime (Settings → API Keys → Local LLM).
 - **Self-hosted embeddings:** set `EMBEDDING_BASE_URL` (and `EMBEDDING_MODEL`)
-  to an OpenAI-compatible embeddings server on your network. This is separate
-  from `OPENAI_BASE_URL` on purpose: with only the chat endpoint redirected,
-  uploaded document text would still be sent to `api.openai.com` for embedding.
-  Changing the embedding model requires re-indexing existing documents.
+  to an OpenAI-compatible embeddings server on your network, or have an admin
+  set it in Settings → Embedding (checked before it is used; documents are then
+  re-embedded in the background). This is separate from `OPENAI_BASE_URL` on
+  purpose: with only the chat endpoint redirected, uploaded document text would
+  still be sent to `api.openai.com` for embedding. Changing the embedding model
+  in `.env` requires re-indexing existing documents.
 - With **both** set, `VECTOR_DB=chroma`, no provider keys configured, and the
   connectors and CourtListener features unused, no document text leaves the
   deployment.

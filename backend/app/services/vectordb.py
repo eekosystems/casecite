@@ -20,6 +20,7 @@ except (ImportError, ModuleNotFoundError, AttributeError):
 
 
 from app.config import settings
+from app.services.embeddings import DEFAULT_COLLECTION
 from app.services.lexical_index import LexicalIndex, UnsupportedFilter, open_lexical_index
 
 logger = logging.getLogger(__name__)
@@ -48,6 +49,13 @@ class VectorDBBase(ABC):
     # Keyword index mirroring this store (None when unavailable). Every write
     # path keeps it in step; see app.services.lexical_index.
     lexical: LexicalIndex | None = None
+    # Whether the store can hold one collection per embedding model, so the
+    # embedding model can be changed at runtime (Settings → Embedding).
+    supports_collection_switch: bool = False
+
+    def use_collection(self, name: str) -> None:
+        """Read and write the named collection from now on."""
+        raise NotImplementedError("this vector store has a single, fixed index")
 
     def _mirror(self, action: str, fn) -> None:
         """Apply a write to the keyword index; a failure there never fails the store write."""
@@ -199,6 +207,9 @@ def _has_tenant_scope(filter: dict | None) -> bool:
 
 
 class ChromaDB(VectorDBBase):
+    supports_collection_switch = True
+    collection_name = DEFAULT_COLLECTION
+
     def __init__(self, path: str | None = None, lexical_path: str | None = None):
         """Open (or create) the store at ``path``; default ``settings.chroma_persist_dir``.
 
@@ -274,9 +285,15 @@ class ChromaDB(VectorDBBase):
             path=chroma_path,
             settings=ChromaSettings(anonymized_telemetry=False),
         )
+        self.use_collection(DEFAULT_COLLECTION)
+
+    def use_collection(self, name: str) -> None:
+        """Switch to ``name`` (created empty if new). Earlier collections are kept,
+        so switching back to an embedding model used before needs no re-embedding."""
         self.collection = self.client.get_or_create_collection(
-            name="legal_documents", metadata={"hnsw:space": "cosine"}
+            name=name, metadata={"hnsw:space": "cosine"}
         )
+        self.collection_name = name
 
     @staticmethod
     def _dir_manifest(path: str) -> dict[str, int]:
@@ -512,7 +529,7 @@ class ChromaDB(VectorDBBase):
             "total_documents": count,  # Alias for frontend compatibility
             "total_vectors": count,  # Alias for frontend compatibility
             "stored_embedding_dimensions": stored_dimensions,
-            "collection_name": "legal_documents",
+            "collection_name": self.collection_name,
             "db_type": "chroma",
         }
 

@@ -210,7 +210,7 @@ Not required to boot, but the product does little without them:
 | `VOYAGE_API_KEY` | — | Voyage AI legal embeddings |
 | `OPENAI_BASE_URL` | — | OpenAI-compatible endpoint for chat (self-hosted model or gateway) |
 | `OPENAI_CHAT_MODEL` / `OPENAI_UTILITY_MODEL` / `OPENAI_RESEARCH_MODEL` | `gpt-5.5` / `gpt-5.4-mini` / chat model | Model for chat and drafting / for small background calls / for deep research |
-| `EMBEDDING_BASE_URL` | — | OpenAI-compatible endpoint for embeddings; set with `OPENAI_BASE_URL` to keep document text on your network |
+| `EMBEDDING_BASE_URL` | — | OpenAI-compatible endpoint for embeddings; set with `OPENAI_BASE_URL` to keep document text on your network (admins can also set it in Settings → Embedding) |
 | `VECTOR_DB` | `chroma` | `chroma` (local) or `pinecone` (stores document text with Pinecone) |
 | `TRUSTED_PROXIES` | `127.0.0.1` | Reverse-proxy IP/CIDR — **required behind a proxy** |
 | `REQUIRE_MFA` | `false` | Require every password account to enrol TOTP MFA |

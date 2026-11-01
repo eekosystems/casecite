@@ -317,3 +317,152 @@ async def clear_local_llm(
         details={"action": "local_llm_cleared"},
     )
     return {"status": "cleared", **_local_llm_status()}
+
+
+# ----- Embeddings: model and server (Settings → Embedding) -----
+
+
+class EmbeddingConfigRequest(BaseModel):
+    base_url: str = Field(..., min_length=4, max_length=400)  # e.g. http://localhost:11434/v1
+    model: str = Field(..., min_length=1, max_length=120)
+    # Optional check: the server's vectors must be this long. Blank: use what it returns.
+    dimensions: int | None = Field(None, ge=8, le=16384)
+    # None keeps the saved key when the server is unchanged; "" clears it.
+    api_key: str | None = Field(None, max_length=400)
+
+    @field_validator("base_url")
+    @classmethod
+    def _http_url(cls, v: str) -> str:
+        v = v.strip()
+        if not v.lower().startswith(("http://", "https://")):
+            raise ValueError("base_url must start with http:// or https://")
+        return v
+
+
+def _embeddings_status() -> dict:
+    """Effective embedding settings and re-embedding progress (admin view)."""
+    from app.services import embedding_switch
+    from app.services.embeddings import embedding_service as svc
+
+    return {
+        "source": svc.source,  # "env" (.env) or "instance" (set here)
+        "vector_store": embedding_switch.vector_store_kind(),
+        "editable": embedding_switch.can_switch(),
+        "provider": _embeddings_provider(),
+        "base_url": svc.base_url,
+        "model": svc.model,
+        "dimensions": svc.dimensions,
+        "api_key_set": svc.source == "instance" and bool(svc.server_api_key),
+        "collection": svc.collection_name(),
+        "reindex": embedding_switch.reindex_status(),
+    }
+
+
+@router.get("/embeddings")
+async def embeddings_status(current_user: TokenData = require_permission("admin.settings")):
+    """Current embedding model and server, and re-embedding progress."""
+    return _embeddings_status()
+
+
+@router.post("/embeddings")
+async def set_embeddings(
+    body: EmbeddingConfigRequest,
+    request: Request,
+    current_user: TokenData = require_permission("admin.settings"),
+):
+    """Use an OpenAI-compatible embedding server, then re-embed every document.
+
+    The server is checked first (it must return a vector), so a typo never
+    leaves the instance unable to index or search.
+    """
+    from app.services import embedding_switch
+    from app.services.embeddings import embedding_service
+
+    if not embedding_switch.can_switch():
+        raise BadRequestError(
+            "Embeddings can be changed here only with the built-in vector store "
+            "(Chroma). With Pinecone, set EMBEDDING_BASE_URL, EMBEDDING_MODEL and "
+            "EMBEDDING_DIMENSIONS in .env and use an index of that vector size."
+        )
+    api_key = body.api_key
+    if (
+        api_key is None
+        and embedding_service.source == "instance"
+        and embedding_service.base_url == body.base_url
+    ):
+        api_key = embedding_service.server_api_key
+    api_key = (api_key or "").strip() or None
+    model = body.model.strip()
+    try:
+        dimensions = await embedding_service.probe(body.base_url, model, api_key)
+    except ValueError as e:  # includes ProviderNotAllowedError
+        raise BadRequestError(str(e))
+    if body.dimensions and body.dimensions != dimensions:
+        raise BadRequestError(
+            f"The server returned {dimensions}-dimension vectors for '{model}', not "
+            f"{body.dimensions}. Leave Dimensions blank to use what the server returns."
+        )
+    cfg = {"base_url": body.base_url, "model": model, "dimensions": dimensions}
+    if api_key:
+        cfg["api_key"] = api_key
+    await embedding_switch.save_and_apply(cfg)
+    await audit_service.log_event(
+        event_type=AuditEventType.SETTINGS_CHANGE,
+        user_id=current_user.user_id,
+        user_email=current_user.email,
+        resource_type="integration",
+        resource_id="embeddings",
+        ip_address=get_client_ip(request),
+        details={
+            "action": "embeddings_set",
+            "base_url": body.base_url,
+            "model": model,
+            "dimensions": dimensions,
+        },
+    )
+    return {"status": "saved", **_embeddings_status()}
+
+
+@router.delete("/embeddings")
+async def clear_embeddings(
+    request: Request,
+    current_user: TokenData = require_permission("admin.settings"),
+):
+    """Go back to the .env embedding settings (and their vector collection)."""
+    from app.services import embedding_switch
+    from app.services.embeddings import embedding_service
+
+    if embedding_service.source == "instance":
+        await embedding_switch.save_and_apply(None)
+        await audit_service.log_event(
+            event_type=AuditEventType.SETTINGS_CHANGE,
+            user_id=current_user.user_id,
+            user_email=current_user.email,
+            resource_type="integration",
+            resource_id="embeddings",
+            ip_address=get_client_ip(request),
+            details={"action": "embeddings_cleared"},
+        )
+    return {"status": "cleared", **_embeddings_status()}
+
+
+@router.post("/embeddings/reindex")
+async def reindex_embeddings(
+    request: Request,
+    current_user: TokenData = require_permission("admin.settings"),
+):
+    """Retry re-embedding: documents the active collection is missing, and
+    documents that failed during a model switch."""
+    from app.services import embedding_switch
+
+    embedding_switch.start_reindex()
+    await audit_service.log_event(
+        event_type=AuditEventType.SETTINGS_CHANGE,
+        user_id=current_user.user_id,
+        user_email=current_user.email,
+        resource_type="integration",
+        resource_id="embeddings",
+        ip_address=get_client_ip(request),
+        details={"action": "embeddings_reindex_started"},
+    )
+    return {"status": "started", **_embeddings_status()}

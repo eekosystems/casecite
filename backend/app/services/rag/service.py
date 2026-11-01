@@ -223,7 +223,15 @@ class RAGService:
             chunk_texts = [embedding_text(c, filename, context) for c in chunks]
         else:
             chunk_texts = [c["text"] for c in chunks]
+        signature = embedding_service.signature()
         embeddings = await embedding_service.embed_texts(chunk_texts, user_keys=user_keys)
+        if embedding_service.signature() != signature:
+            # An admin switched the embedding model while this was embedding;
+            # these vectors belong to the previous model's collection.
+            raise ValueError(
+                "The embedding model was changed while this document was being "
+                "indexed. Upload it again to index it with the new model."
+            )
 
         if not folder_path and metadata:
             folder_path = (

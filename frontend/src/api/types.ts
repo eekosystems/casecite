@@ -1875,4 +1875,61 @@ export interface ApiClient {
   /** Render a chat transcript as Word / PDF / Markdown (POST /chat/export). */
   exportConversation(payload: ConversationExportPayload): Promise<Blob>;
 
+  // Embeddings (Settings → Embedding)
+  getEmbeddingInfo(): Promise<EmbeddingInfo>;
+  getEmbeddingStatus(): Promise<EmbeddingStatus>;
+  /** Checks the server first; a server that doesn't answer is refused with the reason. */
+  setEmbeddings(config: EmbeddingConfig): Promise<EmbeddingStatus & { status: string }>;
+  clearEmbeddings(): Promise<EmbeddingStatus & { status: string }>;
+  reindexEmbeddings(): Promise<EmbeddingStatus & { status: string }>;
+
+}
+
+// ==================== Embeddings ====================
+
+/** Background re-embedding after the embedding model changes. */
+export interface EmbeddingReindexStatus {
+  state: 'idle' | 'running' | 'done' | 'failed';
+  total: number;
+  done: number;
+  failed: number;
+  started_at: string | null;
+  finished_at: string | null;
+  error: string | null;
+}
+
+/** GET /settings/embeddings — read-only, for every user. */
+export interface EmbeddingInfo {
+  source: 'env' | 'instance';
+  /** Where document text goes to be embedded: "self_hosted", "openai", "voyage", "cohere" or a hostname. */
+  provider: string;
+  model: string;
+  dimensions: number;
+  reindex_state: EmbeddingReindexStatus['state'];
+  reindex_done: number;
+  reindex_total: number;
+}
+
+/** GET /admin/integrations/embeddings. */
+export interface EmbeddingStatus {
+  source: 'env' | 'instance';
+  vector_store: 'chroma' | 'pinecone' | 'none';
+  /** False with Pinecone: its index has one fixed vector size. */
+  editable: boolean;
+  provider: string;
+  base_url: string | null;
+  model: string;
+  dimensions: number;
+  api_key_set: boolean;
+  collection: string;
+  reindex: EmbeddingReindexStatus;
+}
+
+export interface EmbeddingConfig {
+  baseUrl: string;
+  model: string;
+  /** Optional check; blank uses what the server returns. */
+  dimensions?: number | null;
+  /** Only when the server needs one; blank keeps a saved key. */
+  apiKey?: string;
 }

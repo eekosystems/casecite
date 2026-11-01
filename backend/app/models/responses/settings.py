@@ -22,6 +22,22 @@ class PromptDefaultsResponse(BaseModel):
     mode_prompts: ModePrompts
 
 
+class EmbeddingInfoResponse(BaseModel):
+    """GET /settings/embeddings — which embedding model indexes documents (read-only).
+
+    ``provider`` says where document text goes to be embedded ("self_hosted",
+    "openai", "voyage", "cohere" or a hostname). The server address is admin-only.
+    """
+
+    source: str
+    provider: str
+    model: str
+    dimensions: int
+    reindex_state: str
+    reindex_done: int
+    reindex_total: int
+
+
 class ClearResponse(BaseModel):
     """POST /settings/clear."""
 

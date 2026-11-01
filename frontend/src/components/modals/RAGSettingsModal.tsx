@@ -141,7 +141,7 @@ export const RAGSettingsModal = ({ isOpen, onClose, settings, onSave }: RAGSetti
             <RetrievalTab local={local} setLocal={setLocal} styles={s} />
           )}
           {activeTab === 'embedding' && (
-            <EmbeddingTab local={local} setLocal={setLocal} styles={s} />
+            <EmbeddingTab isAdmin={isAdmin} styles={s} />
           )}
           {activeTab === 'generation' && (
             <GenerationTab local={local} setLocal={setLocal} styles={s} />

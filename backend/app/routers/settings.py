@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.exceptions import UpstreamError
 from app.models.responses.settings import (
     ClearResponse,
+    EmbeddingInfoResponse,
     InstanceModelsResponse,
     PromptDefaultsResponse,
 )
@@ -86,6 +87,30 @@ async def get_default_prompts(current_user: TokenData = Depends(get_current_user
             for mode in ("research", "case", "document", "compliance", "strategy")
         },
     }
+
+
+@router.get("/embeddings", response_model=EmbeddingInfoResponse)
+async def get_embedding_info(
+    current_user: TokenData = Depends(get_current_user),
+) -> EmbeddingInfoResponse:
+    """Which embedding model indexes documents, and whether re-embedding is running."""
+    from app.services.embedding_switch import reindex_status
+    from app.services.embeddings import embedding_service
+
+    status = reindex_status()
+    try:
+        provider = embedding_service.resolve_route(None).provider
+    except Exception:  # status display only
+        provider = "unknown"
+    return EmbeddingInfoResponse(
+        source=embedding_service.source,
+        provider=provider,
+        model=embedding_service.model,
+        dimensions=embedding_service.dimensions,
+        reindex_state=status["state"],
+        reindex_done=status["done"],
+        reindex_total=status["total"],
+    )
 
 
 @router.post("/reindex")

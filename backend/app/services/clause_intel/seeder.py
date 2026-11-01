@@ -8,6 +8,7 @@ Called from app startup (lifespan).
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,6 +27,16 @@ from app.services.clause_intel.taxonomy_seed import (
 logger = logging.getLogger(__name__)
 
 
+def needs_embedding(row: Any, embedding_model: str | None) -> bool:
+    """Missing, or embedded by another model (vectors from two models can't be compared).
+
+    ``row`` is a loaded ClauseCanonical (typed Any: its columns read as plain values).
+    """
+    if not row.embedding:
+        return True
+    return bool(embedding_model) and row.embedding_model != embedding_model
+
+
 async def seed_clause_intelligence(
     session: AsyncSession, embed_fn=None, embedding_model: str | None = None
 ) -> dict:
@@ -33,7 +44,8 @@ async def seed_clause_intelligence(
     Seed canonicals, rules, and requirements.
 
     embed_fn: optional async callable list[str]->list[list[float]]; if provided
-    and a canonical is missing an embedding, it is computed and stored.
+    and a canonical is missing an embedding, or has one from a model other than
+    ``embedding_model``, it is computed and stored.
     """
     result = {
         "canonicals_inserted": 0,
@@ -74,7 +86,7 @@ async def seed_clause_intelligence(
             row.regex_anchors = spec.get("regex_anchors", [])
             row.required_keywords = spec.get("required_keywords", [])
             result["canonicals_updated"] += 1
-        if embed_fn is not None and not row.embedding:
+        if embed_fn is not None and needs_embedding(row, embedding_model):
             to_embed.append((row, spec["market_standard_text"]))
 
     await session.flush()  # ensure rows have IDs before linking rules

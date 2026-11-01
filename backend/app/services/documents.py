@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -24,6 +25,10 @@ if TYPE_CHECKING:
     from app.services.user_keys import UserAPIKeys
 
 logger = logging.getLogger(__name__)
+
+# Set on a document whose re-indexing failed during an embedding-model switch,
+# so the next reconciliation retries it (or restores it when switched back).
+REINDEX_FLAG = "embedding_reindex_pending"
 
 
 def _humanize_indexing_error(e: Exception) -> str:
@@ -564,32 +569,54 @@ class DocumentService:
             )
         return {"migrated": migrated, "failed": failed}
 
-    async def reconcile_index(self) -> dict[str, int]:
-        """Detect and repair documents whose chunks vanished from the vector store.
+    async def reconcile_index(
+        self,
+        *,
+        after_model_switch: bool = False,
+        progress: Callable[[int, int, int], None] | None = None,
+    ) -> dict[str, int]:
+        """Detect and repair documents whose chunks are missing from the vector store.
 
         The document registry (index.json) and the vector store persist
         independently: a Chroma schema upgrade backs up and RESETS the store,
         and a wiped volume empties it — while every document stays marked
         INDEXED. Users then see "N chunks indexed" on files no search can find.
+        Switching the embedding model does the same on purpose: the new model
+        gets an empty collection (see app/services/embedding_switch.py).
 
         For each INDEXED document missing from the store, re-extract the stored
         encrypted file and re-index it with the owner's stored API keys. If
         repair fails, mark the document FAILED with an actionable reason —
         the registry must never claim an index entry that does not exist.
+
+        A document that failed during an embedding-model switch is flagged
+        (``REINDEX_FLAG``): it is retried here, and restored as it was when the
+        active collection already holds it (the admin switched back).
+        ``progress(done, total, failed)`` is called as documents are re-embedded.
         """
         from app.services.user_keys import UserAPIKeys
 
-        stats = {"checked": 0, "reindexed": 0, "failed": 0, "keyword_backfilled": 0}
+        stats = {"checked": 0, "reindexed": 0, "failed": 0, "keyword_backfilled": 0, "restored": 0}
         if rag_service is None or rag_service.vector_db is None:
             logger.warning("Index reconciliation skipped: vector DB unavailable")
             return stats
 
-        user_keys_cache: dict[str, UserAPIKeys] = {}
+        todo: list[Document] = []
         for doc in list(self.documents.values()):
-            if doc.status != DocumentStatus.INDEXED:
+            flagged = bool((doc.metadata or {}).get(REINDEX_FLAG))
+            if doc.status != DocumentStatus.INDEXED and not (
+                flagged and doc.status == DocumentStatus.FAILED
+            ):
                 continue
             stats["checked"] += 1
             if await rag_service.vector_db.has_document(doc.id):
+                if flagged:
+                    # Failed under another embedding model; this one has it.
+                    doc.status = DocumentStatus.INDEXED
+                    doc.metadata.pop(REINDEX_FLAG, None)
+                    doc.metadata.pop("error", None)
+                    stats["restored"] += 1
+                    continue
                 # Indexed before the keyword index existed (or its write
                 # failed): copy the stored chunks in, without re-embedding.
                 try:
@@ -598,28 +625,48 @@ class DocumentService:
                 except Exception as e:  # keyword index is an enhancement; keep going
                     logger.warning(f"Keyword index backfill failed for {doc.id}: {e}")
                 continue
+            todo.append(doc)
 
-            logger.warning(
-                f"Document {doc.id} is marked indexed but has no chunks in the "
-                "vector store — re-indexing from the stored file."
-            )
+        user_keys_cache: dict[str, UserAPIKeys] = {}
+        for done, doc in enumerate(todo, start=1):
+            switch = after_model_switch or bool(doc.metadata.get(REINDEX_FLAG))
+            if not switch:
+                logger.warning(
+                    f"Document {doc.id} is marked indexed but has no chunks in the "
+                    "vector store — re-indexing from the stored file."
+                )
             if doc.user_id not in user_keys_cache:
                 user_keys_cache[doc.user_id] = UserAPIKeys.for_user(doc.user_id)
             try:
-                chunk_count = await self._index_from_stored_file(doc, user_keys_cache[doc.user_id])
+                # After a model switch the keyword index still holds the old
+                # chunks; replace=True swaps them out with the new ones.
+                chunk_count = await self._index_from_stored_file(
+                    doc, user_keys_cache[doc.user_id], replace=switch
+                )
+                doc.metadata.pop(REINDEX_FLAG, None)
                 stats["reindexed"] += 1
                 logger.info(f"Re-indexed document {doc.id}: {chunk_count} chunks")
             except Exception as e:  # per-document; keep repairing the rest
                 doc.status = DocumentStatus.FAILED
-                doc.metadata["error"] = (
-                    "The search index was reset (likely by an upgrade) and automatic "
-                    f"re-indexing failed: {_humanize_indexing_error(e)} "
-                    "Re-upload this document to restore it."
-                )
+                if switch:
+                    doc.metadata[REINDEX_FLAG] = True
+                    doc.metadata["error"] = (
+                        "Re-indexing with the new embedding model failed: "
+                        f"{_humanize_indexing_error(e)} Fix the embedding server, then "
+                        "use Retry in Settings → Embedding."
+                    )
+                else:
+                    doc.metadata["error"] = (
+                        "The search index was reset (likely by an upgrade) and automatic "
+                        f"re-indexing failed: {_humanize_indexing_error(e)} "
+                        "Re-upload this document to restore it."
+                    )
                 stats["failed"] += 1
                 logger.error(f"Re-index failed for document {doc.id}: {e}")
+            if progress:
+                progress(done, len(todo), stats["failed"])
 
-        if stats["reindexed"] or stats["failed"]:
+        if stats["reindexed"] or stats["failed"] or stats["restored"]:
             self._save_index()
         if stats["checked"]:
             logger.info(f"Index reconciliation: {stats}")
