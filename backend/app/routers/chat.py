@@ -13,7 +13,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.config import settings
 from app.database import get_db_context
-from app.exceptions import ServiceUnavailableError, UpstreamError
+from app.exceptions import AppError, ServiceUnavailableError, UpstreamError
 from app.models.schemas import ChatRequest, ChatResponse, ConversationExportRequest, RAGSettings
 from app.routers._matter_deps import accessible_matter_ids as _accessible_matter_ids
 from app.routers._matter_deps import personal_matter_id as _personal_matter_id
@@ -23,7 +23,7 @@ from app.services import matters as matters_service
 from app.services.audit import AuditEventType, audit_service
 from app.services.auth import TokenData
 from app.services.documents import document_service
-from app.services.job_queue import RETRY_POLICIES, job_manager
+from app.services.job_queue import RetryPolicy, job_manager
 from app.services.llm_clients import resolve_chat_model
 from app.services.permissions import require_permission
 from app.services.rag import rag_service
@@ -503,6 +503,10 @@ async def _answer_chat(request: ChatRequest, ctx: _ChatContext) -> dict:
     return response_payload
 
 
+class ChatJobError(Exception):
+    """A chat answered in the background failed; the message is for the user."""
+
+
 def _raise_chat_error(e: Exception, user_id: str) -> NoReturn:
     """Map a failure that escaped the per-stage handling to the client response."""
     if isinstance(e, openai.OpenAIError | anthropic.AnthropicError | httpx.HTTPError):
@@ -546,18 +550,38 @@ async def chat(
         return await _answer_chat(request, ctx)
 
     if async_mode:
+        # The web app asks this way: an answer can take minutes (a strategy
+        # brief reads opinions in full for up to CASE_LAW_TIME_BUDGET_SECONDS
+        # and then synthesises), longer than a browser, a reverse proxy or a
+        # platform's front proxy will hold one HTTP request open. The job
+        # runs on, and the client polls GET /jobs/{id} for the answer.
+        async def do_work_in_job():
+            try:
+                return await do_work()
+            except Exception as e:
+                # The job's ``error`` is shown to the user, so it carries the
+                # same message the synchronous path would have answered with,
+                # never the exception text (an upstream body, a parse error
+                # quoting the input).
+                try:
+                    _raise_chat_error(e, ctx.user_id)
+                except (AppError, HTTPException) as mapped:
+                    raise ChatJobError(str(mapped.detail)) from e
+
         job_id = await job_manager.submit(
-            do_work,
+            do_work_in_job,
             user_id=ctx.user_id,
             endpoint="/chat",
-            retry_policy=RETRY_POLICIES["ai_analysis"],
+            # One attempt: a retry would re-run minutes of LLM work, and the
+            # SDK clients already retry each provider call.
+            retry_policy=RetryPolicy(max_retries=0),
         )
         return JSONResponse(
             status_code=202,
             content={"job_id": job_id, "poll_url": f"/api/v1/jobs/{job_id}"},
         )
 
-    # Synchronous mode — unchanged behaviour
+    # Synchronous mode (API clients): the answer is the response.
     try:
         result_data = await do_work()
         return result_data

@@ -305,10 +305,10 @@ export function useResearchState({ addToast, activeMode, setActiveMode }: { addT
 
     const startTime = Date.now();
 
-    // The request is a single round trip — there is no server-reported
-    // progress to show, so say only what is true and let the view count the
-    // elapsed time. Retrieval depth and thresholds come from the user's saved
-    // settings server-side.
+    // The answer is produced by a background job the API client polls — there
+    // is no server-reported progress to show, so say only what is true and
+    // let the view count the elapsed time. Retrieval depth and thresholds come
+    // from the user's saved settings server-side.
     setProcessingStage('Working…');
     setProcessingStartedAt(startTime);
     const controller = new AbortController();
@@ -363,7 +363,7 @@ export function useResearchState({ addToast, activeMode, setActiveMode }: { addT
         setMessages((prev: ChatMessage[]) => [...prev, {
           id: generateId(),
           type: 'assistant',
-          content: 'Cancelled. If the server had already started on this question it may still finish and save the answer to History.',
+          content: 'Cancelled. The server was asked to stop working on this question; nothing is saved to History.',
           timestamp: new Date(),
           citations: [],
           mode: activeMode,
