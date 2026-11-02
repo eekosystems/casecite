@@ -10,6 +10,9 @@ os.environ["DEBUG"] = "true"
 
 from unittest.mock import AsyncMock, patch
 
+import httpx
+import openai
+
 
 class TestChatRouter:
     """Tests for /chat endpoints."""
@@ -159,3 +162,62 @@ class TestSharedMatterScope:
             app.dependency_overrides.pop(accessible_matter_ids, None)
         assert resp.status_code == 200, resp.text
         assert generate.await_args.kwargs["matter_ids"] == ["matter-a", "matter-b"]
+
+
+class TestChatAsBackgroundJob:
+    """``POST /chat?async=true`` answers through a job the client polls."""
+
+    ANSWER = {
+        "content": "Answered in the background.",
+        "citations": [],
+        "stats": {"docs_searched": 1, "chunks_retrieved": 1, "processing_time": "0.1s"},
+    }
+
+    @staticmethod
+    def _poll(client, auth_headers, job_id: str, attempts: int = 200) -> dict:
+        import time
+
+        for _ in range(attempts):
+            job = client.get(f"/api/v1/jobs/{job_id}", headers=auth_headers)
+            assert job.status_code == 200, job.text
+            if job.json()["status"] in ("completed", "failed", "cancelled"):
+                return job.json()
+            time.sleep(0.05)
+        raise AssertionError("job did not settle")
+
+    def test_answers_through_a_job(self, client, auth_headers):
+        with patch(
+            "app.routers.chat.rag_service.generate_response",
+            new_callable=AsyncMock,
+            return_value=self.ANSWER,
+        ):
+            started = client.post(
+                "/api/v1/chat?async=true",
+                json={"query": "What is the notice period?", "mode": "research"},
+                headers=auth_headers,
+            )
+            assert started.status_code == 202, started.text
+            body = started.json()
+            assert body["poll_url"] == f"/api/v1/jobs/{body['job_id']}"
+            job = self._poll(client, auth_headers, body["job_id"])
+        assert job["status"] == "completed", job
+        assert job["max_retries"] == 0  # never re-run minutes of LLM work
+        assert job["result"]["content"] == "Answered in the background."
+        assert job["result"]["id"] and "citations" in job["result"]
+
+    def test_a_failure_reports_the_user_facing_message(self, client, auth_headers):
+        with patch(
+            "app.routers.chat.rag_service.generate_response",
+            new_callable=AsyncMock,
+            side_effect=openai.APITimeoutError(request=httpx.Request("POST", "http://llm")),
+        ):
+            started = client.post(
+                "/api/v1/chat?async=true",
+                json={"query": "What is the notice period?", "mode": "research"},
+                headers=auth_headers,
+            )
+            assert started.status_code == 202, started.text
+            job = self._poll(client, auth_headers, started.json()["job_id"])
+        assert job["status"] == "failed", job
+        assert job["attempts"] == 1
+        assert job["error"] == "The AI provider took too long to respond. Try again."

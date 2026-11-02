@@ -58,8 +58,10 @@ CASE_LAW_KEPT_PER_POINT = 3
 # seen whole in one window; quotes are always verified against the FULL text.
 CASE_LAW_WINDOW_CHARS = case_law_research.WINDOW_CHARS
 CASE_LAW_CONCURRENCY = 6
-# Wall-clock budget for the whole stage. Must stay under the reverse proxy's
-# read timeout (nginx.unified.conf proxy_read_timeout).
+# Wall-clock budget for the whole stage. The web app polls a background job
+# for its chat answer, but a synchronous ``POST /chat`` (API clients) must
+# stay under the reverse proxy's read timeout (nginx.unified.conf
+# proxy_read_timeout).
 CASE_LAW_TIME_BUDGET_SECONDS = 480.0
 
 

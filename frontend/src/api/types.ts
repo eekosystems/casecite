@@ -106,6 +106,22 @@ interface ChatStats {
   [key: string]: unknown;
 }
 
+/** POST /chat?async=true: the answer is being produced by a job to poll. */
+export interface ChatJobStarted {
+  job_id: string;
+  poll_url: string;
+}
+
+/** GET /jobs/{id} for a chat job; `result` is the answer once completed. */
+export interface ChatJob {
+  job_id: string;
+  status: string; // pending | processing | completed | failed | cancelled
+  result?: ChatResponse | null;
+  error?: string | null;
+  /** The answer was too large to store with the job. */
+  truncated?: boolean;
+}
+
 export interface ChatQueryOptions {
   includeCaseLaw?: boolean;
   caseLawLimit?: number;
