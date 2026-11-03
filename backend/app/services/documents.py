@@ -50,8 +50,18 @@ def _humanize_indexing_error(e: Exception) -> str:
 
 
 class DocumentDeletionError(RuntimeError):
-    """A document could not be fully deleted. Nothing was removed from the
-    registry, so the caller can retry; the message is safe to show the user."""
+    """A document could not be fully deleted.
+
+    The document stays in the registry with status DELETE_FAILED and
+    ``metadata["deletion"]`` recording which steps completed, so the failure
+    is visible and the delete can be retried (it resumes at the failed step).
+    The message is safe to show the user.
+    """
+
+
+# Steps of a delete, in order. Each is recorded in metadata["deletion"] as it
+# completes so a retry resumes where the last attempt stopped.
+DELETION_STEPS = ("vectors", "derived", "file")
 
 
 class DocumentMoveError(RuntimeError):
@@ -919,11 +929,14 @@ class DocumentService:
     ) -> bool:
         """Delete a document, scoped to the caller's tenant (owner or matter member).
 
-        Removes everything derived from it as well: its vectors, and the
-        contract analyses run on it (which hold verbatim quotes of the text). Raises ``DocumentDeletionError`` — leaving the
-        document in place so the delete can be retried — when the vectors or
-        derived rows cannot be removed; a document must never disappear from
-        the list while its content stays searchable.
+        A delete is a tracked operation with three steps — the search index
+        entries, the analysis rows derived from the document (which quote its
+        text verbatim), and the stored file. The registry entry goes only
+        once all three are gone. If a step fails, ``DocumentDeletionError``
+        is raised and the document stays listed with status DELETE_FAILED,
+        the failed step and the error recorded in ``metadata["deletion"]``;
+        deleting it again resumes at that step. A document never disappears
+        from the list while any of its content remains.
         """
         doc = self.documents.get(doc_id)
         if not doc or not self._can_access(doc, user_id, accessible_matter_ids):
@@ -939,49 +952,112 @@ class DocumentService:
             ) from e
         return True
 
-    async def _remove_document(self, doc: Document) -> None:
+    @staticmethod
+    def deletion_progress(doc: Document) -> dict[str, bool]:
+        """Which delete steps have completed for ``doc`` (all False if none)."""
+        recorded = (doc.metadata or {}).get("deletion") or {}
+        return {step: bool(recorded.get(step)) for step in DELETION_STEPS}
+
+    def _record_deletion_failure(
+        self, doc: Document, progress: dict[str, bool], step: str, error: str
+    ) -> None:
+        """Keep the document listed as DELETE_FAILED with what did and did not
+        complete, persisted so the failure survives a restart."""
+        previous = (doc.metadata or {}).get("deletion") or {}
+        doc.status = DocumentStatus.DELETE_FAILED
+        doc.metadata["deletion"] = {
+            **progress,
+            "failed_step": step,
+            "error": error,
+            "failed_at": datetime.now(UTC).isoformat(),
+            "attempts": int(previous.get("attempts") or 0) + 1,
+        }
+        try:
+            self._save_index()
+        except RegistryWriteError:
+            logger.error(f"Could not persist the failed-deletion state of {doc.id}")
+
+    async def _remove_document(self, doc: Document) -> dict[str, bool]:
         """Remove one document's vectors, derived rows, stored file and registry
-        entry, in that order. The caller saves the index."""
+        entry, in that order, resuming at the first step not already recorded
+        as done. The caller saves the index. Returns the completed steps."""
         doc_id = doc.id
+        progress = self.deletion_progress(doc)
 
         # Vectors first: if these cannot be removed, stop before anything else.
-        if rag_service is not None:
-            try:
-                removed = await rag_service.delete_document(doc_id)
-            except Exception as e:  # vector stores raise their own exception trees
-                logger.error(f"Vector deletion failed for document {doc_id}: {e}")
-                raise DocumentDeletionError(
-                    "The document's search index entries could not be removed. "
-                    "The document was not deleted; try again."
-                ) from e
-            if removed is False:
-                raise DocumentDeletionError(
+        if not progress["vectors"]:
+            if rag_service is not None:
+                message = (
                     "The document's search index entries could not be removed. "
                     "The document was not deleted; try again."
                 )
-        else:
-            logger.warning(f"RAG service unavailable, skipping vector deletion for {doc_id}")
+                try:
+                    removed = await rag_service.delete_document(doc_id)
+                except Exception as e:  # vector stores raise their own exception trees
+                    logger.error(f"Vector deletion failed for document {doc_id}: {e}")
+                    self._record_deletion_failure(doc, progress, "vectors", str(e))
+                    raise DocumentDeletionError(message) from e
+                if removed is False:
+                    self._record_deletion_failure(
+                        doc, progress, "vectors", "the vector store refused the delete"
+                    )
+                    raise DocumentDeletionError(message)
+            else:
+                logger.warning(f"RAG service unavailable, skipping vector deletion for {doc_id}")
+            progress["vectors"] = True
 
-        await self._delete_derived_data([doc_id])
+        if not progress["derived"]:
+            try:
+                await self._delete_derived_data([doc_id])
+            except DocumentDeletionError as e:
+                self._record_deletion_failure(doc, progress, "derived", str(e))
+                raise
+            progress["derived"] = True
 
         # Delete file from the OWNER's upload dir (a member deleting a shared doc
-        # still removes the owner's stored file), then legacy path.
-        try:
-            file_ext = os.path.splitext(doc.filename)[1]
-            user_file_path = os.path.join(
-                self._get_user_upload_dir(doc.user_id), f"{doc_id}{file_ext}"
-            )
-            legacy_file_path = os.path.join(settings.upload_dir, f"{doc_id}{file_ext}")
+        # still removes the owner's stored file), then legacy path. A file that
+        # cannot be removed is a privacy failure, not a footnote: the document
+        # stays listed as DELETE_FAILED until a retry removes it.
+        if not progress["file"]:
+            try:
+                file_ext = os.path.splitext(doc.filename)[1]
+                user_file_path = os.path.join(
+                    self._get_user_upload_dir(doc.user_id), f"{doc_id}{file_ext}"
+                )
+                legacy_file_path = os.path.join(settings.upload_dir, f"{doc_id}{file_ext}")
 
-            if os.path.exists(user_file_path):
-                os.remove(user_file_path)
-            elif os.path.exists(legacy_file_path):
-                os.remove(legacy_file_path)
-        except (ValueError, OSError) as e:
-            logger.error(f"Error deleting stored file for document {doc_id}: {e}")
+                if os.path.exists(user_file_path):
+                    os.remove(user_file_path)
+                elif os.path.exists(legacy_file_path):
+                    os.remove(legacy_file_path)
+            except (ValueError, OSError) as e:
+                logger.error(f"Error deleting stored file for document {doc_id}: {e}")
+                self._record_deletion_failure(doc, progress, "file", str(e))
+                raise DocumentDeletionError(
+                    "The document's stored file could not be removed, so the document "
+                    "was not deleted. Its search entries are already gone; it stays "
+                    "listed as a failed deletion — retry once the data volume is "
+                    "writable."
+                ) from e
+            progress["file"] = True
 
         # Remove from index
         self.documents.pop(doc_id, None)
+        return progress
+
+    def failed_deletions(self) -> list[Document]:
+        """Every document, any owner, whose delete did not complete."""
+        return [d for d in self.documents.values() if d.status == DocumentStatus.DELETE_FAILED]
+
+    async def retry_failed_deletion(self, doc_id: str) -> bool:
+        """Resume a failed delete regardless of owner (an operator action).
+        False when the document is not a failed deletion."""
+        doc = self.documents.get(doc_id)
+        if not doc or doc.status != DocumentStatus.DELETE_FAILED:
+            return False
+        await self._remove_document(doc)
+        self._save_index()
+        return True
 
     async def _delete_derived_data(self, document_ids: list[str]) -> None:
         """Delete analysis output derived from the given documents.
@@ -1060,19 +1136,29 @@ class DocumentService:
                 failed += 1
                 logger.error(f"Error deleting document {doc_id} during purge: {e}")
 
-        # Remove the user's upload directory (catches any stray files).
+        # Remove the user's upload directory (catches any stray files) — only
+        # once nothing that failed still needs its file. A directory that
+        # cannot be removed is reported, not logged away: the caller must not
+        # treat the purge as complete while the user's files remain.
         user_dir = os.path.join(settings.upload_dir, user_id)
-        try:
-            if os.path.isdir(user_dir):
-                shutil.rmtree(user_dir)
-        except OSError as e:
-            logger.error(f"Error removing user upload dir {user_dir}: {e}")
+        upload_dir_removed = False
+        if not failed:
+            try:
+                if os.path.isdir(user_dir):
+                    shutil.rmtree(user_dir)
+                upload_dir_removed = True
+            except OSError as e:
+                logger.error(f"Error removing user upload dir {user_dir}: {e}")
 
         # Drop the user's folder list.
         if self.folders.pop(user_id, None) is not None:
             self._save_folders()
 
-        return {"documents_deleted": deleted, "documents_failed": failed}
+        return {
+            "documents_deleted": deleted,
+            "documents_failed": failed,
+            "upload_dir_removed": upload_dir_removed,
+        }
 
     def export_user_data(self, user_id: str) -> dict[str, Any]:
         """Return a JSON-serializable export of the user's documents and folders."""

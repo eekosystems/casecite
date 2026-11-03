@@ -196,7 +196,9 @@ function MatterFileWorkspace({ currentFilter, onScopeChange, onOpenFile }: Matte
   const renderFile = (doc: RagDocument) => {
     const ready = doc.status === 'indexed';
     const isChecked = pickedFiles.includes(doc.id);
-    const status = doc.status === 'failed' ? 'failed to index' : !ready ? 'indexing…' : null;
+    const status = doc.status === 'failed' ? 'failed to index'
+      : doc.status === 'delete_failed' ? 'deletion failed'
+      : !ready ? 'indexing…' : null;
     return (
       <div
         key={doc.id}

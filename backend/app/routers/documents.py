@@ -10,6 +10,8 @@ from app.exceptions import AppError, BadRequestError, ForbiddenError, NotFoundEr
 from app.models.responses.documents import (
     DocumentContentResponse,
     DocumentDeleteResponse,
+    FailedDeletionItem,
+    FailedDeletionsResponse,
 )
 from app.models.schemas import (
     ConnectorType,
@@ -25,7 +27,7 @@ from app.routers._matter_deps import owned_matter_ids as _owned_matter_ids
 from app.services import matters as matters_service
 from app.services.audit import AuditEventType, audit_service
 from app.services.auth import TokenData
-from app.services.documents import DocumentDeletionError, document_service
+from app.services.documents import DELETION_STEPS, DocumentDeletionError, document_service
 from app.services.permissions import require_permission
 from app.services.user_keys import UserAPIKeys
 from app.utils.error_handler import handle_service_error
@@ -232,6 +234,98 @@ async def delete_folder(
         details={"action": "folder_deleted"},
     )
     return {"status": "deleted", "folders": document_service.list_folders(current_user.user_id)}
+
+
+# ── Failed deletions (literal path BEFORE the /{document_id} routes) ──
+
+
+_STEP_LABELS = {
+    "vectors": "search index entries",
+    "derived": "analyses derived from it",
+    "file": "stored file",
+}
+
+
+def _deletion_failure_detail(step: str | None) -> str:
+    """Client-facing text for a delete that stopped at ``step``. Built here,
+    never from the exception text, which may name internal paths."""
+    what = _STEP_LABELS.get(step or "", "content")
+    return (
+        f"Could not remove the document's {what}; it was not deleted. It stays listed "
+        "as a failed deletion and the next delete resumes from that step. Try again."
+    )
+
+
+def _failed_deletion_item(doc: Document) -> FailedDeletionItem:
+    info = (doc.metadata or {}).get("deletion") or {}
+    return FailedDeletionItem(
+        id=doc.id,
+        user_id=doc.user_id,
+        matter_id=doc.matter_id,
+        filename=doc.filename,
+        failed_step=info.get("failed_step"),
+        error=info.get("error"),
+        failed_at=info.get("failed_at"),
+        attempts=int(info.get("attempts") or 0),
+        removed=document_service.deletion_progress(doc),
+    )
+
+
+@router.get("/failed-deletions", response_model=FailedDeletionsResponse)
+async def list_failed_deletions(
+    current_user: TokenData = require_permission("admin.settings"),
+) -> FailedDeletionsResponse:
+    """Every document, any owner, whose delete did not complete.
+
+    An operator's view: a delete that stops at the search index, the derived
+    rows or the stored file leaves the document listed here with the step
+    that failed and the error, until a retry completes.
+    """
+    docs = sorted(document_service.failed_deletions(), key=lambda d: d.created_at)
+    items = [_failed_deletion_item(d) for d in docs]
+    return FailedDeletionsResponse(documents=items, count=len(items))
+
+
+@router.post("/{document_id}/retry-delete", response_model=DocumentDeleteResponse)
+async def retry_failed_deletion(
+    document_id: str,
+    request: Request,
+    current_user: TokenData = require_permission("admin.settings"),
+) -> DocumentDeleteResponse:
+    """Resume a failed delete, whoever owns the document. Resumes at the step
+    that failed; the document is removed from the list only when every step
+    has completed."""
+    try:
+        ok = await document_service.retry_failed_deletion(document_id)
+    except DocumentDeletionError as e:
+        await audit_service.log_event(
+            event_type=AuditEventType.DOCUMENT_DELETE,
+            user_id=current_user.user_id,
+            user_email=current_user.email,
+            resource_type="document",
+            resource_id=document_id,
+            ip_address=get_client_ip(request),
+            details={"action": "document_delete_retry_failed"},
+            success=False,
+            error=str(e),
+        )
+        retried = document_service.documents.get(document_id)
+        info = ((retried.metadata if retried else None) or {}).get("deletion") or {}
+        raise UpstreamError(_deletion_failure_detail(info.get("failed_step")))
+    if not ok:
+        raise NotFoundError("No failed deletion with that id")
+    await audit_service.log_event(
+        event_type=AuditEventType.DOCUMENT_DELETE,
+        user_id=current_user.user_id,
+        user_email=current_user.email,
+        resource_type="document",
+        resource_id=document_id,
+        ip_address=get_client_ip(request),
+        details={"action": "document_delete_retried"},
+    )
+    return DocumentDeleteResponse(
+        status="deleted", id=document_id, removed=dict.fromkeys(DELETION_STEPS, True)
+    )
 
 
 @router.post("/{document_id}/move")
@@ -444,6 +538,8 @@ async def delete_document(
         # be cleaned up, so the service left the document in place. Say so
         # plainly: a generic 500 would read as "maybe deleted".
         logger.error(f"Document {document_id} could not be deleted: {e}")
+        doc = document_service.documents.get(document_id)
+        info = ((doc.metadata if doc else None) or {}).get("deletion") or {}
         await audit_service.log_event(
             event_type=AuditEventType.DOCUMENT_DELETE,
             user_id=current_user.user_id,
@@ -451,13 +547,15 @@ async def delete_document(
             resource_type="document",
             resource_id=document_id,
             ip_address=get_client_ip(request),
-            details={"action": "document_delete_failed"},
+            details={
+                "action": "document_delete_failed",
+                "failed_step": info.get("failed_step"),
+                "removed": document_service.deletion_progress(doc) if doc else None,
+            },
             success=False,
-            error="search index cleanup failed",
+            error=f"{info.get('failed_step') or 'deletion'} step failed",
         )
-        raise UpstreamError(
-            "Could not remove the document from the search index; it was not deleted. Try again."
-        )
+        raise UpstreamError(_deletion_failure_detail(info.get("failed_step")))
     except (ValueError, KeyError, OSError) as e:
         raise handle_service_error(e, "Failed to delete document", logger)
 
@@ -474,4 +572,4 @@ async def delete_document(
     except (ValueError, KeyError, OSError) as e:
         logger.error(f"Audit log error for document delete {document_id}: {e}")
 
-    return {"status": "deleted", "id": document_id}
+    return {"status": "deleted", "id": document_id, "removed": dict.fromkeys(DELETION_STEPS, True)}

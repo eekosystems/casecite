@@ -398,7 +398,8 @@ interface RagDocumentItem {
   size: number;
   source: string;
   source_id?: string | null;
-  status: 'pending' | 'processing' | 'indexed' | 'failed';
+  /** delete_failed: a delete stopped part-way; metadata.deletion says where. */
+  status: 'pending' | 'processing' | 'indexed' | 'failed' | 'delete_failed';
   chunk_count: number;
   created_at: string;
   indexed_at?: string | null;

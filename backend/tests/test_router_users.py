@@ -414,6 +414,35 @@ class TestDelete:
         assert auth_service._is_user_revoked(uid) is False
         assert client.get("/api/v1/auth/me", headers=target_headers).status_code == 200
 
+    def test_documents_that_cannot_be_purged_block_the_delete(
+        self, client, auth_headers, users, audit_events
+    ):
+        """An account is never reported deleted while its client files remain."""
+        uid, _email = users.create()
+        with patch(
+            "app.services.documents.document_service.purge_user_data",
+            new_callable=AsyncMock,
+            return_value={
+                "documents_deleted": 2,
+                "documents_failed": 1,
+                "upload_dir_removed": False,
+            },
+        ):
+            resp = client.delete(f"{BASE}/{uid}", headers=auth_headers)
+
+        assert resp.status_code == 503
+        detail = resp.json()["detail"]
+        assert "1 of the user's documents could not be deleted" in detail
+        assert "was not deleted" in detail
+        assert users.get(uid) is not None
+        failures = [
+            e
+            for e in audit_events
+            if e.get("resource_id") == uid and e["event_type"].name == "USER_DELETE"
+        ]
+        assert failures and failures[0]["success"] is False
+        assert failures[0]["details"]["documents_failed"] == 1
+
     def test_delete_is_audited(self, client, auth_headers, users, audit_events):
         uid, _email = users.create()
         client.delete(f"{BASE}/{uid}", headers=auth_headers)

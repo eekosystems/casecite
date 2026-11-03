@@ -604,6 +604,35 @@ async def delete_user(
     # BYOK keys, connector OAuth credential files (revoking the grant where the
     # provider offers a cheap endpoint), and the per-user settings file.
     purge_result = await document_service.purge_user_data(user_id)
+    if purge_result.get("documents_failed") or not purge_result.get("upload_dir_removed", True):
+        # Never report an account deleted while its client files remain. The
+        # user is already signed out everywhere; the documents stay listed as
+        # failed deletions for an operator to retry, then delete the user again.
+        failed = purge_result.get("documents_failed", 0)
+        logger.error(
+            f"User {user_id} not deleted: {failed} document(s) could not be removed "
+            f"(upload dir removed: {purge_result.get('upload_dir_removed')})"
+        )
+        await audit_service.log_event(
+            event_type=AuditEventType.USER_DELETE,
+            user_id=current_user.user_id,
+            user_email=current_user.email,
+            resource_type="user",
+            resource_id=user_id,
+            ip_address=get_client_ip(request),
+            details={"deleted_email": target_email, **purge_result},
+            success=False,
+            error="document purge incomplete",
+        )
+        raise ServiceUnavailableError(
+            f"{failed} of the user's documents could not be deleted, so the account was "
+            "not deleted. The user has been signed out everywhere. The documents are "
+            "listed under failed deletions; retry them, then delete the user again."
+            if failed
+            else "The user's upload directory could not be removed, so the account was "
+            "not deleted. The user has been signed out everywhere. Check the data "
+            "volume and try again."
+        )
     purge_result.update(await delete_user_credentials(user_id))
     purge_result["settings_files_deleted"] = delete_user_settings(user_id)
 

@@ -97,14 +97,16 @@ export function MatterDocumentsTab({
           {documents.map((doc) => (
             <li key={doc.id} className={styles.row}>
               <Icon
-                name={doc.status === 'failed' ? 'AlertCircle' : 'FileText'}
+                name={doc.status === 'failed' || doc.status === 'delete_failed' ? 'AlertCircle' : 'FileText'}
                 size={16}
-                className={doc.status === 'failed' ? styles.rowIconError : styles.rowIcon}
+                className={doc.status === 'failed' || doc.status === 'delete_failed' ? styles.rowIconError : styles.rowIcon}
               />
               <div className={styles.rowBody}>
                 <div className={styles.rowName}>{doc.filename}</div>
                 <div className={styles.rowMeta}>
-                  {doc.status === 'failed' ? 'Failed to index' : `${doc.chunk_count || 0} chunks`}
+                  {doc.status === 'delete_failed'
+                    ? 'Deletion failed — retry from the Knowledge Base'
+                    : doc.status === 'failed' ? 'Failed to index' : `${doc.chunk_count || 0} chunks`}
                   {doc.size ? ` · ${formatFileSize(doc.size)}` : ''}
                   {doc.created_at ? ` · ${new Date(doc.created_at).toLocaleDateString()}` : ''}
                 </div>

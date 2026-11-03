@@ -67,6 +67,15 @@ function RagDocsView() {
     setNewFolderOpen(false);
   };
 
+  const isErrored = (doc: RagDocument) => doc.status === 'failed' || doc.status === 'delete_failed';
+  const deletionFailureText = (doc: RagDocument) => {
+    const info = (doc.metadata?.deletion ?? {}) as { failed_step?: string; error?: string };
+    const step = info.failed_step === 'vectors' ? 'search index'
+      : info.failed_step === 'derived' ? 'derived analyses'
+      : info.failed_step === 'file' ? 'stored file' : 'a step';
+    return `Deletion failed at the ${step} — delete again to retry${info.error ? ` (${info.error})` : ''}`;
+  };
+
   const renderDocCard = (doc: RagDocument) => (
     <div
       key={doc.id}
@@ -75,19 +84,21 @@ function RagDocsView() {
       onDragStart={(e) => e.dataTransfer.setData('text/doc-id', doc.id)}
       title="Drag into a folder"
     >
-      <div className={`${s.docIcon} ${doc.status === 'failed' ? s.docIconError : ''}`}>
-        <Icon name={doc.status === 'failed' ? 'AlertCircle' : 'FileText'} size={20}
-          className={doc.status === 'failed' ? s.docIconColorError : s.docIconColorDefault} />
+      <div className={`${s.docIcon} ${isErrored(doc) ? s.docIconError : ''}`}>
+        <Icon name={isErrored(doc) ? 'AlertCircle' : 'FileText'} size={20}
+          className={isErrored(doc) ? s.docIconColorError : s.docIconColorDefault} />
       </div>
       <div className={s.docDetails}>
         <div className={s.docFilename}>{doc.filename}</div>
-        <div className={`${s.docMetaText} ${doc.status === 'failed' ? s.docMetaError : ''}`}>
-          {doc.status === 'failed'
-            ? String(doc.metadata?.error || 'Failed to index')
-            : `${doc.chunk_count || 0} chunks`}
+        <div className={`${s.docMetaText} ${isErrored(doc) ? s.docMetaError : ''}`}>
+          {doc.status === 'delete_failed'
+            ? deletionFailureText(doc)
+            : doc.status === 'failed'
+              ? String(doc.metadata?.error || 'Failed to index')
+              : `${doc.chunk_count || 0} chunks`}
           {doc.created_at && ` · ${new Date(doc.created_at).toLocaleDateString()}`}
         </div>
-        {doc.status !== 'failed' && typeof doc.metadata?.extraction_warning === 'string' && doc.metadata.extraction_warning && (
+        {!isErrored(doc) && typeof doc.metadata?.extraction_warning === 'string' && doc.metadata.extraction_warning && (
           <div className={`${s.docMetaText} ${s.docMetaWarning}`}>
             Partially indexed: {doc.metadata.extraction_warning}
           </div>

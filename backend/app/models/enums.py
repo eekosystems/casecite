@@ -13,3 +13,7 @@ class DocumentStatus(str, PyEnum):
     PROCESSING = "processing"
     INDEXED = "indexed"
     FAILED = "failed"
+    # A delete was requested but a step (search index, derived rows, stored
+    # file) failed. The document stays listed with the error until a retry
+    # completes; metadata["deletion"] records which steps are done.
+    DELETE_FAILED = "delete_failed"

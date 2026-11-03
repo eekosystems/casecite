@@ -75,6 +75,20 @@ network, disk encryption, backups and the firm's own policies. No SOC 2, ISO
 - There are no ethical walls beyond matter membership, and no per-document
   ACLs. See [ROADMAP.md](ROADMAP.md).
 
+### Deletion
+- Deleting a document is a tracked operation: search index entries, then the
+  analysis rows derived from it, then the encrypted original. The document is
+  reported deleted only when all three are gone. A step that fails leaves the
+  document listed with status `delete_failed`, the step and error recorded;
+  deleting it again resumes at that step, and admins can list and retry every
+  failed deletion (`GET /documents/failed-deletions`,
+  `POST /documents/{id}/retry-delete`).
+- Deleting a user stops, with the account intact and signed out everywhere,
+  if any of their documents could not be removed.
+- The document registry never fails silently: a write that fails is a 503 and
+  the operation rolls back; a registry that cannot be read at startup is fatal
+  rather than replaced by an empty one.
+
 ### Data Protection
 - Application-layer AES-256-GCM encryption for uploaded document originals,
   stored API keys (BYOK), connector OAuth tokens and TOTP secrets, with
