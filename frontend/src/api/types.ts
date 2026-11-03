@@ -1238,6 +1238,19 @@ export interface AuditVerifyResult {
   truncated?: boolean;
 }
 
+/**
+ * Where the role matrix being enforced comes from. Anything but "stored"
+ * means the saved matrix is unreadable and the server is failing closed:
+ * "snapshot" serves the last matrix it successfully read, "locked_only"
+ * grants every role nothing beyond its locked permissions.
+ */
+export interface RolePermissionsPolicyStatus {
+  healthy: boolean;
+  source: 'stored' | 'snapshot' | 'locked_only' | 'unknown';
+  error: string | null;
+  snapshot_present: boolean;
+}
+
 export interface RolePermissionsMatrix {
   permissions: PermissionInfo[];
   roles: string[];
@@ -1245,6 +1258,7 @@ export interface RolePermissionsMatrix {
   assigned: Record<string, string[]>;
   customized: string[];
   locked: Record<string, string[]>;
+  policy?: RolePermissionsPolicyStatus;
 }
 
 // ==================== Universal History (workspace sessions) ====================

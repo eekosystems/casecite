@@ -375,6 +375,24 @@ export const UsersTab = ({ styles }: UsersTabProps) => {
             )}
           </div>
 
+          {matrix.policy && !matrix.policy.healthy && (
+            <div className={styles.dangerPanel} role="alert" data-testid="permission-policy-alert">
+              <div className={styles.dangerTitle}>
+                <Icon name="AlertTriangle" size={14} />
+                {matrix.policy.source === 'locked_only'
+                  ? 'Saved permissions cannot be read — every role is limited to its locked permissions'
+                  : 'Saved permissions cannot be read — the last readable version is in force'}
+              </div>
+              <div className={styles.dangerText}>
+                {matrix.policy.source === 'locked_only'
+                  ? 'Until the saved matrix is readable again, users can do nothing their role does not have locked on (admins keep user management). '
+                  : 'The matrix below is the last one the server read successfully; nothing has silently returned to the defaults. '}
+                Saving any role below rewrites the saved matrix and clears this.
+                {matrix.policy.error && <> Cause: <code>{matrix.policy.error}</code></>}
+              </div>
+            </div>
+          )}
+
           <div className={styles.permTableWrap}>
             <table className={styles.permTable}>
               <thead>

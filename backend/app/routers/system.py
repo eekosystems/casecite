@@ -163,6 +163,22 @@ async def health_check(request: Request) -> dict:
             redis_ok = False
             overall_healthy = False
 
+    # Role permission policy. Served from the stored matrix normally; from the
+    # last-known-good snapshot, or locked permissions only, when the store is
+    # unreadable (see app/services/permissions.py). Either degraded state is
+    # security-relevant — an admin's restrictions may not be the ones in
+    # force, or users may be locked out — so it degrades the instance.
+    policy: dict = {"healthy": False, "source": "unknown", "error": None}
+    try:
+        from app.services import permissions as perm
+
+        policy = await asyncio.wait_for(perm.policy_status(), timeout=_PROBE_TIMEOUT_SECONDS)
+    except Exception as e:
+        logger.debug("Health check: role permission policy unavailable: %s", e)
+        policy["error"] = type(e).__name__
+    if not policy.get("healthy"):
+        overall_healthy = False
+
     # LLM — informational only. A server-level key is optional: this is a BYOK
     # product (see Settings validation in app/config.py), so a missing server
     # key is a valid configuration and must not report the instance unhealthy.
@@ -207,6 +223,7 @@ async def health_check(request: Request) -> dict:
             "database": {"healthy": db_ok},
             "redis": {"healthy": redis_ok, "configured": redis_configured},
             "llm": {"configured": llm_server_key, "byok": True},
+            "role_permissions": policy,
         }
 
     return response

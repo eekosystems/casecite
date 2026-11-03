@@ -9,15 +9,28 @@ immediately to every signed-in user without reissuing tokens.
 
 Guardrail: the admin role can never lose ``admin.users`` — otherwise a stray
 uncheck would lock every admin out of the very screen that fixes it.
+
+Failure policy (fail closed): the stored matrix is the only source of truth,
+and it is never silently replaced by the shipped defaults. Every successful
+read is mirrored to an encrypted last-known-good snapshot on the data volume.
+When the store cannot be read (database down), the row cannot be decrypted
+(key rotated) or it does not parse, the snapshot is served instead; with no
+snapshot, every role is reduced to its locked permissions until the store is
+readable again. An admin therefore keeps ``admin.users`` and can repair the
+matrix, but a restriction an admin configured never quietly comes back off.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import os
 import time
+from pathlib import Path
 
 from fastapi import Depends, HTTPException
+
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -127,56 +140,155 @@ DEFAULT_ROLE_PERMISSIONS: dict[str, set[str]] = {
 # copy until restarted.
 _overrides: dict[str, set[str]] | None = None
 _loaded = False
-# When the store could not be read: the shipped defaults are served for this
-# long without re-querying, then the load is retried. A failed load is never
-# cached as if it were the stored matrix.
+# When the store could not be read: the degraded matrix (snapshot, or locked
+# permissions only) is served for this long without re-querying, then the
+# load is retried. A failed load is never cached as if it were the stored
+# matrix.
 _FAILED_LOAD_RETRY_SECONDS = 5.0
 _failed_load_at: float | None = None
+# What the matrix currently being served came from, for /health and the admin
+# UI: "stored" (the instance settings row, or its absence = defaults),
+# "snapshot" (the encrypted last-known-good copy, because the store is
+# unreadable) or "locked_only" (store unreadable and no snapshot: every role
+# holds only its locked permissions). "unknown" until the first load.
+SOURCE_STORED = "stored"
+SOURCE_SNAPSHOT = "snapshot"
+SOURCE_LOCKED_ONLY = "locked_only"
+_policy_source = "unknown"
+_policy_error: str | None = None
+_degraded: dict[str, set[str]] | None = None
+
+
+class PolicyUnavailableError(RuntimeError):
+    """The stored matrix could not be read, decrypted or parsed."""
 
 
 def invalidate_cache() -> None:
-    global _overrides, _loaded, _failed_load_at
+    global _overrides, _loaded, _failed_load_at, _degraded
     _overrides = None
     _loaded = False
     _failed_load_at = None
+    _degraded = None
+
+
+# ── Last-known-good snapshot ────────────────────────────────────────────
+# Encrypted with the instance key (AES-GCM, so it is also tamper-evident) and
+# kept beside the other secret stores on the data volume. It is written on
+# every successful read of the store and on every save, so it always mirrors
+# the matrix an admin last saw applied.
+
+
+def _snapshot_path() -> Path:
+    return Path(settings.upload_dir).parent / ".role_permissions.snapshot"
+
+
+def _write_snapshot(overrides: dict[str, set[str]]) -> None:
+    from app.services.encryption import encryption_service
+
+    path = _snapshot_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = json.dumps({"overrides": {r: sorted(k) for r, k in overrides.items()}})
+        tmp = path.with_suffix(".snapshot.tmp")
+        tmp.write_text(encryption_service.encrypt_string(payload))
+        try:
+            os.chmod(tmp, 0o600)
+        except OSError:
+            pass
+        os.replace(tmp, path)
+    except (OSError, ValueError) as e:
+        # A snapshot that cannot be written only weakens the fallback; the
+        # stored matrix is still being served.
+        logger.warning("Could not write role permission snapshot %s: %s", path, e)
+
+
+def _read_snapshot() -> dict[str, set[str]] | None:
+    """The last-known-good overrides, or None when absent or unreadable."""
+    from app.services.encryption import encryption_service
+
+    path = _snapshot_path()
+    try:
+        if not path.exists():
+            return None
+        raw = encryption_service.decrypt_string(path.read_text())
+        parsed = json.loads(raw)
+        return _parse_overrides(parsed.get("overrides"))
+    except Exception as e:  # any corruption or key mismatch: no snapshot
+        logger.error("Role permission snapshot %s is unreadable: %s", path, e)
+        return None
+
+
+def _parse_overrides(parsed: object) -> dict[str, set[str]]:
+    """Validate a decoded override document. Raises ValueError if malformed."""
+    if parsed is None:
+        return {}
+    if not isinstance(parsed, dict):
+        raise ValueError("role permission overrides must be a JSON object")
+    overrides: dict[str, set[str]] = {}
+    for role, keys in parsed.items():
+        if role in ROLES and isinstance(keys, list):
+            overrides[role] = {k for k in keys if k in _ALL_KEYS}
+    return overrides
+
+
+def _locked_only() -> dict[str, set[str]]:
+    """An override for every role that grants nothing beyond LOCKED."""
+    return {role: set() for role in ROLES}
+
+
+async def _read_store() -> dict[str, set[str]]:
+    """The overrides exactly as stored. Raises PolicyUnavailableError."""
+    from app.services.instance_settings import get_secret_strict
+
+    try:
+        raw = await get_secret_strict(_SECRET_NAME)
+        return _parse_overrides(json.loads(raw) if raw else None)
+    except Exception as e:
+        raise PolicyUnavailableError(f"{type(e).__name__}: {e}") from e
 
 
 async def _load_overrides() -> dict[str, set[str]]:
-    global _overrides, _loaded, _failed_load_at
+    global _overrides, _loaded, _failed_load_at, _policy_source, _policy_error, _degraded
     if _loaded:
         return _overrides or {}
     now = time.monotonic()
     if _failed_load_at is not None and now - _failed_load_at < _FAILED_LOAD_RETRY_SECONDS:
-        return {}
-    from app.services.instance_settings import get_secret
+        return _degraded if _degraded is not None else _locked_only()
 
     try:
-        raw = await get_secret(_SECRET_NAME)
-    except Exception as e:
-        # The store is unreachable (DB down, key unavailable). Serve the
-        # defaults for now — no more than any role is granted out of the box —
-        # but do not cache them: the next call after the back-off retries, and
-        # a successful load replaces them for the rest of the process.
+        overrides = await _read_store()
+    except PolicyUnavailableError as e:
+        # Fail closed. Never the shipped defaults: an admin may have removed
+        # permissions from them, and this is exactly the moment that
+        # restriction must hold. The next call after the back-off retries.
         _failed_load_at = now
-        logger.error(
-            "Failed to load role permission overrides; serving defaults until the next retry: %s",
-            e,
-        )
-        return {}
+        _policy_error = str(e)
+        snapshot = _read_snapshot()
+        if snapshot is not None:
+            _degraded = snapshot
+            _policy_source = SOURCE_SNAPSHOT
+            logger.error(
+                "Role permission overrides are unreadable; serving the last-known-good "
+                "snapshot until the next retry: %s",
+                e,
+            )
+        else:
+            _degraded = _locked_only()
+            _policy_source = SOURCE_LOCKED_ONLY
+            logger.critical(
+                "Role permission overrides are unreadable and no snapshot exists; every "
+                "role is reduced to its locked permissions until the store is readable: %s",
+                e,
+            )
+        return _degraded
 
-    overrides: dict[str, set[str]] = {}
-    try:
-        if raw:
-            parsed = json.loads(raw)
-            if isinstance(parsed, dict):
-                for role, keys in parsed.items():
-                    if role in ROLES and isinstance(keys, list):
-                        overrides[role] = {k for k in keys if k in _ALL_KEYS}
-    except (ValueError, TypeError) as e:  # a bad row must not break auth
-        logger.warning("Failed to parse role permission overrides: %s", e)
     _overrides = overrides
     _loaded = True
     _failed_load_at = None
+    _degraded = None
+    _policy_source = SOURCE_STORED
+    _policy_error = None
+    _write_snapshot(overrides)
     return overrides
 
 
@@ -191,6 +303,20 @@ async def get_role_permissions() -> dict[str, set[str]]:
     return result
 
 
+async def policy_status() -> dict[str, object]:
+    """Where the matrix being served comes from, for /health and the admin UI.
+
+    ``healthy`` is True only when the stored matrix itself is being served.
+    """
+    await _load_overrides()
+    return {
+        "healthy": _policy_source == SOURCE_STORED,
+        "source": _policy_source,
+        "error": _policy_error,
+        "snapshot_present": _snapshot_path().exists(),
+    }
+
+
 async def set_role_permissions(role: str, keys: list[str]) -> None:
     """Store one role's permission set (validated; locked keys re-added)."""
     if role not in ROLES:
@@ -200,20 +326,20 @@ async def set_role_permissions(role: str, keys: list[str]) -> None:
         raise ValueError(f"Unknown permissions: {unknown}")
     perms = set(keys) | LOCKED.get(role, set())
 
-    from app.services.instance_settings import get_secret, set_secret
+    from app.services.instance_settings import set_secret
 
-    stored: dict[str, list[str]] = {}
-    raw = await get_secret(_SECRET_NAME)
-    if raw:
-        try:
-            parsed = json.loads(raw)
-            if isinstance(parsed, dict):
-                stored = {r: k for r, k in parsed.items() if r in ROLES and isinstance(k, list)}
-        except (ValueError, TypeError):
-            stored = {}
-    stored[role] = sorted(perms)
+    # Start from the matrix as stored; if that row is unreadable, from the
+    # snapshot — never from nothing, or saving one role would silently drop
+    # every other role's customization.
+    try:
+        current = await _read_store()
+    except PolicyUnavailableError:
+        current = _read_snapshot() or {}
+    current[role] = perms
+    stored = {r: sorted(k) for r, k in current.items()}
     await set_secret(_SECRET_NAME, json.dumps(stored))
     invalidate_cache()
+    _write_snapshot(current)
 
 
 async def reset_role_permissions() -> None:
@@ -222,6 +348,7 @@ async def reset_role_permissions() -> None:
 
     await delete_secret(_SECRET_NAME)
     invalidate_cache()
+    _write_snapshot({})
 
 
 async def effective_permissions(user_roles: list[str]) -> set[str]:

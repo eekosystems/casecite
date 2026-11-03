@@ -19,8 +19,22 @@ from app.services.encryption import encryption_service
 logger = logging.getLogger(__name__)
 
 
-async def get_secret(name: str) -> str | None:
-    """Return the decrypted instance secret, or None if unset/undecryptable."""
+class SecretUnreadableError(RuntimeError):
+    """A stored instance secret exists but cannot be decrypted.
+
+    Distinct from "unset" (``None``): callers that fail closed on an
+    unreadable policy (role permissions) must be able to tell a missing
+    override from one that is present but corrupt or encrypted under a
+    different key.
+    """
+
+
+async def get_secret_strict(name: str) -> str | None:
+    """Return the decrypted instance secret, ``None`` if unset.
+
+    Raises ``SecretUnreadableError`` when the row exists but cannot be
+    decrypted, and propagates database errors.
+    """
     async with AsyncSessionLocal() as db:
         row = (
             await db.execute(select(InstanceSecretDB).where(InstanceSecretDB.name == name))
@@ -31,7 +45,15 @@ async def get_secret(name: str) -> str | None:
             return encryption_service.decrypt_string(row.value_encrypted)
         except Exception as e:
             logger.warning("Failed to decrypt instance secret %s: %s", name, e)
-            return None
+            raise SecretUnreadableError(f"instance secret {name!r} cannot be decrypted") from e
+
+
+async def get_secret(name: str) -> str | None:
+    """Return the decrypted instance secret, or None if unset/undecryptable."""
+    try:
+        return await get_secret_strict(name)
+    except SecretUnreadableError:
+        return None
 
 
 async def set_secret(name: str, value: str) -> None:

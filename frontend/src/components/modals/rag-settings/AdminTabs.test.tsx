@@ -42,6 +42,48 @@ beforeEach(() => {
   mock(api.getRolePermissions).mockRejectedValue(new Error('not needed here'));
 });
 
+const matrixBase = {
+  permissions: [{ key: 'chat.use', label: 'Chat', description: '', group: 'Workspace' }],
+  roles: ['admin', 'attorney', 'paralegal', 'viewer'],
+  defaults: { admin: ['chat.use'], attorney: ['chat.use'], paralegal: ['chat.use'], viewer: ['chat.use'] },
+  assigned: { admin: ['chat.use'], attorney: ['chat.use'], paralegal: ['chat.use'], viewer: ['chat.use'] },
+  customized: [],
+  locked: { admin: ['admin.users'] },
+};
+
+describe('UsersTab permission policy status', () => {
+  it('shows no alert while the stored matrix is being served', async () => {
+    mock(api.getRolePermissions).mockResolvedValue({
+      ...matrixBase,
+      policy: { healthy: true, source: 'stored', error: null, snapshot_present: true },
+    });
+    render(<UsersTab styles={s} />);
+    await screen.findByText('Role Permissions');
+    expect(screen.queryByTestId('permission-policy-alert')).toBeNull();
+  });
+
+  it('warns when the last-known-good snapshot is in force', async () => {
+    mock(api.getRolePermissions).mockResolvedValue({
+      ...matrixBase,
+      policy: { healthy: false, source: 'snapshot', error: 'SecretUnreadableError: x', snapshot_present: true },
+    });
+    render(<UsersTab styles={s} />);
+    const alert = await screen.findByTestId('permission-policy-alert');
+    expect(alert).toHaveTextContent('the last readable version is in force');
+    expect(alert).toHaveTextContent('SecretUnreadableError: x');
+  });
+
+  it('warns when every role is reduced to its locked permissions', async () => {
+    mock(api.getRolePermissions).mockResolvedValue({
+      ...matrixBase,
+      policy: { healthy: false, source: 'locked_only', error: 'OperationalError: db', snapshot_present: false },
+    });
+    render(<UsersTab styles={s} />);
+    const alert = await screen.findByTestId('permission-policy-alert');
+    expect(alert).toHaveTextContent('limited to its locked permissions');
+  });
+});
+
 describe('UsersTab offboarding', () => {
   async function renderTab() {
     render(<UsersTab styles={s} />);

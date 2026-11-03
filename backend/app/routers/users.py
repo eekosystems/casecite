@@ -181,6 +181,9 @@ async def _roles_payload() -> dict:
         "assigned": {r: sorted(matrix[r]) for r in perm.ROLES},
         "customized": [r for r in perm.ROLES if matrix[r] != perm.DEFAULT_ROLE_PERMISSIONS[r]],
         "locked": {r: sorted(keys) for r, keys in perm.LOCKED.items()},
+        # Where the matrix being served comes from. Anything but "stored"
+        # means the instance settings row is unreadable and the UI must say so.
+        "policy": await perm.policy_status(),
     }
 
 

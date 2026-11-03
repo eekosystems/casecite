@@ -62,6 +62,13 @@ network, disk encryption, backups and the firm's own policies. No SOC 2, ISO
 - Four roles (admin, attorney, paralegal, viewer) mapped to permissions that an
   admin can adjust per role. Admin-only operations are gated by
   `require_permission("admin.*")`.
+- The permission matrix fails closed. Every successful read of the saved
+  matrix is mirrored to an encrypted last-known-good snapshot on the data
+  volume. If the saved matrix cannot be read, decrypted or parsed, the
+  snapshot is enforced; with no snapshot, every role is reduced to its locked
+  permissions (admins keep user management so they can repair it). The shipped
+  defaults are never restored silently. `/health` reports the policy source
+  and the Users tab shows an alert while a degraded source is in force.
 - Every document, chat, analysis and job is scoped to its owner (or to the
   members of the matter it is filed under). The vector store refuses a query
   that carries no tenant scope.
