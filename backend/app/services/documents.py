@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, Optional
 import aiofiles
 
 from app.config import settings
+from app.exceptions import ServiceUnavailableError
 from app.models.schemas import (
     ConnectorType,
     Document,
@@ -59,6 +60,23 @@ class DocumentMoveError(RuntimeError):
     must never disagree about who may search it). Safe to show the user."""
 
 
+class RegistryWriteError(ServiceUnavailableError):
+    """The document registry (index.json) could not be written to disk.
+
+    Raised, never logged away: a document that exists only in this process's
+    memory would look uploaded, moved or deleted until the next restart and
+    then silently revert. Callers roll back what they changed and the HTTP
+    layer answers 503 with this message, which is safe to show the user.
+    """
+
+    def __init__(self, detail: str | None = None) -> None:
+        super().__init__(
+            detail
+            or "The document registry could not be written. Nothing was changed; "
+            "check the data volume and try again."
+        )
+
+
 class DocumentService:
     def __init__(self):
         self.documents: dict[str, Document] = {}
@@ -77,43 +95,67 @@ class DocumentService:
         return user_dir
 
     def _load_index(self):
-        """Load document index from disk."""
+        """Load the document registry from disk.
+
+        An existing registry that cannot be read or parsed is fatal: starting
+        with an empty registry would hide every document and the next save
+        would overwrite the file, turning a transient read error into
+        permanent loss. The file is left untouched for the operator.
+        """
         index_path = self._get_index_path()
-        if os.path.exists(index_path):
-            try:
-                with open(index_path) as f:
-                    data = json.load(f)
-                    for doc_data in data:
-                        # Migrate legacy docs without user_id
-                        if "user_id" not in doc_data:
-                            doc_data["user_id"] = "legacy"
-                        doc = Document(**doc_data)
-                        self.documents[doc.id] = doc
-            except (ValueError, KeyError, OSError) as e:
-                logger.error(f"Error loading document index: {e}")
+        if not os.path.exists(index_path):
+            return
+        try:
+            with open(index_path) as f:
+                data = json.load(f)
+            loaded: dict[str, Document] = {}
+            for doc_data in data:
+                # Migrate legacy docs without user_id
+                if "user_id" not in doc_data:
+                    doc_data["user_id"] = "legacy"
+                doc = Document(**doc_data)
+                loaded[doc.id] = doc
+        except (ValueError, KeyError, TypeError, OSError) as e:
+            logger.critical(f"Document registry {index_path} is unreadable: {e}")
+            raise RuntimeError(
+                f"The document registry {index_path} could not be loaded ({e}). "
+                "Refusing to start with an empty registry, which would hide every "
+                "document and overwrite the file on the next save. Restore the file "
+                "from a backup or repair it, then start again."
+            ) from e
+        self.documents.update(loaded)
 
     def _save_index(self):
-        """Save document index to disk using atomic write (temp + rename)."""
+        """Persist the registry with an atomic write (temp + rename).
+
+        Raises ``RegistryWriteError`` when the write fails. The in-memory
+        registry is not touched here: each caller decides what to roll back
+        so that nothing it changed is left looking committed.
+        """
         import tempfile
 
         index_path = self._get_index_path()
+        tmp_path: str | None = None
         try:
             data = [doc.model_dump(mode="json") for doc in self.documents.values()]
             dir_name = os.path.dirname(index_path)
+            os.makedirs(dir_name, exist_ok=True)
             with tempfile.NamedTemporaryFile(
                 mode="w", dir=dir_name, suffix=".tmp", delete=False
             ) as f:
-                json.dump(data, f, default=str)
                 tmp_path = f.name
+                json.dump(data, f, default=str)
+                f.flush()
+                os.fsync(f.fileno())
             os.replace(tmp_path, index_path)  # Atomic on POSIX
-        except (ValueError, KeyError, OSError) as e:
+        except (ValueError, KeyError, TypeError, OSError) as e:
             logger.error(f"Error saving document index: {e}")
-            # Clean up temp file on failure
-            try:
-                if "tmp_path" in locals():
+            if tmp_path:
+                try:
                     os.unlink(tmp_path)
-            except OSError:
-                pass
+                except OSError:
+                    pass
+            raise RegistryWriteError() from e
 
     def _get_user_documents(self, user_id: str) -> dict[str, Document]:
         """Get all documents belonging to a specific user."""
@@ -203,11 +245,16 @@ class DocumentService:
         doc = self.documents.get(doc_id)
         if not doc or doc.user_id != user_id:
             return False
+        previous = doc.folder_path
         if folder_path and folder_path not in ("/", ""):
             doc.folder_path = self._normalize_folder(folder_path)
         else:
             doc.folder_path = None
-        self._save_index()
+        try:
+            self._save_index()
+        except RegistryWriteError:
+            doc.folder_path = previous
+            raise
         return True
 
     def documents_in_matter(
@@ -396,7 +443,11 @@ class DocumentService:
             metadata=metadata or {},
         )
         self.documents[doc_id] = doc
-        self._save_index()
+        try:
+            self._save_index()
+        except RegistryWriteError:
+            await self._discard_unpersisted(doc, file_path)
+            raise
 
         try:
             # Extract text
@@ -408,7 +459,11 @@ class DocumentService:
                 # instead of leaving a bare FAILED row.
                 doc.status = DocumentStatus.FAILED
                 doc.metadata["error"] = extraction.error or "No text could be extracted."
-                self._save_index()
+                try:
+                    self._save_index()
+                except RegistryWriteError:
+                    await self._discard_unpersisted(doc, file_path)
+                    raise
                 return doc
             if extraction.warnings:
                 doc.metadata["extraction_warning"] = " ".join(extraction.warnings)
@@ -447,11 +502,38 @@ class DocumentService:
             doc.status = DocumentStatus.FAILED
             doc.metadata["error"] = _humanize_indexing_error(e)
 
-        self._save_index()
+        try:
+            self._save_index()
+        except RegistryWriteError:
+            # The upload would look complete to this process and vanish on
+            # restart, leaving its file and vectors orphaned. Undo it instead.
+            await self._discard_unpersisted(doc, file_path)
+            raise
 
         if existing_doc and doc.status == DocumentStatus.INDEXED:
             await self._retire_replaced(existing_doc, doc)
         return doc
+
+    async def _discard_unpersisted(self, doc: Document, file_path: str) -> None:
+        """Undo an upload whose registry entry could not be written: drop it
+        from memory and remove its vectors and stored file, best effort."""
+        self.documents.pop(doc.id, None)
+        # The first write may have persisted the PROCESSING row: try once to
+        # bring the file back in line so a restart does not resurrect it.
+        try:
+            self._save_index()
+        except RegistryWriteError:
+            logger.error(f"Registry still unwritable; row for {doc.id} may survive a restart")
+        if rag_service is not None and doc.status == DocumentStatus.INDEXED:
+            try:
+                await rag_service.delete_document(doc.id)
+            except Exception as e:  # vector stores raise their own exception trees
+                logger.error(f"Orphaned vectors for unpersisted upload {doc.id}: {e}")
+        try:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+        except OSError as e:
+            logger.error(f"Orphaned file for unpersisted upload {doc.id}: {e}")
 
     def _find_replaceable(
         self,
@@ -500,8 +582,10 @@ class DocumentService:
         """Delete a document that a successful re-upload has superseded."""
         try:
             deleted = await self.delete_document(old.id, old.user_id)
-        except (DocumentDeletionError, OSError, ValueError, KeyError) as e:
-            # The new copy is indexed; keeping the old one too is the safe failure.
+        except (DocumentDeletionError, RegistryWriteError, OSError, ValueError, KeyError) as e:
+            # The new copy is indexed and persisted; keeping the old one too is
+            # the safe failure. (A RegistryWriteError here means the old
+            # content is gone but its row may survive a restart.)
             logger.error(f"Could not remove replaced document {old.id}: {e}")
             return
         if not deleted:
@@ -845,7 +929,14 @@ class DocumentService:
         if not doc or not self._can_access(doc, user_id, accessible_matter_ids):
             return False
         await self._remove_document(doc)
-        self._save_index()
+        try:
+            self._save_index()
+        except RegistryWriteError as e:
+            raise RegistryWriteError(
+                "The document's content was removed, but the registry could not be "
+                "written, so its entry may reappear after a restart. Delete it again "
+                "if it does, and check the data volume."
+            ) from e
         return True
 
     async def _remove_document(self, doc: Document) -> None:
