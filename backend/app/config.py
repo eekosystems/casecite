@@ -98,6 +98,12 @@ class Settings(BaseSettings):
     # Manifest template; empty = the copy in the image, else the repo's.
     word_addin_manifest_path: str = ""
 
+    # AI usage quota for users WITHOUT a provider key of their own, i.e. those
+    # whose calls run on this instance's OPENAI_API_KEY / ANTHROPIC_API_KEY:
+    # tokens per user per UTC day (0 = unlimited). Every call is metered either
+    # way (GET /api/v1/usage/me, GET /api/v1/admin/usage).
+    server_key_daily_token_quota: int = 0
+
     # Encryption salt - generated per deployment, stored in .env
     encryption_salt: str = ""  # Will be auto-generated if not set
     # Previous encryption salts for key rotation (comma-separated)

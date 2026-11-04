@@ -46,6 +46,9 @@ from app.models.enums import (  # noqa: F401
 # Matters & membership (collaboration/isolation unit)
 from app.models.matters import Matter, MatterMember  # noqa: F401
 
+# AI usage events (metering and the server-key quota)
+from app.models.usage import UsageEvent  # noqa: F401
+
 # Document registry (which documents exist) and shared version counters
 from app.models.registry import (  # noqa: F401
     DocumentFolderRow,

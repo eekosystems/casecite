@@ -120,36 +120,66 @@ def _adapt_unsupported_params(kwargs: dict, err_msg: str) -> bool:
     return False
 
 
-async def openai_chat(client, **kwargs):
+def uses_server_key(client) -> bool:
+    """True when the client carries the instance's own key (not the user's)."""
+    key = getattr(client, "api_key", None)
+    return bool(key) and key == settings.openai_api_key
+
+
+async def openai_chat(client, *, purpose: str = "chat", **kwargs):
     """``chat.completions.create`` with automatic parameter negotiation.
 
     Every OpenAI chat call in the app goes through here so new models that
     rename/reject parameters keep working everywhere at once — and so the AI
     provider allowlist is enforced in one place: the client's endpoint is
     checked before anything is sent (ProviderNotAllowedError, a ValueError).
+    The response's token counts are metered against the current user
+    (``purpose`` says what the call was for).
     """
     enforce_openai_client(client)
     attempts = 0
     while True:
         try:
-            return await client.chat.completions.create(**kwargs)
+            response = await client.chat.completions.create(**kwargs)
+            break
         except Exception as e:  # adapt-and-retry, re-raised when not adaptable
             attempts += 1
             if attempts > 2 or not _adapt_unsupported_params(kwargs, str(e)):
                 raise
+    from app.services.usage import record_usage
+
+    await record_usage(
+        "openai",
+        response,
+        model=kwargs.get("model"),
+        purpose=purpose,
+        server_key=uses_server_key(client),
+    )
+    return response
 
 
-def openai_chat_sync(client, **kwargs):
+def openai_chat_sync(client, *, purpose: str = "chat", **kwargs):
     """Sync variant of :func:`openai_chat` for code running via ``to_thread``."""
     enforce_openai_client(client)
     attempts = 0
     while True:
         try:
-            return client.chat.completions.create(**kwargs)
+            response = client.chat.completions.create(**kwargs)
+            break
         except Exception as e:  # adapt-and-retry, re-raised when not adaptable
             attempts += 1
             if attempts > 2 or not _adapt_unsupported_params(kwargs, str(e)):
                 raise
+    from app.services.usage import record_usage_sync
+
+    record_usage_sync(
+        "openai",
+        response,
+        model=kwargs.get("model"),
+        purpose=purpose,
+        server_key=uses_server_key(client),
+    )
+    return response
 
 
 async def load_from_storage() -> None:

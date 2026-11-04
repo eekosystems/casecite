@@ -14,6 +14,7 @@ from app.services.provider_policy import (
     openai_client_provider,
 )
 from app.services.rag.prompt_safety import untrusted_block
+from app.services.usage import record_usage
 
 if TYPE_CHECKING:
     from app.services.user_keys import UserAPIKeys
@@ -132,11 +133,20 @@ async def call_llm(
             system=system_prompt,
             messages=[{"role": "user", "content": user_prompt}],
         )
+        await record_usage(
+            "anthropic",
+            response,
+            model=model,
+            purpose="answer",
+            server_key=anthropic_uses_server_key(anthropic_client),
+        )
         return response.content[0].text
     if family == "google" and gemini_model:
         enforce_provider_allowed("google", "AI request")
         full_prompt = f"{system_prompt}\n\n{user_prompt}"
         response = await asyncio.to_thread(gemini_model.generate_content, full_prompt)
+        # Gemini runs on the user's own key only (there is no instance key).
+        await record_usage("google", response, model=model, purpose="answer", server_key=False)
         return response.text
 
     if family != "openai":
@@ -156,6 +166,7 @@ async def call_llm(
         enforce_openai_client(openai_client, "AI request")
         response = await openai_chat(
             openai_client,
+            purpose="answer",
             model=model,
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -172,6 +183,12 @@ async def call_llm(
 
 
 _server_anthropic_client = None
+
+
+def anthropic_uses_server_key(client) -> bool:
+    """True when the Anthropic client carries the instance's own key."""
+    key = getattr(client, "api_key", None)
+    return bool(key) and key == settings.anthropic_api_key
 
 
 def _server_anthropic():
@@ -194,6 +211,7 @@ async def chosen_provider_text(
     user_keys: Optional["UserAPIKeys"] = None,
     model: str | None = None,
     max_tokens: int = 4096,
+    purpose: str = "utility",
 ) -> str | None:
     """Run a utility prompt on the provider of the user's chosen chat model.
 
@@ -219,6 +237,13 @@ async def chosen_provider_text(
             max_tokens=max_tokens,
             messages=[{"role": "user", "content": prompt}],
         )
+        await record_usage(
+            "anthropic",
+            response,
+            model=model,
+            purpose=purpose,
+            server_key=anthropic_uses_server_key(client),
+        )
         return response.content[0].text
     if family == "google":
         gemini = user_keys.get_google_model(model) if user_keys else None
@@ -226,6 +251,7 @@ async def chosen_provider_text(
             return None
         enforce_provider_allowed("google", "AI request")
         response = await asyncio.to_thread(gemini.generate_content, prompt)
+        await record_usage("google", response, model=model, purpose=purpose, server_key=False)
         return response.text
     return None
 

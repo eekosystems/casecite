@@ -272,7 +272,7 @@ def _chunk_at(search_results: list[dict[str, Any]], doc_id: str, offset: int) ->
 
 async def _complete_json(prompt: str, *, user_keys, model: str | None, purpose: str) -> Any:
     """One JSON completion on the user's chosen provider, else the utility model."""
-    raw = await chosen_provider_text(prompt, user_keys=user_keys, model=model)
+    raw = await chosen_provider_text(prompt, user_keys=user_keys, model=model, purpose="verify")
     if raw is None:
         client = make_openai(_api_key(user_keys), async_=True)
         if client is None:
@@ -280,6 +280,7 @@ async def _complete_json(prompt: str, *, user_keys, model: str | None, purpose: 
         enforce_openai_client(client, purpose)
         resp = await openai_chat(
             client,
+            purpose="verify",
             model=utility_model(),
             messages=[{"role": "user", "content": prompt}],
             temperature=0.0,

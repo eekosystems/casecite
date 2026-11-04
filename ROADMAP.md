@@ -16,6 +16,7 @@ evaluating the product — what does **not** exist yet.
 - Offboarding that cannot destroy client work by accident: deleting a user who owns matters, documents, conversations, analyses, review tables or workflows requires an explicit decision — transfer all of it to a colleague first (documents, index entries and files included) or purge it knowingly; the Users tab shows what they own and offers both
 - Legal hold and retention per matter: a hold (owner or admin, with a reason) blocks every delete of the matter and everything filed under it — by members, by a purge of a departing owner, by re-upload replacement, by retention — until lifted; a single document can be held on its own; a retention policy removes documents and conversations older than N days through the normal delete path, daily and audited
 - Ethical walls: an admin can wall a user off a matter (with a reason, audited); they lose membership, cannot be added back while the wall stands (the inviter gets the same generic refusal as for an unknown address), their work filed under the matter passes to its owner, and the matter is hidden from them everywhere — including the admin oversight list
+- AI usage metering: every provider call is recorded per user with its token counts, model and purpose (`GET /usage/me`, admins `GET /admin/usage`); `SERVER_KEY_DAILY_TOKEN_QUOTA` caps what a user without their own key may spend per day on the instance's keys
 - Multi-worker / multi-replica deployments: the document registry lives in the database, sessions in Redis, the permission matrix, legal holds and connector credentials reload when another process changes them, and the audit chain is serialised through a lock file; `UVICORN_WORKERS` above 1 is accepted with PostgreSQL, Redis and a non-embedded vector store (`VECTOR_DB=pinecone`) and refused, naming what is missing, without them
 - Connector folder picker: a connected Google Drive, OneDrive, Box or Dropbox account is browsed folder by folder and a sync is scoped to the chosen folder; importing the whole account stays behind an explicit warning (Clio can only sync the whole account)
 - Microsoft (Azure AD) sign-in in the web app: a "Sign in with Microsoft" button appears when the server has Azure AD configured, MSAL obtains the ID token in a popup, and the backend exchange mints the local session (roles come from the local account, as before)
@@ -27,7 +28,6 @@ evaluating the product — what does **not** exist yet.
 
 ## Next
 - In-place `SECRET_KEY` rotation with re-encryption of stored documents
-- Per-user usage metering and quotas for server-level provider keys
 - Benchmark rerankers on the accuracy benchmark (Cohere Rerank and a local cross-encoder are wired in; neither is on by default, and no legal-domain reranker has been tried)
 - Grow the accuracy benchmark (`backend/evals/`) from the synthetic starter set to attorney-written questions over real-world documents
 - Preserve run-level formatting from the source .docx in redline exports

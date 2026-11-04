@@ -44,6 +44,7 @@ from app.routers import (
     strategy,
     system,
     tools,
+    usage,
     user_keys,
     users,
     workflows,
@@ -582,6 +583,7 @@ app.include_router(jobs.router, prefix=settings.api_prefix)
 # White-Label Branding (public GET + admin mutations)
 app.include_router(branding.router, prefix=settings.api_prefix)
 app.include_router(addin.router, prefix=settings.api_prefix)
+app.include_router(usage.router, prefix=settings.api_prefix)
 
 # CSRF token endpoint (for SPA frontends)
 app.include_router(get_csrf_router(), prefix=settings.api_prefix)

@@ -85,6 +85,19 @@ class UserAPIKeys:
             except (ImportError, AttributeError, KeyError, ValueError, OSError):
                 logger.debug("Could not load server-stored keys for user %s", user_id)
 
+        # A user with no provider key of their own runs on the instance's keys:
+        # the daily server-key quota (when set) applies, checked here, before
+        # any call is made, so the whole request is refused with a clear 429
+        # rather than failing part-way.
+        if user_id and not (keys.openai or keys.anthropic or keys.google):
+            from app.exceptions import RateLimitedError
+            from app.services.usage import QuotaExceeded, check_server_key_quota
+
+            try:
+                check_server_key_quota(user_id)
+            except QuotaExceeded as e:
+                raise RateLimitedError(str(e)) from None
+
         return keys
 
     @classmethod
