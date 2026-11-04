@@ -24,11 +24,18 @@ from app.models.matters import (
     MATTER_ROLE_OWNER,
     Matter,
     MatterMember,
+    MatterWall,
 )
 
 
 class MatterAccessError(Exception):
     """Raised when a user is not permitted to act on a matter."""
+
+
+class MatterWalledError(MatterAccessError):
+    """The user is behind an ethical wall for this matter. The HTTP layer
+    answers with the same generic message as an unknown address, so the
+    wall is not disclosed to whoever tried to add them."""
 
 
 async def get_or_create_personal_matter(session: AsyncSession, user_id: str) -> Matter:
@@ -172,7 +179,17 @@ async def is_member(session: AsyncSession, matter_id: str, user_id: str) -> bool
             )
         )
     ).first()
-    return row is not None
+    if row is None:
+        return False
+    # An ethical wall beats a membership row, however the row got there.
+    walled = (
+        await session.execute(
+            select(MatterWall.id).where(
+                MatterWall.matter_id == matter_id, MatterWall.user_id == user_id
+            )
+        )
+    ).first()
+    return walled is None
 
 
 async def get_personal_matter_id(session: AsyncSession, user_id: str) -> str | None:
@@ -206,18 +223,25 @@ async def get_member_matter_ids(session: AsyncSession, user_id: str) -> list[str
         .scalars()
         .all()
     )
-    return list(rows)
+    # An ethical wall beats a membership row, however the row got there.
+    walled = set(
+        (await session.execute(select(MatterWall.matter_id).where(MatterWall.user_id == user_id)))
+        .scalars()
+        .all()
+    )
+    return [m for m in rows if m not in walled]
 
 
 async def list_matters_for_user(session: AsyncSession, user_id: str) -> list[Matter]:
     """Matters the user is a member of, personal first then newest."""
     await get_or_create_personal_matter(session, user_id)
+    walled = select(MatterWall.matter_id).where(MatterWall.user_id == user_id)
     matters = (
         (
             await session.execute(
                 select(Matter)
                 .join(MatterMember, MatterMember.matter_id == Matter.id)
-                .where(MatterMember.user_id == user_id)
+                .where(MatterMember.user_id == user_id, Matter.id.not_in(walled))
                 .order_by(Matter.is_personal.desc(), Matter.created_at.desc())
             )
         )
@@ -271,6 +295,15 @@ async def add_member(
         raise MatterAccessError("Matter not found")
     if matter.is_personal:
         raise MatterAccessError("A personal matter cannot be shared")
+    walled = (
+        await session.execute(
+            select(MatterWall.id).where(
+                MatterWall.matter_id == matter_id, MatterWall.user_id == user_id
+            )
+        )
+    ).first()
+    if walled is not None:
+        raise MatterWalledError("That user is walled off from this matter")
 
     existing = (
         await session.execute(

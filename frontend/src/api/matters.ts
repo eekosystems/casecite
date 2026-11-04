@@ -7,6 +7,7 @@ import type {
   MatterAnalysisItem,
   MatterDetail,
   MatterRetention,
+  MatterWall,
 } from './types';
 
 const matterPath = (matterId: string, suffix = '') => `/matters/${encodeURIComponent(matterId)}${suffix}`;
@@ -43,6 +44,23 @@ Object.assign(api, {
 
   async getMatterRetention(matterId: string): Promise<MatterRetention> {
     return api.request(matterPath(matterId, '/retention'));
+  },
+
+  async listMatterWalls(matterId: string): Promise<{ matter_id: string; walls: MatterWall[] }> {
+    return api.request(matterPath(matterId, '/walls'));
+  },
+
+  async addMatterWall(
+    matterId: string, email: string, reason: string | null = null,
+  ): Promise<{ matter_id: string; walls: MatterWall[] }> {
+    return api.request(matterPath(matterId, '/walls'), {
+      method: 'POST',
+      body: JSON.stringify({ email, reason }),
+    });
+  },
+
+  async removeMatterWall(matterId: string, userId: string): Promise<{ matter_id: string; walls: MatterWall[] }> {
+    return api.request(matterPath(matterId, `/walls/${encodeURIComponent(userId)}`), { method: 'DELETE' });
   },
 
   async deleteMatter(matterId: string): Promise<{ status: string; id: string }> {

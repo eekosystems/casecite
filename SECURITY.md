@@ -72,7 +72,13 @@ network, disk encryption, backups and the firm's own policies. No SOC 2, ISO
 - Every document, chat, analysis and job is scoped to its owner (or to the
   members of the matter it is filed under). The vector store refuses a query
   that carries no tenant scope.
-- There are no ethical walls beyond matter membership, and no per-document
+- Ethical walls: an admin can wall a user off a matter
+  (`POST /matters/{id}/walls`). The wall removes their membership, refuses to
+  add them back (with the same generic answer as an unknown address, so the
+  wall is not disclosed to the inviter), hands any work they filed under the
+  matter to its owner, and is subtracted from every membership lookup, so a
+  membership row created around it grants nothing. A walled admin does not
+  see the matter in the oversight list either. There are no per-document
   ACLs. See [ROADMAP.md](ROADMAP.md).
 
 ### Deletion

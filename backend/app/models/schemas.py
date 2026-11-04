@@ -357,6 +357,27 @@ class SetLegalHoldRequest(BaseModel):
     reason: str | None = Field(None, max_length=500)
 
 
+class AddMatterWallRequest(BaseModel):
+    """Wall a user (by email) off a matter, with the reason for the record."""
+
+    email: str = Field(..., min_length=3, max_length=255)
+    reason: str | None = Field(None, max_length=500)
+
+
+class MatterWallResponse(BaseModel):
+    user_id: str
+    email: str | None = None
+    name: str | None = None
+    reason: str | None = None
+    created_by: str | None = None
+    created_at: datetime
+
+
+class MatterWallsResponse(BaseModel):
+    matter_id: str
+    walls: list[MatterWallResponse]
+
+
 class MatterRetentionResponse(BaseModel):
     """GET /matters/{id}/retention: the policy and what the next run removes."""
 

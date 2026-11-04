@@ -27,6 +27,7 @@ from app.models.clause_intel import ContractAnalysisRun
 from app.models.matters import Matter
 from app.models.schemas import (
     AddMatterMemberRequest,
+    AddMatterWallRequest,
     ChatSessionListResponse,
     CreateMatterRequest,
     DocumentList,
@@ -39,6 +40,8 @@ from app.models.schemas import (
     MatterMemberResponse,
     MatterResponse,
     MatterRetentionResponse,
+    MatterWallResponse,
+    MatterWallsResponse,
     MoveMatterDocumentsRequest,
     MoveMatterDocumentsResponse,
     SetLegalHoldRequest,
@@ -49,6 +52,7 @@ from app.routers._matter_deps import owned_matter_ids as _owned_matter_ids
 from app.services import chat_sessions as chat_session_service
 from app.services import governance
 from app.services import matters as matters_service
+from app.services import walls as walls_service
 from app.services.audit import AuditEventType, audit_service
 from app.services.auth import TokenData, get_current_user
 from app.services.documents import DocumentMoveError, document_service
@@ -211,8 +215,11 @@ async def list_all_matters(
         select(Matter).where(Matter.is_personal.is_(False)).order_by(Matter.created_at.desc())
     )
     mine = set(await matters_service.get_member_matter_ids(db, current_user.user_id))
+    walled = await walls_service.walled_matter_ids(db, current_user.user_id)
     out = []
     for matter in rows.scalars().all():
+        if matter.id in walled:
+            continue  # an ethical wall hides the matter from this admin too
         role = None if matter.id in mine else "none"
         out.append(await _to_response(db, matter, current_user.user_id, role=role))
     await audit_service.log_event(
@@ -298,6 +305,16 @@ async def add_matter_member(
 
     try:
         await matters_service.add_member(db, matter_id, invitee.id, added_by=current_user.user_id)
+    except matters_service.MatterWalledError:
+        await _audit(
+            request,
+            current_user,
+            AuditEventType.DATA_MODIFICATION,
+            matter_id,
+            {"action": "matter_member_add_refused_by_wall", "member_user_id": invitee.id},
+            success=False,
+        )
+        raise BadRequestError(_ADD_MEMBER_FAILED)
     except matters_service.MatterAccessError as e:
         raise BadRequestError(str(e))
     await db.commit()
@@ -446,6 +463,118 @@ async def set_matter_hold(
         },
     )
     return await _to_response(db, matter, current_user.user_id)
+
+
+# ── Ethical walls (admin-managed deny-list) ─────────────────────────────
+
+
+async def _walls_response(db: AsyncSession, matter_id: str) -> MatterWallsResponse:
+    walls = await walls_service.list_walls(db, matter_id)
+    user_ids = [w.user_id for w in walls]
+    identities: dict[str, DBUser] = {}
+    if user_ids:
+        rows = (await db.execute(select(DBUser).where(DBUser.id.in_(user_ids)))).scalars().all()
+        identities = {u.id: u for u in rows}
+    return MatterWallsResponse(
+        matter_id=matter_id,
+        walls=[
+            MatterWallResponse(
+                user_id=w.user_id,
+                email=identities[w.user_id].email if w.user_id in identities else None,
+                name=identities[w.user_id].name if w.user_id in identities else None,
+                reason=w.reason,
+                created_by=w.created_by,
+                created_at=w.created_at,
+            )
+            for w in walls
+        ],
+    )
+
+
+async def _require_shared_matter_for_admin(db: AsyncSession, matter_id: str) -> Matter:
+    matter = await matters_service.get_matter(db, matter_id)
+    if matter is None:
+        raise NotFoundError("Matter not found")
+    if matter.is_personal:
+        raise BadRequestError("A personal matter cannot have an ethical wall.")
+    return matter
+
+
+@router.get("/{matter_id}/walls", response_model=MatterWallsResponse)
+async def list_matter_walls(
+    matter_id: str,
+    current_user: TokenData = require_permission("admin.users"),
+    db: AsyncSession = Depends(get_db),
+) -> MatterWallsResponse:
+    """Who is walled off from the matter. Admin only."""
+    await _require_shared_matter_for_admin(db, matter_id)
+    return await _walls_response(db, matter_id)
+
+
+@router.post("/{matter_id}/walls", response_model=MatterWallsResponse)
+async def add_matter_wall(
+    matter_id: str,
+    body: AddMatterWallRequest,
+    request: Request,
+    current_user: TokenData = require_permission("admin.users"),
+    db: AsyncSession = Depends(get_db),
+) -> MatterWallsResponse:
+    """Wall a user off a matter. Admin only.
+
+    They lose membership now, cannot be added back while the wall stands,
+    and any work they filed under the matter passes to its owner so nothing
+    in it stays reachable through ownership. The matter's owner cannot be
+    walled; transfer the matter first. Audited with what was reassigned.
+    """
+    matter = await _require_shared_matter_for_admin(db, matter_id)
+    email = body.email.lower().strip()
+    target = (await db.execute(select(DBUser).where(DBUser.email == email))).scalar_one_or_none()
+    if target is None:
+        raise BadRequestError("No account with that email address.")
+    try:
+        _wall, moved = await walls_service.add_wall(
+            db, matter, target.id, reason=body.reason, created_by=current_user.user_id
+        )
+    except walls_service.WallError as e:
+        raise BadRequestError(str(e))
+    await db.commit()
+    await _audit(
+        request,
+        current_user,
+        AuditEventType.DATA_MODIFICATION,
+        matter_id,
+        {
+            "action": "ethical_wall_added",
+            "walled_user_id": target.id,
+            "reason": (body.reason or "")[:200] or None,
+            "reassigned_to_owner": moved,
+        },
+    )
+    return await _walls_response(db, matter_id)
+
+
+@router.delete("/{matter_id}/walls/{user_id}", response_model=MatterWallsResponse)
+async def remove_matter_wall(
+    matter_id: str,
+    user_id: str,
+    request: Request,
+    current_user: TokenData = require_permission("admin.users"),
+    db: AsyncSession = Depends(get_db),
+) -> MatterWallsResponse:
+    """Lift a wall. Admin only. Membership is not restored; the owner may
+    invite the user again."""
+    await _require_shared_matter_for_admin(db, matter_id)
+    if not await walls_service.remove_wall(db, matter_id, user_id):
+        raise NotFoundError("No wall for that user on this matter")
+    await db.commit()
+    await _audit(
+        request,
+        current_user,
+        AuditEventType.DATA_MODIFICATION,
+        matter_id,
+        {"action": "ethical_wall_removed", "walled_user_id": user_id},
+    )
+    return await _walls_response(db, matter_id)
 
 
 @router.get("/{matter_id}/retention", response_model=MatterRetentionResponse)

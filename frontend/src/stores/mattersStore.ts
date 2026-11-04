@@ -11,6 +11,7 @@ import type {
   MatterActivityEvent,
   MatterAnalysisItem,
   MatterDetail,
+  MatterWall,
 } from '../api/types';
 
 export type MatterTab = 'documents' | 'chats' | 'analyses' | 'members' | 'activity';
@@ -78,6 +79,11 @@ export interface MattersState {
   loadWorkspace: (matterId: string) => Promise<void>;
   loadTab: (tab: MatterTab) => Promise<void>;
   renameMatter: (name: string, clientName: string | null) => Promise<boolean>;
+  /** Ethical walls on the open matter (admins only; empty otherwise). */
+  walls: MatterWall[];
+  loadWalls: () => Promise<void>;
+  addWall: (email: string, reason: string | null) => Promise<boolean>;
+  removeWall: (userId: string) => Promise<boolean>;
   /** Place or lift a legal hold on the open matter. */
   setLegalHold: (on: boolean, reason: string | null) => Promise<boolean>;
   /** Set the open matter's retention policy in days (0 clears it). */
@@ -178,7 +184,7 @@ export const useMattersStore = create<MattersState>((set, get) => ({
       workspaceId: matterId,
       workspaceLoading: true,
       workspaceError: null,
-      ...(changed ? { workspace: null, documents: [], chats: [], analyses: [], activity: [] } : {}),
+      ...(changed ? { workspace: null, documents: [], chats: [], analyses: [], activity: [], walls: [] } : {}),
     });
     try {
       const detail = await api.getMatter(matterId);
@@ -235,6 +241,47 @@ export const useMattersStore = create<MattersState>((set, get) => ({
       useUIStore.getState().addToast(`Could not load ${tab}: ${errorMessage(e, 'unknown error')}`, 'error');
     } finally {
       set((state) => ({ tabLoading: { ...state.tabLoading, [tab]: false } }));
+    }
+  },
+
+  walls: [],
+  loadWalls: async () => {
+    const { workspaceId } = get();
+    if (!workspaceId) return;
+    try {
+      const resp = await api.listMatterWalls(workspaceId);
+      if (get().workspaceId === workspaceId) set({ walls: resp.walls || [] });
+    } catch (e: unknown) {
+      useUIStore.getState().addToast(errorMessage(e, 'Could not load ethical walls.'), 'error');
+    }
+  },
+  addWall: async (email, reason) => {
+    const { workspaceId } = get();
+    const address = email.trim();
+    if (!workspaceId || !address) return false;
+    try {
+      const resp = await api.addMatterWall(workspaceId, address, reason);
+      set({ walls: resp.walls || [] });
+      // The walled user is no longer a member: refresh the member list.
+      set({ workspace: await api.getMatter(workspaceId) });
+      useUIStore.getState().addToast(`${address} is walled off from this matter`, 'success');
+      return true;
+    } catch (e: unknown) {
+      useUIStore.getState().addToast(errorMessage(e, 'The wall could not be added.'), 'error');
+      return false;
+    }
+  },
+  removeWall: async (userId) => {
+    const { workspaceId } = get();
+    if (!workspaceId) return false;
+    try {
+      const resp = await api.removeMatterWall(workspaceId, userId);
+      set({ walls: resp.walls || [] });
+      useUIStore.getState().addToast('Ethical wall lifted', 'success');
+      return true;
+    } catch (e: unknown) {
+      useUIStore.getState().addToast(errorMessage(e, 'The wall could not be lifted.'), 'error');
+      return false;
     }
   },
 

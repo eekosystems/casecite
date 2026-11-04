@@ -15,6 +15,7 @@ evaluating the product — what does **not** exist yet.
 - Matters: a workspace per client engagement (`/matters`) with the documents, chats, analyses, members and activity filed under it; an active-matter selector that scopes Research, Contracts and Drafting; bulk filing of documents between matters; ownership transfer for offboarding
 - Offboarding that cannot destroy client work by accident: deleting a user who owns matters, documents, conversations, analyses, review tables or workflows requires an explicit decision — transfer all of it to a colleague first (documents, index entries and files included) or purge it knowingly; the Users tab shows what they own and offers both
 - Legal hold and retention per matter: a hold (owner or admin, with a reason) blocks every delete of the matter and everything filed under it — by members, by a purge of a departing owner, by re-upload replacement, by retention — until lifted; a single document can be held on its own; a retention policy removes documents and conversations older than N days through the normal delete path, daily and audited
+- Ethical walls: an admin can wall a user off a matter (with a reason, audited); they lose membership, cannot be added back while the wall stands (the inviter gets the same generic refusal as for an unknown address), their work filed under the matter passes to its owner, and the matter is hidden from them everywhere — including the admin oversight list
 - HMAC-chained audit log with startup and on-demand verification, viewable and exportable by admins
 - BYOK provider keys and uploaded originals encrypted at rest (AES-256-GCM)
 - TOTP MFA (optionally mandatory), password reset and change, session lifetime and idle timeout
@@ -24,7 +25,6 @@ evaluating the product — what does **not** exist yet.
 ## Next
 - Connector folder picker (the sync API takes a folder; the UI can only import a whole connected account)
 - Azure AD SSO sign-in flow in the frontend (the backend token exchange is complete)
-- Ethical walls: admin-managed matter access and deny-lists (today, access is by matter membership only)
 - In-place `SECRET_KEY` rotation with re-encryption of stored documents
 - Per-user usage metering and quotas for server-level provider keys
 - Benchmark rerankers on the accuracy benchmark (Cohere Rerank and a local cross-encoder are wired in; neither is on by default, and no legal-domain reranker has been tried)

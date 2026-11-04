@@ -28,7 +28,7 @@ Every user-data row carries the owning `user_id`. Isolation is enforced at three
 
 System-wide reference data (the clause taxonomy, jurisdiction rules, the cached public judge data) has no `user_id` and is shared across all users.
 
-**Matters** are the one sharing mechanism. A matter has an owner and named members; a document or chat session filed under a matter is visible to its members as well as its owner, and every lookup checks "owner, or member of the row's matter". There is no organization, workspace, or team abstraction beyond that, and no ethical-wall (deny-list) feature: an instance serves one firm, and the Azure AD `tenant_id` field on the user model is SSO metadata only — it is not an isolation boundary.
+**Matters** are the one sharing mechanism. A matter has an owner and named members; a document or chat session filed under a matter is visible to its members as well as its owner, and every lookup checks "owner, or member of the row's matter". There is no organization, workspace, or team abstraction beyond that: an instance serves one firm, and the Azure AD `tenant_id` field on the user model is SSO metadata only — it is not an isolation boundary. Ethical walls (`matter_walls`, admin-managed) are a deny-list on top of membership: a walled user is never a member, and every membership lookup subtracts walls.
 
 ## Consequences
 
@@ -42,7 +42,7 @@ System-wide reference data (the clause taxonomy, jurisdiction rules, the cached 
 
 ### Negative
 
-- **Sharing is coarse.** Matters share documents and chats with all members of the matter; there are no per-document permissions, no ethical walls, and deleting a user deletes the matters they own rather than transferring them.
+- **Sharing is coarse.** Matters share documents and chats with all members of the matter; there are no per-document permissions. (Ethical walls, legal hold, retention and transfer-on-offboarding exist — see `app/services/walls.py`, `governance.py`, `offboarding.py`.)
 - **Application-enforced, not database-enforced.** A bug in a service function that omits the `user_id` filter could leak data across users. PostgreSQL RLS would provide defense-in-depth at the database layer.
 - **Scaling ceiling.** All users share one set of tables. At very high user counts (10K+), table scans and index pressure increase. Partitioning by `user_id` or sharding would require architectural changes.
 - **No per-tenant customization.** Cannot offer different schema versions or storage locations per customer. (Retention and legal hold exist per matter, not per tenant — see `app/services/governance.py`.)

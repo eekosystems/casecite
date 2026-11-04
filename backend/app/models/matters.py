@@ -96,3 +96,27 @@ class MatterMember(Base):
         Index("idx_matter_member_user", "user_id"),
         Index("idx_matter_member_matter", "matter_id"),
     )
+
+
+class MatterWall(Base):
+    """An ethical wall: a user who must never see this matter.
+
+    Admin-managed. A walled user cannot be a member, their membership is
+    removed when the wall goes up, and their work in the matter passes to
+    its owner. See app/services/walls.py.
+    """
+
+    __tablename__ = "matter_walls"
+
+    id = Column(String(36), primary_key=True)
+    matter_id = Column(String(36), ForeignKey("matters.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(String(36), nullable=False)
+    reason = Column(String(500), nullable=True)
+    created_by = Column(String(36), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("matter_id", "user_id", name="uq_matter_wall"),
+        Index("idx_matter_wall_user", "user_id"),
+        Index("idx_matter_wall_matter", "matter_id"),
+    )

@@ -447,6 +447,16 @@ export interface MatterDetail extends Matter {
   members: MatterMember[];
 }
 
+/** An ethical wall: a user who must never see the matter (admin-managed). */
+export interface MatterWall {
+  user_id: string;
+  email: string | null;
+  name: string | null;
+  reason: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+
 /** GET /matters/{id}/retention: the policy and what the next run removes. */
 export interface MatterRetention {
   matter_id: string;
@@ -1812,6 +1822,9 @@ export interface ApiClient {
   ): Promise<Matter>;
   setMatterHold(matterId: string, on: boolean, reason?: string | null): Promise<Matter>;
   getMatterRetention(matterId: string): Promise<MatterRetention>;
+  listMatterWalls(matterId: string): Promise<{ matter_id: string; walls: MatterWall[] }>;
+  addMatterWall(matterId: string, email: string, reason?: string | null): Promise<{ matter_id: string; walls: MatterWall[] }>;
+  removeMatterWall(matterId: string, userId: string): Promise<{ matter_id: string; walls: MatterWall[] }>;
   deleteMatter(matterId: string): Promise<{ status: string; id: string }>;
   addMatterMember(matterId: string, email: string): Promise<MatterDetail>;
   removeMatterMember(matterId: string, userId: string): Promise<MatterDetail>;

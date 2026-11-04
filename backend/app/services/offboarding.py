@@ -84,9 +84,10 @@ async def owned_work(session: AsyncSession, user_id: str) -> OwnedWork:
     )
 
 
-async def transfer_documents(from_user: str, to_user: str) -> int:
-    """Re-own every document of ``from_user``: index tags first, then the
-    encrypted file, then the registry row — each document all-or-nothing.
+async def transfer_documents(from_user: str, to_user: str, matter_id: str | None = None) -> int:
+    """Re-own every document of ``from_user`` (or only those filed under
+    ``matter_id``): index tags first, then the encrypted file, then the
+    registry row — each document all-or-nothing.
 
     Raises TransferError on the first document whose tags cannot be
     rewritten; the ones before it stay transferred, that one stays with the
@@ -97,7 +98,11 @@ async def transfer_documents(from_user: str, to_user: str) -> int:
 
     vector_db = get_vector_db()
     moved = 0
-    docs = [d for d in document_service.documents.values() if d.user_id == from_user]
+    docs = [
+        d
+        for d in document_service.documents.values()
+        if d.user_id == from_user and (matter_id is None or d.matter_id == matter_id)
+    ]
     try:
         for doc in docs:
             if vector_db is not None and not await vector_db.update_document_owner(doc.id, to_user):

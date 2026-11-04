@@ -110,6 +110,10 @@
   color: var(--red-700);
 }
 
+/* Ethical walls (admins only, under Members) */
+.wallSection { margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--gray-200); }
+.wallTitle { font-size: 13px; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; color: var(--red-700); margin-bottom: 4px; }
+
 /* Governance: legal hold and retention (owner only) */
 .governance {
   margin: 14px 0 6px;

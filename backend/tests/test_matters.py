@@ -13,7 +13,7 @@ os.environ.setdefault("DEBUG", "true")
 import pytest
 import pytest_asyncio
 from app.models.base import Base
-from app.models.matters import Matter, MatterMember  # noqa: F401  (register metadata)
+from app.models.matters import Matter, MatterMember, MatterWall  # noqa: F401  (register metadata)
 from app.services import matters as svc
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -26,7 +26,7 @@ async def session():
         # by default, so we don't need the full schema for these unit tests).
         await conn.run_sync(
             Base.metadata.create_all,
-            tables=[Matter.__table__, MatterMember.__table__],
+            tables=[Matter.__table__, MatterMember.__table__, MatterWall.__table__],
         )
     maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     async with maker() as s:

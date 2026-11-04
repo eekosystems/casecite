@@ -32,10 +32,16 @@ function MatterWorkspaceView() {
     workspace, workspaceLoading, workspaceError, tab, setTab,
     documents, chats, analyses, activity, tabLoading,
     loadWorkspace, renameMatter, addMember, removeMember, transferOwnership, deleteMatter,
-    setLegalHold, setRetention,
+    setLegalHold, setRetention, walls, loadWalls, addWall, removeWall,
     moveDocumentsHere, movableDocuments, activeMatterId, setActiveMatter, init,
   } = useMattersStore();
   const currentUserId = useAuthStore((st) => st.user?.id ?? null);
+  const isAdmin = useAuthStore((st) => (st.user?.roles ?? []).includes('admin') || st.user?.role === 'admin');
+
+  // Ethical walls are admin-only; load them when the Members tab is open.
+  useEffect(() => {
+    if (isAdmin && tab === 'members' && workspace && !workspace.is_personal) loadWalls();
+  }, [isAdmin, tab, workspace, loadWalls]);
   const ragDocs = useRagDocsStore((st) => st.ragDocs);
   const ragInit = useRagDocsStore((st) => st.init);
   const openAnalysis = useContractsStore((st) => st.openAnalysis);
@@ -235,6 +241,10 @@ function MatterWorkspaceView() {
               onAdd={addMember}
               onRemove={removeMember}
               onTransfer={transferOwnership}
+              isAdmin={isAdmin}
+              walls={walls}
+              onAddWall={addWall}
+              onRemoveWall={removeWall}
               styles={s}
             />
           )}
