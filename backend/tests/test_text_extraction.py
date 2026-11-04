@@ -472,3 +472,85 @@ class TestLegacyDoc:
         document.save(buf)
         result = service.extract(file_content=buf.getvalue(), filename="letter.doc")
         assert "wrong extension" in result.text
+
+
+class TestOcrByDefault:
+    """Scanned PDFs are OCR'd with the bundled rasterizer; when they cannot
+    be, the document says so in a field, not only in prose."""
+
+    @staticmethod
+    def _image_only_pdf() -> bytes:
+        import io
+
+        from PIL import Image, ImageDraw
+
+        page = Image.new("RGB", (850, 1100), "white")
+        ImageDraw.Draw(page).text(
+            (80, 80), "INDEMNIFICATION. Vendor shall indemnify.", fill="black"
+        )
+        buf = io.BytesIO()
+        page.save(buf, format="PDF")
+        return buf.getvalue()
+
+    def test_status_names_what_is_available(self):
+        from app.services.text_extraction import OCR_STATUS
+
+        assert set(OCR_STATUS) == {"available", "rasterizer", "tesseract", "reason"}
+        if OCR_STATUS["available"]:
+            assert OCR_STATUS["rasterizer"] in ("pypdfium2", "pymupdf")
+            assert OCR_STATUS["tesseract"]
+        else:
+            assert OCR_STATUS["reason"]
+
+    def test_pypdfium2_renders_a_scanned_page_for_tesseract(self):
+        pytest.importorskip("pypdfium2")
+        from app.services import text_extraction as te
+
+        seen = {}
+
+        def fake_tesseract(img):
+            seen["size"] = img.size
+            seen["mode"] = img.mode
+            return "INDEMNIFICATION. Vendor shall indemnify."
+
+        with (
+            patch.object(te, "OCR_AVAILABLE", True),
+            patch.object(te, "fitz", None),
+            patch.object(te.pytesseract, "image_to_string", side_effect=fake_tesseract),
+        ):
+            session = te._OcrSession(self._image_only_pdf())
+            text = session.improve(0, "")
+            session.close()
+        assert "indemnify" in text
+        assert session.used is True
+        # Rendered at 300 DPI from a Letter-sized page, as RGB.
+        assert seen["mode"] == "RGB"
+        assert seen["size"][0] > 2000 and seen["size"][1] > seen["size"][0]
+
+    def test_a_page_past_the_end_yields_nothing(self):
+        pytest.importorskip("pypdfium2")
+        from app.services import text_extraction as te
+
+        with patch.object(te, "OCR_AVAILABLE", True), patch.object(te, "fitz", None):
+            session = te._OcrSession(self._image_only_pdf())
+            assert session.improve(5, "kept") == "kept"
+            session.close()
+
+    def test_image_only_pdf_without_ocr_is_marked_needs_ocr(self, service):
+        with (
+            patch("app.services.text_extraction.OCR_AVAILABLE", False),
+            patch.object(service, "_extract_pdf", return_value=ExtractionResult(page_count=2)),
+        ):
+            result = service.extract(file_content=b"%PDF-1.7", filename="scan.pdf")
+        assert result.needs_ocr is True
+        assert "OCR is not enabled on this server (" in result.error
+
+    def test_a_text_pdf_is_never_marked_needs_ocr(self, service):
+        with (
+            patch("app.services.text_extraction.OCR_AVAILABLE", False),
+            patch.object(
+                service, "_extract_pdf", return_value=ExtractionResult(text="Hello", page_count=1)
+            ),
+        ):
+            result = service.extract(file_content=b"%PDF-1.7", filename="text.pdf")
+        assert result.needs_ocr is False and result.error == ""

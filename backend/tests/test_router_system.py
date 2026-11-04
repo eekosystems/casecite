@@ -264,6 +264,12 @@ class TestSystemRouterProduction:
             assert resp.json()["status"] == "degraded"
             assert client.get("/ready").status_code == 503
 
+    def test_health_reports_ocr_availability_to_admin(self, client, auth_headers):
+        resp = client.get("/health", headers=auth_headers)
+        ocr = resp.json()["components"]["ocr"]
+        assert set(ocr) >= {"available", "rasterizer", "tesseract", "reason"}
+        assert isinstance(ocr["available"], bool)
+
     def test_health_shows_components_to_admin(self, client, auth_headers):
         resp = client.get("/health", headers=auth_headers)
         assert resp.status_code == 200

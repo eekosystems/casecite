@@ -55,20 +55,67 @@ try:
 except ImportError:
     PYPDF_AVAILABLE = False
 
-# Optional: OCR support for scanned PDFs
+# OCR for scanned PDFs: a rasterizer turns a page into an image, Tesseract
+# reads it. pypdfium2 (Apache-2.0/BSD, bundled) is the default rasterizer;
+# PyMuPDF (AGPL, never bundled) is used instead when an operator has installed
+# it. The Docker image ships Tesseract with the English pack.
+pdfium = None
+fitz = None
 try:
-    import fitz  # PyMuPDF
+    import pypdfium2 as pdfium  # noqa: F401
+except ImportError:
+    try:
+        import fitz  # PyMuPDF  # noqa: F401
+    except ImportError:
+        pass
+try:
     import pytesseract
     from PIL import Image
-
-    OCR_AVAILABLE = True
 except ImportError:
-    OCR_AVAILABLE = False
+    pytesseract = None  # type: ignore[assignment]
+    Image = None  # type: ignore[assignment]
+
+
+def _probe_ocr() -> dict:
+    """What OCR can do on this server, in one place: for the startup log,
+    /health and the message a user sees when a scanned PDF yields no text."""
+    rasterizer = "pypdfium2" if pdfium is not None else ("pymupdf" if fitz is not None else None)
+    status: dict = {
+        "available": False,
+        "rasterizer": rasterizer,
+        "tesseract": None,
+        "reason": None,
+    }
+    if rasterizer is None:
+        status["reason"] = "no PDF rasterizer is installed (pip install pypdfium2)"
+        return status
+    if pytesseract is None:
+        status["reason"] = "pytesseract is not installed"
+        return status
+    try:
+        status["tesseract"] = str(pytesseract.get_tesseract_version())
+    except Exception as e:  # the binary is missing or broken
+        status["reason"] = (
+            "the Tesseract binary is not installed or not on PATH "
+            f"(apt-get install tesseract-ocr tesseract-ocr-eng): {type(e).__name__}"
+        )
+        return status
+    status["available"] = True
+    return status
+
+
+OCR_STATUS = _probe_ocr()
+OCR_AVAILABLE = bool(OCR_STATUS["available"])
+if OCR_AVAILABLE:
     logger.info(
-        "OCR disabled: PyMuPDF and/or pytesseract not installed — scanned-PDF "
-        "pages will be indexed without OCR. Install PyMuPDF to enable it "
-        "(`pip install PyMuPDF`); it is AGPL-licensed and therefore not "
-        "bundled with this Apache-2.0-licensed product."
+        "OCR enabled for scanned PDFs: %s + Tesseract %s",
+        OCR_STATUS["rasterizer"],
+        OCR_STATUS["tesseract"],
+    )
+else:
+    logger.warning(
+        "OCR disabled: %s. Scanned (image-only) PDFs will not be searchable.",
+        OCR_STATUS["reason"],
     )
 
 # DOCX support
@@ -133,6 +180,9 @@ class ExtractionResult:
     error: str = ""
     warnings: list[str] = field(default_factory=list)
     truncated: bool = False
+    # True for a PDF with no text layer on a server where OCR is unavailable:
+    # the document is a scan that needs OCR to become searchable.
+    needs_ocr: bool = False
     # Where each page begins in ``text``: [(char_offset, page_number), ...] in
     # ascending order (PDFs only). Lets chunks and citations name their page.
     page_starts: list[tuple[int, int]] = field(default_factory=list)
@@ -232,6 +282,8 @@ class TextExtractionService:
 
         if not result.text.strip() and not result.error:
             result.error = self._empty_reason(fmt)
+            if fmt == "pdf" and not OCR_AVAILABLE:
+                result.needs_ocr = True
         result.char_count = len(result.text)
         result.word_count = len(result.text.split()) if result.text.strip() else 0
         return result
@@ -261,8 +313,9 @@ class TextExtractionService:
             if not OCR_AVAILABLE:
                 return (
                     "No text could be extracted. This looks like a scanned (image-only) "
-                    "PDF, and OCR is not enabled on this server. Upload a text-searchable "
-                    "PDF, or ask your administrator to enable OCR."
+                    "PDF, and OCR is not enabled on this server "
+                    f"({OCR_STATUS.get('reason') or 'OCR unavailable'}). Upload a "
+                    "text-searchable PDF, or ask your administrator to enable OCR."
                 )
             return (
                 "No text could be extracted, even with OCR. The pages may be blank or unreadable."
@@ -1135,23 +1188,44 @@ class _OcrSession:
             return ocr_text
         return page_text
 
-    def _ocr_page(self, page_index: int) -> str:
-        try:
+    def _render(self, page_index: int):
+        """The page as a PIL image at up to 300 DPI, or None past the end."""
+        scale = 300 / 72  # 300 DPI
+        if pdfium is not None:
             if self._doc is None:
-                self._doc = fitz.open(stream=self._content, filetype="pdf")
+                self._doc = pdfium.PdfDocument(self._content)
             if page_index >= len(self._doc):
-                return ""
+                return None
             page = self._doc[page_index]
-            scale = 300 / 72  # 300 DPI
-            longest = max(page.rect.width, page.rect.height) * scale
+            width, height = page.get_size()
+            longest = max(width, height) * scale
             if longest > _MAX_OCR_PIXELS:
                 scale *= _MAX_OCR_PIXELS / longest
-            pix = page.get_pixmap(matrix=fitz.Matrix(scale, scale))
-            img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+            bitmap = page.render(scale=scale)
+            try:
+                return bitmap.to_pil().convert("RGB")
+            finally:
+                page.close()
+        if self._doc is None:
+            self._doc = fitz.open(stream=self._content, filetype="pdf")
+        if page_index >= len(self._doc):
+            return None
+        page = self._doc[page_index]
+        longest = max(page.rect.width, page.rect.height) * scale
+        if longest > _MAX_OCR_PIXELS:
+            scale *= _MAX_OCR_PIXELS / longest
+        pix = page.get_pixmap(matrix=fitz.Matrix(scale, scale))
+        return Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+
+    def _ocr_page(self, page_index: int) -> str:
+        try:
+            img = self._render(page_index)
+            if img is None:
+                return ""
             text = pytesseract.image_to_string(img)
             logger.debug(f"[OCR] Page {page_index + 1}: {len(text.strip())} chars")
             return text.strip()
-        except Exception as e:  # PyMuPDF/tesseract errors must not fail the document
+        except Exception as e:  # rasterizer/tesseract errors must not fail the document
             logger.error(f"[OCR] Failed on page {page_index + 1}: {type(e).__name__}: {e}")
             return ""
 

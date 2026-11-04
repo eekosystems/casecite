@@ -82,13 +82,14 @@ aiosqlite==0.20.0
 # Email
 sendgrid==6.11.0
 
-# OCR page rasterization (optional, NOT installed by default): PyMuPDF renders
-# scanned PDF pages to images for pytesseract. PyMuPDF is AGPL-3.0-licensed,
-# which cannot be bundled inside this Apache-2.0 product — install it
-# yourself to enable OCR of scanned PDFs:  pip install PyMuPDF
-# app/services/text_extraction.py degrades gracefully (no OCR) when absent.
-
-# OCR (optional)
+# OCR of scanned PDFs, on by default: pypdfium2 (Apache-2.0/BSD-3, bundles
+# PDFium) renders a page to an image and pytesseract reads it with the
+# Tesseract binary the Docker image installs (tesseract-ocr + the English
+# pack). PyMuPDF renders too but is AGPL-3.0-licensed and so is never bundled
+# with this Apache-2.0 product; if an operator installs it, it is used
+# instead. app/services/text_extraction.py reports what is available
+# (startup log, /health "ocr") and degrades gracefully without either.
+pypdfium2==5.11.0
 pytesseract==0.3.10
 # 12.3.0 clears PYSEC-2026-165/2249..2257 + CVE-2026-42310
 Pillow==13.0.0

@@ -194,6 +194,24 @@ Each add-in sign-in appears in the web app under Settings → Security →
 Sessions as "Word add-in" and can be ended there; "log out everywhere" and an
 admin force sign-out end it too.
 
+## Scanned PDFs (OCR)
+
+Image-only PDFs — scans of filings, signed agreements, historical records —
+have no text layer. The Docker image OCRs them by default: `pypdfium2`
+renders each sparse page and Tesseract (installed in the image with the
+English pack) reads it, up to `EXTRACTION_MAX_OCR_PAGES` pages per document.
+`/health` (admin view) reports `ocr.available`, the rasterizer and the
+Tesseract version, and the startup log says the same. When OCR is
+unavailable, a scanned upload is listed as failed with the reason and the
+document carries `needs_ocr`, so the file is never silently indexed as empty.
+
+- Other languages: add the pack to the image (`tesseract-ocr-deu`, ...) or
+  install it on the host for a bare-metal run.
+- Bare metal: `apt-get install tesseract-ocr tesseract-ocr-eng`; the Python
+  side (`pypdfium2`, `pytesseract`) is in `requirements.txt`.
+- PyMuPDF is AGPL and therefore not bundled; if you install it yourself it is
+  used as the rasterizer instead of pypdfium2.
+
 ## Health Checks
 
 All deployment modes expose these endpoints:

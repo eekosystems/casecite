@@ -2669,7 +2669,9 @@ pypdfium2==5.11.0 \
     --hash=sha256:d3b698e7b51bdf2d633cc834395677319e1d66757896b30c632dfac7d7236c81 \
     --hash=sha256:e7a60197c5d18b0ec77a695e4a1082f89f323c13063cecf4446f1297ed632a36 \
     --hash=sha256:faeda49c171be254b5028b7d17e54306c585374210d3e7ea4962a36774d5b76a
-    # via pdfplumber
+    # via
+    #   -r requirements.txt
+    #   pdfplumber
 pypika==0.51.1 \
     --hash=sha256:77985b4d7ce71b9905255bf12468cf598349e98837c037541cfc240e528aec46 \
     --hash=sha256:c30c7c1048fbf056fd3920c5a2b88b0c29dd190a9b2bee971fd17e4abe4d0ebe

@@ -512,6 +512,10 @@ class DocumentService:
                 # instead of leaving a bare FAILED row.
                 doc.status = DocumentStatus.FAILED
                 doc.metadata["error"] = extraction.error or "No text could be extracted."
+                if extraction.needs_ocr:
+                    # A scan on a server without OCR: say so in a field the UI
+                    # and an operator can act on, not only in prose.
+                    doc.metadata["needs_ocr"] = True
                 try:
                     self._save_index()
                 except RegistryWriteError:

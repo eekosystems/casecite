@@ -99,6 +99,15 @@ async def root() -> dict | FileResponse:
     }
 
 
+def _ocr_status() -> dict:
+    try:
+        from app.services.text_extraction import OCR_STATUS
+
+        return dict(OCR_STATUS)
+    except Exception as e:  # the probe must never break a health response
+        return {"available": False, "reason": type(e).__name__}
+
+
 @router.get("/health", response_model=HealthResponse)
 async def health_check(request: Request) -> dict:
     """
@@ -242,6 +251,8 @@ async def health_check(request: Request) -> dict:
             "llm": {"configured": llm_server_key, "byok": True},
             "role_permissions": policy,
             "row_level_security": rls_info,
+            # Whether scanned (image-only) PDFs become searchable on this server.
+            "ocr": _ocr_status(),
         }
 
     return response
