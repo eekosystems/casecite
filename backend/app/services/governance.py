@@ -135,8 +135,8 @@ async def run_retention(session: AsyncSession) -> dict[str, int]:
     """Apply every matter's retention policy once. Each removal goes through
     the normal delete path (so holds, tracked deletion and the registry rules
     all apply) and is audited. Failures are counted, never raised."""
-    from app.services.audit import AuditEventType, audit_service
     from app.services import chat_sessions as chat_session_service
+    from app.services.audit import AuditEventType, audit_service
     from app.services.documents import DocumentDeletionError, document_service
 
     stats = {"matters": 0, "documents_deleted": 0, "chat_sessions_deleted": 0, "failed": 0}
