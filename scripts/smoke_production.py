@@ -33,6 +33,7 @@ API = "/api/v1"
 STARTUP_TIMEOUT_SECONDS = 180
 ADMIN_EMAIL = "smoke-admin@example.com"
 ADMIN_PASSWORD = "Smoke-Test-Passw0rd!"  # nosec B105 - throwaway account on a throwaway database
+SMOKE_DOCUMENT = "smoke-engagement-letter.txt"
 
 
 class SmokeFailure(Exception):
@@ -138,6 +139,27 @@ def first_boot(base_url: str) -> None:
         auth = bearer(registered["access_token"])
 
         expect(client.get(f"{API}/auth/me", headers=auth), 200, "GET auth/me")
+        # A document in the registry: the second boot must still list it (the
+        # registry lives in the database since migration 024). With the CI
+        # dummy provider key indexing fails, which is fine — the row is what
+        # must survive, and a failed index is reported, never hidden.
+        uploaded = expect(
+            client.post(
+                f"{API}/documents",
+                files={
+                    "file": (
+                        SMOKE_DOCUMENT,
+                        b"Engagement letter. Fees are due monthly.",
+                        "text/plain",
+                    )
+                },
+                headers={**auth, "X-CSRF-Token": csrf},
+            ),
+            200,
+            "upload a document",
+        ).json()
+        if uploaded.get("filename") != SMOKE_DOCUMENT:
+            raise SmokeFailure(f"upload answered without the document: {uploaded}")
         health = expect(client.get("/health", headers=auth), 200, "GET /health as admin").json()
         if not health.get("components"):
             raise SmokeFailure("GET /health as admin: no component details returned")
@@ -159,6 +181,18 @@ def second_boot(base_url: str) -> None:
             200,
             "login after restart",
         ).json()["access_token"]
+        listed = expect(
+            client.get(f"{API}/documents", headers=bearer(token)),
+            200,
+            "GET documents after restart",
+        ).json()
+        names = [d.get("filename") for d in listed.get("documents", [])]
+        if SMOKE_DOCUMENT not in names:
+            raise SmokeFailure(
+                f"the document uploaded before the restart is gone: {names} — the registry "
+                "did not survive the restart"
+            )
+        print(f"  ok  document registry survived the restart ({SMOKE_DOCUMENT} listed)")
         verdict = expect(
             client.get(f"{API}/admin/audit/verify", headers=bearer(token)),
             200,

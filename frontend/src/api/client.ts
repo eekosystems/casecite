@@ -3,9 +3,12 @@ import logger from '../utils/logger';
 import type { ApiClient, RequestOptions } from './types';
 
 // ==================== API CLIENT ====================
-export const API_BASE_URL = import.meta.env.DEV
+// VITE_API_BASE_URL points a dev build at a backend on another port (the
+// journey tests run one beside the mock provider); otherwise the dev default.
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL
+  || (import.meta.env.DEV
   ? 'http://localhost:8000/api/v1'
-  : `${window.location.origin}/api/v1`;
+  : `${window.location.origin}/api/v1`);
 
 // Endpoints where a 401 means "wrong credentials", not "expired session":
 // no refresh attempt, and the server's own message is surfaced.

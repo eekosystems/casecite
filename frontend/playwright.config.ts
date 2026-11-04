@@ -5,6 +5,11 @@ import { defineConfig, devices } from '@playwright/test';
 const PORT = process.env.PLAYWRIGHT_PORT || '3000';
 const BASE_URL = `http://localhost:${PORT}`;
 
+// The journey suite (e2e/journeys) drives the real backend and the mock
+// provider instead of route mocks; it runs only when JOURNEYS=1 and the
+// backend is up (see e2e/journeys/README.md and the CI job).
+const JOURNEYS = process.env.JOURNEYS === '1';
+
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
@@ -19,16 +24,26 @@ export default defineConfig({
     screenshot: 'only-on-failure',
   },
 
-  projects: [
-    {
-      name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
-    },
-    {
-      name: 'firefox',
-      use: { ...devices['Desktop Firefox'] },
-    },
-  ],
+  projects: JOURNEYS
+    ? [
+        {
+          name: 'journeys',
+          testMatch: /journeys\/.*\.spec\.ts$/,
+          use: { ...devices['Desktop Chrome'] },
+        },
+      ]
+    : [
+        {
+          name: 'chromium',
+          testIgnore: /journeys\//,
+          use: { ...devices['Desktop Chrome'] },
+        },
+        {
+          name: 'firefox',
+          testIgnore: /journeys\//,
+          use: { ...devices['Desktop Firefox'] },
+        },
+      ],
 
   webServer: {
     command: `npm run dev -- --port ${PORT} --strictPort`,
