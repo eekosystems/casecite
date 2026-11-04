@@ -78,9 +78,11 @@ network, disk encryption, backups and the firm's own policies. No SOC 2, ISO
   tables, workflows, deep research runs, workspace sessions and their child
   rows) admit a row only when the caller owns it or belongs to its matter
   and is not walled off. Endpoints gated by an `admin.*` permission lift the
-  fence; unscoped sessions (background jobs, startup, migrations) see
-  everything. A query that forgets its user filter still cannot return
-  another user's rows. PostgreSQL exempts superusers from RLS, so in
+  fence, and so does system work that must see every matter (the retention
+  task, data migrations), each with a logged reason; a session that merely
+  has no user set sees nothing, so a code path that forgets to say who is
+  asking gets no rows rather than all of them. A query that forgets its
+  user filter still cannot return another user's rows. PostgreSQL exempts superusers from RLS, so in
   production the app refuses to start unless its database role has the
   fence in force. SQLite has no RLS.
 - Ethical walls: an admin can wall a user off a matter

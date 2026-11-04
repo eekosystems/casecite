@@ -94,13 +94,17 @@ async def _retention_loop() -> None:
     Every removal goes through the normal delete path (holds, tracked
     deletion, registry rules) and is audited as retention_expired.
     """
+    from app import rls
     from app.database import get_db_context
     from app.services.governance import run_retention
 
     while True:
         try:
-            async with get_db_context() as db:
-                result = await run_retention(db)
+            # No request, so no user: the task removes expired work from every
+            # matter and says so (the only way past the fence, app/rls.py).
+            with rls.bypassed("matter retention task"):
+                async with get_db_context() as db:
+                    result = await run_retention(db)
             if result.get("matters"):
                 logger.info("Matter retention run: %s", result)
         except asyncio.CancelledError:

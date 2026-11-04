@@ -1,12 +1,13 @@
 """Row-level security is a real second fence (PostgreSQL only).
 
 Runs only when the suite is pointed at PostgreSQL (CI's Postgres job; locally
-``DATABASE_URL=postgresql+asyncpg://...``). Applies the same DDL migration
-023 installs, then — connected as a non-superuser role, because PostgreSQL
-superusers bypass row-level security entirely — proves that a deliberately
-unscoped query returns only the caller's rows, that matter membership grants
-and an ethical wall revokes, that an admin bypass and an unscoped session see
-everything, and that a row cannot be written under another user's id.
+``DATABASE_URL=postgresql+asyncpg://...``). Applies the same DDL migrations
+024 and 027 install, then — connected as a non-superuser role, because
+PostgreSQL superusers bypass row-level security entirely — proves that a
+deliberately unscoped query returns only the caller's rows, that matter
+membership grants and an ethical wall revokes, that a session with no user
+sees (and can write) nothing while an explicit bypass sees everything, and
+that a row cannot be written under another user's id.
 """
 
 import uuid
@@ -112,7 +113,7 @@ async def rows():
         "u2_private": f"c3-{tag}",
         "workflow": f"w-{tag}",
     }
-    with rls.scoped(None):
+    with rls.bypassed("test fixture: seed rows"):
         async with AsyncSessionLocal() as db:
             db.add_all(
                 [
@@ -160,7 +161,7 @@ async def rows():
             )
             await db.commit()
     yield ids
-    with rls.scoped(None):
+    with rls.bypassed("test fixture: remove rows"):
         async with AsyncSessionLocal() as db:
             like = {"p": f"%-{tag}"}
             await db.execute(text("DELETE FROM chat_messages WHERE session_id LIKE :p"), like)
@@ -208,7 +209,7 @@ async def test_child_rows_follow_their_parent(rows, scoped_sessions):
 
 
 async def test_an_ethical_wall_revokes_what_membership_granted(rows, scoped_sessions):
-    with rls.scoped(None):
+    with rls.bypassed("test: place a wall"):
         async with AsyncSessionLocal() as db:
             db.add(
                 MatterWall(
@@ -226,12 +227,60 @@ async def test_an_ethical_wall_revokes_what_membership_granted(rows, scoped_sess
             assert found.first() is None
 
 
-async def test_unscoped_and_bypassed_sessions_see_everything(rows, scoped_sessions):
-    everything = {rows["u1_private"], rows["u1_matter"], rows["u2_private"]}
+async def test_a_session_with_no_user_sees_nothing(rows, scoped_sessions):
+    """Forgetting to say who is asking is not a way to see everything: a
+    transaction with neither a user nor a bypass matches no policy."""
+    from sqlalchemy.exc import DBAPIError
+
     with rls.scoped(None):
+        assert await _chat_ids(scoped_sessions, rows) == set()
+        async with scoped_sessions() as db:
+            found = await db.execute(select(Workflow.id).where(Workflow.id == rows["workflow"]))
+            assert found.first() is None
+            result = await db.execute(
+                select(ChatMessageDB.id).where(ChatMessageDB.session_id == rows["u1_matter"])
+            )
+            assert result.scalars().all() == []
+        # Nor a way to write: WITH CHECK refuses the row too.
+        async with scoped_sessions() as db:
+            db.add(
+                ChatSessionDB(
+                    id=f"nouser-{rows['matter']}",
+                    user_id=rows["u1"],
+                    matter_id=None,
+                    title="no user",
+                    created_at=_now(),
+                    updated_at=_now(),
+                )
+            )
+            with pytest.raises(DBAPIError):
+                await db.commit()
+            await db.rollback()
+
+
+async def test_an_explicit_bypass_sees_everything(rows, scoped_sessions):
+    everything = {rows["u1_private"], rows["u1_matter"], rows["u2_private"]}
+    with rls.scoped(rows["u3"]), rls.bypassed("test: admin oversight"):
         assert await _chat_ids(scoped_sessions, rows) == everything
-    with rls.scoped(rows["u3"]), rls.bypassed():
+    with rls.scoped(None), rls.bypassed("test: system task"):
         assert await _chat_ids(scoped_sessions, rows) == everything
+
+
+async def test_the_migration_session_setting_lifts_the_fence(rows, scoped_sessions):
+    """Alembic sets ``app.rls_bypass`` for its session (migrations/env.py);
+    a data migration run as the app role then sees the content tables."""
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    engine = create_async_engine(_scoped_url())
+    try:
+        async with engine.connect() as conn:
+            before = (await conn.execute(select(ChatSessionDB.id))).scalars().all()
+            assert rows["u2_private"] not in before
+            await conn.execute(text("SET app.rls_bypass = 'on'"))
+            after = (await conn.execute(select(ChatSessionDB.id))).scalars().all()
+            assert rows["u2_private"] in after
+    finally:
+        await engine.dispose()
 
 
 async def test_a_row_cannot_be_written_under_another_users_id(rows, scoped_sessions):
@@ -253,7 +302,7 @@ async def test_a_row_cannot_be_written_under_another_users_id(rows, scoped_sessi
             with pytest.raises(DBAPIError):
                 await db.commit()
             await db.rollback()
-    with rls.scoped(None):
+    with rls.bypassed("test: check nothing was written"):
         async with AsyncSessionLocal() as db:
             found = await db.execute(select(ChatSessionDB.id).where(ChatSessionDB.id == forged))
             assert found.first() is None
@@ -261,8 +310,11 @@ async def test_a_row_cannot_be_written_under_another_users_id(rows, scoped_sessi
 
 async def test_the_scope_does_not_leak_between_transactions(rows, scoped_sessions):
     """SET LOCAL dies with the transaction: a pooled connection used by u1
-    must not keep u1's scope for the next, unscoped, session."""
+    must not keep u1's scope for the next session, and a bypass must not
+    outlive its transaction either."""
     with rls.scoped(rows["u1"]):
         assert rows["u2_private"] not in await _chat_ids(scoped_sessions, rows)
-    with rls.scoped(None):
+    with rls.scoped(rows["u1"]), rls.bypassed("test: one bypassed transaction"):
         assert rows["u2_private"] in await _chat_ids(scoped_sessions, rows)
+    with rls.scoped(rows["u1"]):
+        assert rows["u2_private"] not in await _chat_ids(scoped_sessions, rows)

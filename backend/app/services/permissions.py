@@ -423,7 +423,7 @@ def require_permission(key: str):
             # lift the database row-level security scope for this request.
             from app import rls
 
-            rls.rls_bypass.set(True)
+            rls.grant_bypass(f"{key} endpoint for user {current_user.user_id}")
         return current_user
 
     return Depends(checker)
@@ -453,7 +453,7 @@ def require_any_permission(*keys: str):
         if all(k.startswith("admin.") for k in keys):
             from app import rls
 
-            rls.rls_bypass.set(True)
+            rls.grant_bypass(f"{'/'.join(keys)} endpoint for user {current_user.user_id}")
         return current_user
 
     return Depends(checker)

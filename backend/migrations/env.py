@@ -20,7 +20,7 @@ import sys
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import engine_from_config, pool, text
 
 # Add the backend directory to the path so we can import app modules
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -100,6 +100,16 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
+        if connection.dialect.name == "postgresql":
+            # The content tables carry FORCED row-level security policies that
+            # admit nothing to a session with no user (app/rls.py). A data
+            # migration that backfills those tables runs as the schema owner
+            # with the fence lifted, explicitly, for this session only.
+            connection.execute(text("SET app.rls_bypass = 'on'"))
+            # SQLAlchemy autobegan a transaction for that statement; end it, or
+            # Alembic would run the migrations inside it and never commit them.
+            # SET (not SET LOCAL) outlives the commit.
+            connection.commit()
         context.configure(
             connection=connection,
             target_metadata=target_metadata,

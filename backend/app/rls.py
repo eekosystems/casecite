@@ -14,14 +14,19 @@ user's rows:
   ``SET LOCAL`` dies with the transaction, so pooled connections never leak
   a scope).
 - Migration 024 enables and FORCES row-level security on the content tables
-  and installs policies that allow a row when the session is unscoped (no
-  user: background jobs, startup, migrations), bypassed (admin endpoint),
-  the caller owns it, or the caller is a member — and not walled off — of
-  its matter. Child tables defer to their parent's policy.
+  and installs policies (tightened by migration 027) that allow a row when
+  the session is bypassed, the caller owns it, or the caller is a member —
+  and not walled off — of its matter. Child tables defer to their parent's
+  policy. A transaction with NO user and no bypass sees nothing: forgetting
+  to say who is asking is not a way to see everything.
+- System work that legitimately needs every user's rows (the retention
+  task, Alembic data migrations) says so with :func:`bypassed`, which
+  takes a reason and logs it. Background jobs started by a request inherit
+  that request's user (contextvars are copied into the task).
 
 SQLite (development, the test suite) has no row-level security; the
 listener is not installed there and the policies are not created. The
-PostgreSQL test suite applies ``RLS_DDL`` itself and checks the fence.
+PostgreSQL test suite applies the DDL itself and checks the fence.
 """
 
 from __future__ import annotations
@@ -48,7 +53,11 @@ rls_bypass: contextvars.ContextVar[bool] = contextvars.ContextVar("rls_bypass", 
 
 @contextmanager
 def scoped(user_id: str | None) -> Iterator[None]:
-    """Run a block as ``user_id`` (None = unscoped), restoring the previous scope."""
+    """Run a block as ``user_id``, restoring the previous scope afterwards.
+
+    ``None`` is a session with no user, which the policies admit to nothing;
+    system work that needs every row uses :func:`bypassed` instead.
+    """
     token = request_user_id.set(user_id)
     bypass_token = rls_bypass.set(False)
     try:
@@ -58,10 +67,27 @@ def scoped(user_id: str | None) -> Iterator[None]:
         rls_bypass.reset(bypass_token)
 
 
+def grant_bypass(reason: str) -> None:
+    """Lift the fence for the rest of the current context (an admin-gated
+    request). ``reason`` goes to the log so every lift is accounted for."""
+    if not reason:
+        raise ValueError("an RLS bypass needs a reason")
+    rls_bypass.set(True)
+    logger.info("Row-level security bypass: %s", reason)
+
+
 @contextmanager
-def bypassed() -> Iterator[None]:
-    """Run a block with every user's rows visible (admin and system work)."""
+def bypassed(reason: str) -> Iterator[None]:
+    """Run a block with every user's rows visible, for a stated reason.
+
+    This is the only way system work (the retention task, a data migration)
+    sees rows it does not own; a session that merely has no user sees
+    nothing. The reason is logged so a bypass is never silent.
+    """
+    if not reason:
+        raise ValueError("an RLS bypass needs a reason")
     token = rls_bypass.set(True)
+    logger.info("Row-level security bypass: %s", reason)
     try:
         yield
     finally:
@@ -238,17 +264,19 @@ LANGUAGE sql STABLE AS $$
   SELECT NULLIF(current_setting('app.user_id', true), '')
 $$
 """,
+    # Only an explicit bypass lifts the fence. A session with no user set
+    # (app_rls_user() IS NULL) matches no owner and no membership, so it
+    # sees nothing; before migration 027 it saw everything.
     """
-CREATE OR REPLACE FUNCTION app_rls_unscoped() RETURNS boolean
+CREATE OR REPLACE FUNCTION app_rls_bypassed() RETURNS boolean
 LANGUAGE sql STABLE AS $$
-  SELECT app_rls_user() IS NULL
-      OR current_setting('app.rls_bypass', true) = 'on'
+  SELECT current_setting('app.rls_bypass', true) = 'on'
 $$
 """,
     """
 CREATE OR REPLACE FUNCTION app_rls_visible(owner_id text, matter_id text) RETURNS boolean
 LANGUAGE sql STABLE AS $$
-  SELECT app_rls_unscoped()
+  SELECT app_rls_bypassed()
       OR owner_id = app_rls_user()
       OR (
         matter_id IS NOT NULL
@@ -303,7 +331,8 @@ def rls_disable_statements() -> list[str]:
         ]
     statements += [
         "DROP FUNCTION IF EXISTS app_rls_visible(text, text)",
-        "DROP FUNCTION IF EXISTS app_rls_unscoped()",
+        "DROP FUNCTION IF EXISTS app_rls_bypassed()",
+        "DROP FUNCTION IF EXISTS app_rls_unscoped()",  # before migration 027
         "DROP FUNCTION IF EXISTS app_rls_user()",
     ]
     return statements

@@ -364,9 +364,13 @@ Two more consequences:
 
 - FORCE means even the table owner is subject to the policies, which is the
   point; never run the app as a superuser or a role with `BYPASSRLS`.
-- Ad-hoc SQL run in a session with no `app.user_id` set sees every row
-  (unscoped), exactly as before 023. To look at the data as a particular
-  user, `SET app.user_id = '<id>'` first.
+- Ad-hoc SQL run as the app role in a session with no `app.user_id` set
+  sees **no** rows of the content tables (since migration 027; before it,
+  every row). To look at the data as a particular user,
+  `SET app.user_id = '<id>'` first; to see everything, `SET app.rls_bypass
+  = 'on'` — which is what Alembic does for the migration session, so data
+  migrations can backfill. The superuser is exempt from the policies and
+  sees everything regardless.
 
 ### Database migration
 
