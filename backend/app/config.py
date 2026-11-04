@@ -691,7 +691,11 @@ class Settings(BaseSettings):
 
     # When an audit entry cannot be written to its JSONL file, fail the request
     # that produced it instead of continuing. Off by default: the event is
-    # still logged at CRITICAL and mirrored to the database.
+    # still logged at CRITICAL and mirrored to the database. Privileged and
+    # destructive actions (user administration, settings, key changes,
+    # deletions, exports, holds, walls, membership) fail closed regardless
+    # (app/services/audit.py: PRIVILEGED_EVENT_TYPES); this flag extends the
+    # same rule to every event.
     audit_fail_closed: bool = False
 
     # Audit-log retention: JSONL files older than this are gzip-compressed; files

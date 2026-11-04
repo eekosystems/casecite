@@ -481,8 +481,10 @@ class TestWriteFailure:
             self._failing_open(audit_service_isolated._get_log_file()),
             caplog.at_level("CRITICAL", logger="app.services.audit"),
         ):
+            # An ordinary event: a privileged one (document.delete, user.*)
+            # fails the request instead (tests/test_audit_fail_closed.py).
             entry_id = await audit_service_isolated.log_event(
-                AuditEventType.DOCUMENT_DELETE, user_id="u1"
+                AuditEventType.DOCUMENT_VIEW, user_id="u1"
             )
         assert entry_id
         assert any("AUDIT FILE WRITE FAILED" in r.getMessage() for r in caplog.records)

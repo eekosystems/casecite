@@ -176,9 +176,13 @@ Per client IP, resolved through `TRUSTED_PROXIES`:
   exports, matter membership, connectors, settings and security events are
   recorded as JSONL, one file per UTC day. Admins can read, verify and export
   the log (Settings → Audit Log; `GET /api/v1/admin/audit/export`).
-- By default a failed audit write is logged at CRITICAL and the request
-  proceeds; `AUDIT_FAIL_CLOSED=true` fails the request instead, so nothing
-  happens without an audit record.
+- Privileged and destructive actions — user administration, settings and
+  key changes, document and matter deletion, exports, legal holds, ethical
+  walls, matter membership — fail (503) without their audit record: the
+  endpoints that gate them probe the log for writability before anything
+  happens, and the write itself fails the request if it cannot complete.
+  For every other event a failed write is logged at CRITICAL and the
+  request proceeds; `AUDIT_FAIL_CLOSED=true` fails those requests too.
 - Each entry carries an HMAC-SHA256 hash (keyed with `AUDIT_HMAC_KEY`) chained
   to the previous entry. The chain is verified at startup and on demand
   (`GET /api/v1/admin/audit/verify`); in production the app refuses to start if

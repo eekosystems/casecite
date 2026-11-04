@@ -44,6 +44,7 @@ from pathlib import Path
 from typing import Any
 
 from app.config import settings
+from app.exceptions import ServiceUnavailableError
 
 # audit_YYYY-MM-DD.jsonl, or the same name with .gz once archived
 _LOG_FILE_RE = re.compile(r"^audit_(\d{4}-\d{2}-\d{2})\.jsonl(\.gz)?$")
@@ -55,7 +56,7 @@ _STARTUP_VERIFY_ENTRIES = 1000
 _FAILED_LOGIN_MAX_KEYS = 10_000
 
 
-class AuditWriteError(RuntimeError):
+class AuditWriteError(ServiceUnavailableError):
     """The audit entry could not be written and AUDIT_FAIL_CLOSED is set."""
 
 
@@ -121,6 +122,51 @@ class AuditEventType(str, Enum):
     DATA_ACCESS = "compliance.data.access"
     DATA_MODIFICATION = "compliance.data.modification"
     DATA_DELETION = "compliance.data.deletion"
+
+
+# Events that record a privileged or destructive action. Their audit entry is
+# part of the action: when it cannot be written the action fails, regardless
+# of AUDIT_FAIL_CLOSED (which extends the same rule to every event). The
+# compliance.data.modification type is shared by ordinary edits, so for it the
+# recorded ``action`` decides.
+PRIVILEGED_EVENT_TYPES: frozenset[str] = frozenset(
+    {
+        "document.delete",
+        "settings.change",
+        "user.create",
+        "user.update",
+        "user.delete",
+        "user.role.change",
+        "user.deactivate",
+        "apikey.created",
+        "apikey.deleted",
+        "auth.mfa.disabled",
+        "security.data.export",
+        "compliance.data.deletion",
+    }
+)
+PRIVILEGED_ACTIONS: frozenset[str] = frozenset(
+    {
+        "ethical_wall_added",
+        "ethical_wall_removed",
+        "legal_hold_set",
+        "matter_deleted",
+        "matter_member_added",
+        "matter_member_removed",
+        "matter_ownership_transferred",
+        "retention_set",
+        "retention_expired",
+    }
+)
+
+
+def is_privileged(event_type: str, details: dict[str, Any] | None) -> bool:
+    """Whether an event's audit record is a precondition of its action."""
+    value = getattr(event_type, "value", event_type)  # the enum or its string
+    if str(value) in PRIVILEGED_EVENT_TYPES:
+        return True
+    action = (details or {}).get("action")
+    return isinstance(action, str) and action in PRIVILEGED_ACTIONS
 
 
 def format_audit_timestamp(moment: datetime) -> str:
@@ -581,6 +627,32 @@ class AuditService:
         except (OSError, EOFError, KeyError, ValueError) as e:
             logger.warning(f"Could not verify audit chain on startup: {e}")
 
+    async def assert_writable(self) -> None:
+        """Refuse a privileged action before it starts if its record could not be written.
+
+        Most endpoints audit after they act, so a write that fails then has
+        nothing left to refuse. This probe opens today's log file for append
+        under the chain locks, exactly as :meth:`log` will, and raises
+        :class:`AuditWriteError` (a 503) if that cannot be done. The
+        permission dependencies call it for the permissions that gate
+        privileged actions (app/services/permissions.py).
+        """
+        try:
+            with AuditLog._chain_lock, _chain_file_lock(self.log_dir):
+                log_file = self._get_log_file()
+                log_file.parent.mkdir(parents=True, exist_ok=True)
+                with open(log_file, "a", encoding="utf-8"):
+                    pass
+        except OSError as exc:
+            logging.getLogger(__name__).critical(
+                "AUDIT LOG NOT WRITABLE — refusing a privileged action: %s", exc
+            )
+            raise AuditWriteError(
+                "The audit log is not writable, so this action was refused before it "
+                "started. The audit log directory is full or not writable; check the "
+                "data volume."
+            ) from exc
+
     def _get_log_file(self) -> Path:
         """Get current log file, rotating daily."""
         today = datetime.now(UTC).strftime("%Y-%m-%d")
@@ -675,9 +747,16 @@ class AuditService:
         # failed file write this row is the only trace of the event.
         await self._persist_to_db(entry)
 
-        if not written and settings.audit_fail_closed:
+        if not written and (
+            settings.audit_fail_closed or is_privileged(entry.event_type, entry.action_details)
+        ):
+            # The entry is logged at CRITICAL above and mirrored to the database
+            # when that works; the request that produced it still fails, so a
+            # privileged action never completes without its record.
             raise AuditWriteError(
-                f"Audit entry {entry.id} could not be written and AUDIT_FAIL_CLOSED is set"
+                "The audit record for this action could not be written, so the action "
+                "was refused. The audit log directory is full or not writable; "
+                f"check the data volume (entry {entry.id})."
             )
 
         # Log security events with higher priority

@@ -122,6 +122,14 @@ PERMISSIONS: list[dict[str, str]] = [
 ]
 
 _ALL_KEYS = {p["key"] for p in PERMISSIONS}
+
+# Permissions that gate privileged or destructive actions. An endpoint behind
+# one of these is refused (503) while the audit log cannot be written, before
+# anything happens, since its audit record is part of the action
+# (app/services/audit.py: PRIVILEGED_EVENT_TYPES, assert_writable).
+PRIVILEGED_PERMISSIONS: frozenset[str] = frozenset(
+    {"admin.users", "admin.settings", "documents.delete", "matters.manage", "connectors.manage"}
+)
 _NON_ADMIN_KEYS = {k for k in _ALL_KEYS if not k.startswith("admin.")}
 
 DEFAULT_ROLE_PERMISSIONS: dict[str, set[str]] = {
@@ -418,6 +426,10 @@ def require_permission(key: str):
                 detail=f"Your role does not include permission: {_permission_label(key)}. "
                 "Ask an administrator to grant it in Settings > Users.",
             )
+        if key in PRIVILEGED_PERMISSIONS:
+            from app.services.audit import audit_service
+
+            await audit_service.assert_writable()
         if key.startswith("admin."):
             # Admin oversight, export and deletion read every user's rows:
             # lift the database row-level security scope for this request.
@@ -450,6 +462,10 @@ def require_any_permission(*keys: str):
                 detail=f"Your role does not include any of these permissions: {labels}. "
                 "Ask an administrator to grant one in Settings > Users.",
             )
+        if all(k in PRIVILEGED_PERMISSIONS for k in keys):
+            from app.services.audit import audit_service
+
+            await audit_service.assert_writable()
         if all(k.startswith("admin.") for k in keys):
             from app import rls
 
