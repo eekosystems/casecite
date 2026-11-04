@@ -1,5 +1,8 @@
 import { api } from './client';
-import type { ConnectorAuthUrl, ConnectorDataResponse, ConnectorStatusResponse, MessageResponse, SyncStartResult, SyncStatusResult } from './types';
+import type {
+  ConnectorAuthUrl, ConnectorDataResponse, ConnectorFoldersResult, ConnectorStatusResponse, MessageResponse,
+  SyncStartResult, SyncStatusResult,
+} from './types';
 
 Object.assign(api, {
   async getConnectors(): Promise<ConnectorDataResponse> {
@@ -12,6 +15,16 @@ Object.assign(api, {
 
   async disconnectConnector(connectorId: string): Promise<MessageResponse> {
     return api.request(`/connectors/${connectorId}/disconnect`, { method: 'POST' });
+  },
+
+  async listConnectorFolders(
+    connectorId: string, parentId?: string, pageToken?: string,
+  ): Promise<ConnectorFoldersResult> {
+    const params = new URLSearchParams();
+    if (parentId) params.set('parent_id', parentId);
+    if (pageToken) params.set('page_token', pageToken);
+    const query = params.toString();
+    return api.request(`/connectors/${encodeURIComponent(connectorId)}/folders${query ? `?${query}` : ''}`);
   },
 
   async syncConnector(connectorId: string, scope: { folder_id: string } | { sync_all: true }): Promise<SyncStartResult> {

@@ -104,5 +104,8 @@ async def get_all_connector_statuses(include_admin_only: bool = True):
                 status["admin_only"] = True
         if is_experimental(connector_type):
             status["experimental"] = True
+        # Whether a sync can be scoped to one folder (the UI offers a folder
+        # picker) or only ever covers the whole account.
+        status["supports_folder_sync"] = bool(connector.supports_folder_sync)
         statuses.append(status)
     return statuses

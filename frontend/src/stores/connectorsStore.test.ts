@@ -7,6 +7,7 @@ vi.mock('../api', () => ({
     connectConnector: vi.fn(),
     disconnectConnector: vi.fn(),
     syncConnector: vi.fn(),
+    listConnectorFolders: vi.fn(),
     getConnectorStatus: vi.fn(),
     importFromGooglePicker: vi.fn(),
     importFromOneDrivePicker: vi.fn(),
@@ -253,6 +254,29 @@ describe('connectorsStore', () => {
 
     expect(useConnectorsStore.getState().activePickerProvider).toBe('google_drive');
     expect(useConnectorsStore.getState().showPickerModal).toBe(true);
+  });
+
+  it('offers the folder picker for a connector that can sync one folder', async () => {
+    const connector = { id: 'box', name: 'Box', configured: true, connected: true, supportsFolderSync: true } as any;
+    await useConnectorsStore.getState().handleConnectorClick(connector);
+    const manage = useUIStore.getState().confirmModal;
+    expect(manage.title).toBe('Manage Box');
+    expect(manage.confirmText).toBe('Choose folder…');
+
+    useUIStore.getState().handleConfirm();
+    expect(useConnectorsStore.getState().folderPicker?.connector.id).toBe('box');
+    expect(api.syncConnector).not.toHaveBeenCalled();
+  });
+
+  it('syncFolder starts a sync scoped to that folder and closes the picker', async () => {
+    (api.syncConnector as ReturnType<typeof vi.fn>).mockResolvedValue({ status: 'started', sync_id: 's-1' });
+    const connector = { id: 'box', name: 'Box', configured: true, connected: true, supportsFolderSync: true } as any;
+    useConnectorsStore.setState({ folderPicker: { connector }, pollSyncStatus: vi.fn() } as any);
+
+    await useConnectorsStore.getState().syncFolder(connector, 'f-9', 'Clients');
+    expect(api.syncConnector).toHaveBeenCalledWith('box', { folder_id: 'f-9' });
+    expect(useConnectorsStore.getState().folderPicker).toBeNull();
+    expect(useUIStore.getState().toasts.some(t => t.message.includes('Importing "Clients"'))).toBe(true);
   });
 
   it('never starts a whole-account sync without a second, explicit confirmation', async () => {

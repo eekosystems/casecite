@@ -173,6 +173,27 @@
 
 /* Forgot password link */
 
+.ssoBlock { margin-top: 14px; }
+.ssoDivider { display: flex; align-items: center; gap: 10px; color: var(--gray-500); font-size: 12px; margin-bottom: 10px; }
+.ssoDivider::before, .ssoDivider::after { content: ''; flex: 1; border-top: 1px solid var(--gray-200); }
+.ssoBtn {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border: 1px solid var(--gray-300);
+  border-radius: 8px;
+  background: var(--white, #fff);
+  color: var(--gray-800);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ssoBtn:hover { background: var(--gray-50); }
+.ssoBtn:disabled { opacity: 0.6; cursor: default; }
+
 .forgotLink {
   background: none;
   border: none;

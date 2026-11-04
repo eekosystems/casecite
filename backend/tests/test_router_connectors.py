@@ -726,3 +726,96 @@ class TestExperimentalConnectors:
             response = client.get(f"/api/v1/connectors/{provider}/auth", headers=auth_headers)
         assert response.status_code == 400, response.text
         assert "EXPERIMENTAL_CONNECTORS" not in response.json()["detail"]
+
+
+class TestFolderBrowse:
+    """GET /connectors/{type}/folders lists one level of folders for the picker."""
+
+    @staticmethod
+    def _listing():
+        from app.services.connectors.base import FileInfo
+
+        now = datetime.now(UTC)
+        return (
+            [
+                FileInfo(
+                    id="f1",
+                    name="Clients",
+                    mime_type="folder",
+                    size=0,
+                    modified_at=now,
+                    path="/Clients",
+                ),
+                FileInfo(
+                    id="d1", name="MSA.pdf", mime_type="application/pdf", size=10, modified_at=now
+                ),
+                FileInfo(
+                    id="f2",
+                    name="Archive",
+                    mime_type="folder",
+                    size=0,
+                    modified_at=now,
+                    path="/Archive",
+                ),
+            ],
+            "page-2",
+        )
+
+    def test_lists_folders_only_with_paging(self, client, auth_headers):
+        from app.services.connectors.box import BoxConnector
+
+        with (
+            _connected(BoxConnector),
+            patch.object(
+                BoxConnector, "list_files", new=AsyncMock(return_value=self._listing())
+            ) as lf,
+        ):
+            response = client.get("/api/v1/connectors/box/folders", headers=auth_headers)
+            assert response.status_code == 200, response.text
+            body = response.json()
+            assert body["connector"] == "box" and body["parent_id"] is None
+            assert [f["name"] for f in body["folders"]] == ["Clients", "Archive"]
+            assert body["next_page_token"] == "page-2"
+            lf.assert_awaited_once_with(None, None)
+
+            response = client.get(
+                "/api/v1/connectors/box/folders?parent_id=f1&page_token=page-2",
+                headers=auth_headers,
+            )
+            assert response.status_code == 200
+            assert response.json()["parent_id"] == "f1"
+            assert lf.await_args.args == ("f1", "page-2")
+
+    def test_disconnected_and_whole_account_only_connectors_are_refused(self, client, auth_headers):
+        from app.services.connectors.box import BoxConnector
+        from app.services.connectors.clio import ClioConnector
+
+        response = client.get("/api/v1/connectors/box/folders", headers=auth_headers)
+        assert response.status_code == 400
+        assert "not connected" in response.json()["detail"]
+        with _connected(ClioConnector):
+            response = client.get("/api/v1/connectors/clio/folders", headers=auth_headers)
+        assert response.status_code == 400
+        assert "cannot sync a single folder" in response.json()["detail"]
+        assert BoxConnector is not None
+
+    def test_provider_errors_are_a_502(self, client, auth_headers):
+        from app.services.connectors.box import BoxConnector
+
+        request = httpx.Request("GET", "https://api.box.com/2.0/folders/0/items")
+        error = httpx.HTTPStatusError(
+            "forbidden", request=request, response=httpx.Response(403, request=request)
+        )
+        with (
+            _connected(BoxConnector),
+            patch.object(BoxConnector, "list_files", new=AsyncMock(side_effect=error)),
+        ):
+            response = client.get("/api/v1/connectors/box/folders", headers=auth_headers)
+        assert response.status_code == 502
+        assert "HTTP 403" in response.json()["detail"]
+
+    def test_status_says_whether_folder_sync_is_supported(self, client, auth_headers):
+        response = client.get("/api/v1/connectors", headers=auth_headers)
+        by_type = {c["type"]: c for c in response.json()["connectors"]}
+        assert by_type["box"]["supports_folder_sync"] is True
+        assert by_type["clio"]["supports_folder_sync"] is False

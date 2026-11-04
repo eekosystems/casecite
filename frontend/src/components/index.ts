@@ -13,6 +13,7 @@ export { SignupModal } from './modals/SignupModal';
 export { ForgotPasswordModal } from './modals/ForgotPasswordModal';
 export { ChangePasswordModal } from './modals/ChangePasswordModal';
 export { FilePickerModal } from './modals/FilePickerModal';
+export { ConnectorFolderPickerModal } from './modals/ConnectorFolderPickerModal';
 export { StrategyBriefCard } from './shared/StrategyBriefCard';
 export { AiNotice } from './shared/AiNotice';
 export { CaseLawRemovedNotice } from './shared/CaseLawRemovedNotice';

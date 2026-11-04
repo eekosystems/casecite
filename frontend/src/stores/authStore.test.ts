@@ -3,6 +3,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('../api', () => ({
   api: {
     login: vi.fn(),
+    getAzureConfig: vi.fn(),
+    loginWithAzure: vi.fn(),
     verifyMfa: vi.fn(),
     logout: vi.fn().mockResolvedValue(undefined),
     register: vi.fn(),
@@ -24,6 +26,73 @@ import { useMfaStore } from './mfaStore';
 import { api } from '../api';
 
 const user = { id: 'u1', email: 'a@b.c', roles: ['user'] };
+
+const msalLoginPopup = vi.fn();
+vi.mock('@azure/msal-browser', () => ({
+  PublicClientApplication: class {
+    initialize = vi.fn().mockResolvedValue(undefined);
+    loginPopup = msalLoginPopup;
+  },
+}));
+
+describe('authStore Azure sign-in', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useAuthStore.setState({
+      azureAvailable: null, loginError: '', loginLoading: false, showLoginModal: true,
+      isAuthenticated: false, user: null,
+    });
+  });
+
+  it('offers Microsoft sign-in only when the server has Azure AD configured', async () => {
+    (api.getAzureConfig as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('Azure AD not configured'));
+    await useAuthStore.getState().checkAzureAvailable();
+    expect(useAuthStore.getState().azureAvailable).toBe(false);
+
+    useAuthStore.setState({ azureAvailable: null });
+    (api.getAzureConfig as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      authority: 'https://login.microsoftonline.com/t', client_id: 'cid', redirect_uri: null, scopes: ['openid'],
+    });
+    await useAuthStore.getState().checkAzureAvailable();
+    expect(useAuthStore.getState().azureAvailable).toBe(true);
+  });
+
+  it('signs in with the ID token MSAL returns', async () => {
+    (api.getAzureConfig as ReturnType<typeof vi.fn>).mockResolvedValue({
+      authority: 'https://login.microsoftonline.com/t', client_id: 'cid', redirect_uri: null, scopes: ['openid', 'profile', 'email'],
+    });
+    msalLoginPopup.mockResolvedValue({ idToken: 'id-token-123' });
+    (api.loginWithAzure as ReturnType<typeof vi.fn>).mockResolvedValue({
+      access_token: 'a', user: { id: 'u-1', email: 'a@firm.com', roles: ['attorney'] },
+    });
+
+    await useAuthStore.getState().handleAzureLogin();
+
+    expect(msalLoginPopup).toHaveBeenCalledWith({ scopes: ['openid', 'profile', 'email'], prompt: 'select_account' });
+    expect(api.loginWithAzure).toHaveBeenCalledWith('id-token-123');
+    const state = useAuthStore.getState();
+    expect(state.isAuthenticated).toBe(true);
+    expect(state.user?.email).toBe('a@firm.com');
+    expect(state.showLoginModal).toBe(false);
+    expect(state.loginError).toBe('');
+  });
+
+  it('treats a closed popup as a cancel and reports other failures', async () => {
+    (api.getAzureConfig as ReturnType<typeof vi.fn>).mockResolvedValue({
+      authority: 'x', client_id: 'cid', redirect_uri: null, scopes: ['openid'],
+    });
+    msalLoginPopup.mockRejectedValueOnce(new Error('user_cancelled: User cancelled the flow.'));
+    await useAuthStore.getState().handleAzureLogin();
+    expect(useAuthStore.getState().loginError).toBe('');
+    expect(useAuthStore.getState().isAuthenticated).toBe(false);
+
+    msalLoginPopup.mockResolvedValueOnce({ idToken: 'id' });
+    (api.loginWithAzure as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('Your account has not been invited'));
+    await useAuthStore.getState().handleAzureLogin();
+    expect(useAuthStore.getState().loginError).toContain('Your account has not been invited');
+    expect(useAuthStore.getState().loginLoading).toBe(false);
+  });
+});
 
 describe('authStore', () => {
   beforeEach(() => {

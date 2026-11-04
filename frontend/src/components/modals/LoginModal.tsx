@@ -1,4 +1,4 @@
-import { useId } from 'react';
+import { useEffect, useId } from 'react';
 import { useAuthStore } from '../../stores/authStore';
 import s from './AuthModals.module.css';
 import { Icon } from '../shared/Icon';
@@ -12,7 +12,12 @@ function LoginModal() {
     loginError, loginLoading,
     handleLoginSubmit, handleShowSignup,
     setShowForgotPassword, setForgotEmail, setForgotSuccess,
+    azureAvailable, checkAzureAvailable, handleAzureLogin,
   } = useAuthStore();
+
+  useEffect(() => {
+    if (showLoginModal) checkAzureAvailable();
+  }, [showLoginModal, checkAzureAvailable]);
 
   if (!showLoginModal) return null;
 
@@ -55,6 +60,20 @@ function LoginModal() {
               Forgot password?
             </button>
           </form>
+          {azureAvailable && (
+            <div className={s.ssoBlock}>
+              <div className={s.ssoDivider}><span>or</span></div>
+              <button
+                type="button"
+                className={s.ssoBtn}
+                onClick={handleAzureLogin}
+                disabled={loginLoading}
+                data-testid="azure-login"
+              >
+                <Icon name="LogIn" size={16} /> Sign in with Microsoft
+              </button>
+            </div>
+          )}
         </div>
         <div className={s.modalFooter}>
           <button type="button" className={s.btnSecondary} onClick={() => setShowLoginModal(false)}>Cancel</button>

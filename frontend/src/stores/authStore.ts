@@ -34,6 +34,10 @@ export interface AuthState {
   setLoginPassword: (val: string) => void;
   loginError: string;
   loginLoading: boolean;
+  /** null until checked; false when the server has no Azure AD configured. */
+  azureAvailable: boolean | null;
+  checkAzureAvailable: () => Promise<void>;
+  handleAzureLogin: () => Promise<void>;
 
   // Signup modal
   showSignupModal: boolean;
@@ -117,6 +121,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   setLoginPassword: (val) => set({ loginPassword: val }),
   loginError: '',
   loginLoading: false,
+  azureAvailable: null,
 
   // Signup modal state
   showSignupModal: false,
@@ -302,6 +307,63 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       set({ forgotSuccess: true });
     } finally {
       set({ forgotLoading: false });
+    }
+  },
+
+  checkAzureAvailable: async () => {
+    if (get().azureAvailable !== null) return;
+    try {
+      await api.getAzureConfig();
+      set({ azureAvailable: true });
+    } catch {
+      // 503 "Azure AD not configured", or unreachable: no Microsoft button.
+      set({ azureAvailable: false });
+    }
+  },
+
+  handleAzureLogin: async () => {
+    const { addToast } = useUIStore.getState();
+    set({ loginLoading: true, loginError: '' });
+    try {
+      const config = await api.getAzureConfig();
+      // MSAL is loaded only when someone actually signs in with Microsoft.
+      const { PublicClientApplication } = await import('@azure/msal-browser');
+      const pca = new PublicClientApplication({
+        auth: {
+          clientId: config.client_id,
+          authority: config.authority,
+          redirectUri: config.redirect_uri || window.location.origin,
+        },
+        cache: { cacheLocation: 'sessionStorage' },
+      });
+      await pca.initialize();
+      const result = await pca.loginPopup({ scopes: config.scopes, prompt: 'select_account' });
+      if (!result.idToken) {
+        throw new Error('Microsoft did not return an identity token');
+      }
+      const login = await api.loginWithAzure(result.idToken);
+      if (login.mfa_required && login.mfa_token) {
+        set({ showLoginModal: false, showMfaModal: true, mfaToken: login.mfa_token, mfaCode: '', mfaError: '' });
+        return;
+      }
+      set({
+        user: login.user,
+        isAuthenticated: true,
+        showLoginModal: false,
+        loginEmail: '',
+        loginPassword: '',
+      });
+      addToast('Signed in with Microsoft', 'success');
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      // A closed popup is a cancel, not an error worth a red box.
+      if (/user_cancelled|popup_window_error|interaction_in_progress/i.test(message)) {
+        set({ loginError: '' });
+      } else {
+        set({ loginError: `Microsoft sign-in failed: ${message}` });
+      }
+    } finally {
+      set({ loginLoading: false });
     }
   },
 

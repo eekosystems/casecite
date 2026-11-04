@@ -126,6 +126,23 @@
   gap: 10px;
 }
 
+/* Folder picker (connector folder-scoped sync) */
+.folderCrumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: 12.5px; margin-bottom: 8px; }
+.folderCrumb { display: inline-flex; align-items: center; gap: 4px; }
+.folderCrumbBtn { background: none; border: 0; padding: 2px 4px; color: var(--primary-700); cursor: pointer; font-size: 12.5px; }
+.folderCrumbBtn:disabled { color: var(--gray-800); font-weight: 600; cursor: default; }
+.folderError { font-size: 12.5px; color: var(--red-700); margin-bottom: 8px; }
+.folderList { list-style: none; margin: 0 0 8px; padding: 0; border: 1px solid var(--gray-200); border-radius: 8px; max-height: 280px; overflow: auto; }
+.folderRow { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--gray-100); }
+.folderRow:last-child { border-bottom: 0; }
+.folderRowSelected { background: var(--primary-50); }
+.folderSelect { flex: 1; display: inline-flex; align-items: center; gap: 8px; background: none; border: 0; text-align: left; font-size: 13px; color: var(--gray-800); cursor: pointer; padding: 4px 0; }
+.folderOpen { display: inline-flex; align-items: center; gap: 2px; background: none; border: 1px solid var(--gray-300); border-radius: 6px; padding: 3px 8px; font-size: 12px; color: var(--gray-700); cursor: pointer; }
+.folderEmpty, .folderLoading { font-size: 12.5px; color: var(--gray-500); padding: 10px; display: flex; align-items: center; gap: 6px; }
+.folderMore { background: none; border: 1px solid var(--gray-300); border-radius: 6px; padding: 4px 10px; font-size: 12.5px; cursor: pointer; margin-bottom: 8px; }
+.folderActions { display: grid; gap: 8px; margin-top: 10px; }
+.folderWholeAccount { background: none; border: 0; color: var(--gray-600); font-size: 12.5px; text-decoration: underline; cursor: pointer; }
+
 .pickerDisclaimer {
   margin-top: 16px;
   font-size: 12px;

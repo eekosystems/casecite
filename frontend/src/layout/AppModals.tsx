@@ -11,6 +11,7 @@ import {
   ChangePasswordModal,
   MfaChallengeModal,
   FilePickerModal,
+  ConnectorFolderPickerModal,
 } from '../components';
 
 export function AppModals() {
@@ -25,6 +26,7 @@ export function AppModals() {
       <ShortcutsHelp isOpen={showShortcutsHelp} onClose={() => setShowShortcutsHelp(false)} />
 
       <FilePickerModal />
+      <ConnectorFolderPickerModal />
 
       <LoginModal />
       <SignupModal />

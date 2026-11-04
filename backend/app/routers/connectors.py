@@ -8,11 +8,13 @@ from fastapi import APIRouter, Query, Request, Response
 from pydantic import BaseModel, Field
 
 from app.config import settings
-from app.exceptions import BadRequestError, ForbiddenError, NotFoundError
+from app.exceptions import BadRequestError, ForbiddenError, NotFoundError, UpstreamError
 from app.middleware.csrf import cookie_secure
 from app.models.responses.common import StatusResponse
 from app.models.responses.connectors import (
     ConnectorCallbackResponse,
+    ConnectorFolder,
+    ConnectorFoldersResponse,
     ConnectorListResponse,
     SyncStartResponse,
 )
@@ -27,6 +29,7 @@ from app.services.audit import AuditEventType, audit_service
 from app.services.auth import TokenData
 from app.services.connectors import get_all_connector_statuses, get_connector, is_experimental
 from app.services.connectors.base import (
+    _FOLDER_MIME_TYPES,
     BaseConnector,
     ConnectorError,
     FileInfo,
@@ -306,6 +309,53 @@ async def disconnect_connector(
     )
 
     return {"status": "disconnected"}
+
+
+@router.get("/{connector_type}/folders", response_model=ConnectorFoldersResponse)
+async def list_folders(
+    connector_type: ConnectorType,
+    parent_id: str | None = Query(default=None, max_length=_FOLDER_ID_MAX_LENGTH),
+    page_token: str | None = Query(default=None, max_length=2048),
+    current_user: TokenData = require_permission("connectors.manage"),
+) -> ConnectorFoldersResponse:
+    """One level of the connected account's folder tree, for choosing what to sync.
+
+    Folders only (files are never listed here); ``parent_id`` omitted means
+    the root. Refused for a connector that can only sync the whole account.
+    """
+    BaseConnector.set_current_user(current_user.user_id)
+    connector = get_connector(connector_type)
+    await _require_connector_access(connector, current_user)
+    if not connector.is_connected:
+        raise BadRequestError("Connector not connected")
+    if not connector.supports_folder_sync:
+        raise BadRequestError(
+            f"{connector_type.value} cannot sync a single folder; only a full-account "
+            "sync is available."
+        )
+    if parent_id and _CONTROL_CHARS.search(parent_id):
+        raise BadRequestError("Invalid parent_id")
+    try:
+        files, next_token = await call_with_retry_after(
+            lambda: connector.list_files(parent_id or None, page_token or None)
+        )
+    except httpx.HTTPStatusError as e:
+        raise UpstreamError(
+            f"{connector_type.value} refused the folder listing (HTTP {e.response.status_code})."
+        )
+    except (ConnectorError, httpx.HTTPError) as e:
+        raise UpstreamError(_describe_error(e))
+    folders = [
+        ConnectorFolder(id=f.id, name=f.name, path=f.path)
+        for f in files
+        if f.mime_type in _FOLDER_MIME_TYPES
+    ]
+    return ConnectorFoldersResponse(
+        connector=connector_type.value,
+        parent_id=parent_id or None,
+        folders=folders,
+        next_page_token=next_token,
+    )
 
 
 @router.post("/{connector_type}/sync", response_model=SyncStartResponse)

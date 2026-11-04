@@ -58,6 +58,14 @@ export interface ConnectorsState {
   hasPickerSupport: (connectorId: string) => boolean;
   handlePickerFilesSelected: (files: PickerFile[], provider: string) => Promise<void>;
   handleConnectorClick: (connector: Connector) => Promise<void>;
+  /** The connector whose folder tree is being browsed for a scoped sync. */
+  folderPicker: { connector: Connector } | null;
+  openFolderPicker: (connector: Connector) => void;
+  closeFolderPicker: () => void;
+  /** Start a sync scoped to one folder (closes the picker). */
+  syncFolder: (connector: Connector, folderId: string, folderName: string) => Promise<void>;
+  /** Start a whole-account sync, behind an explicit warning (closes the picker). */
+  syncWholeAccount: (connector: Connector) => void;
   loadGooglePicker: () => Promise<void>;
   openGooglePicker: () => Promise<void>;
   openOneDrivePicker: () => Promise<void>;
@@ -95,6 +103,50 @@ export const useConnectorsStore = create<ConnectorsState>((set, get) => ({
     usePickerStore.getState().setActivePickerProvider(val);
   },
 
+  // ── Folder-scoped sync ───────────────────────────────────────────
+  folderPicker: null,
+  openFolderPicker: (connector) => set({ folderPicker: { connector } }),
+  closeFolderPicker: () => set({ folderPicker: null }),
+
+  syncFolder: async (connector, folderId, folderName) => {
+    const { addToast } = useUIStore.getState();
+    set({ folderPicker: null });
+    try {
+      const result = await api.syncConnector(connector.id, { folder_id: folderId });
+      addToast(`Importing "${folderName}" from ${connector.name}...`, 'info');
+      if (result.sync_id) {
+        get().pollSyncStatus(connector, result.sync_id);
+      }
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      addToast(`Sync failed: ${message}`, 'error');
+    }
+  },
+
+  syncWholeAccount: (connector) => {
+    const { addToast, showConfirm } = useUIStore.getState();
+    set({ folderPicker: null });
+    showConfirm({
+      title: `Import the entire ${connector.name} account?`,
+      message: `Every document this ${connector.name} account can reach will be downloaded and indexed — not one folder or matter. The text of each document is sent to your configured embedding provider. To bring in specific files instead, cancel and use the file picker where one is offered.`,
+      type: 'warning',
+      confirmText: 'Import entire account',
+      cancelText: 'Cancel',
+      onConfirm: async () => {
+        try {
+          const result = await api.syncConnector(connector.id, { sync_all: true });
+          addToast(`Syncing ${connector.name}...`, 'info');
+          if (result.sync_id) {
+            get().pollSyncStatus(connector, result.sync_id);
+          }
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : String(error);
+          addToast(`Sync failed: ${message}`, 'error');
+        }
+      },
+    });
+  },
+
   // ── Core methods ──────────────────────────────────────────────────
   hasPickerSupport: (connectorId) => {
     const { pickerConfig } = get();
@@ -123,34 +175,25 @@ export const useConnectorsStore = create<ConnectorsState>((set, get) => ({
     }
 
     if (connector.connected) {
+      // Only a connector the server said can scope a sync gets the picker;
+      // anything else keeps the explicit whole-account warning.
+      const canPickFolder = connector.supportsFolderSync === true;
       showConfirm({
         title: `Manage ${connector.name}`,
-        message: `Would you like to sync documents from ${connector.name}? Or click Cancel to disconnect.`,
+        message: canPickFolder
+          ? `Choose a folder of ${connector.name} to import, or click Cancel to disconnect.`
+          : `Would you like to sync documents from ${connector.name}? Or click Cancel to disconnect.`,
         type: 'info',
-        confirmText: 'Sync Now',
+        confirmText: canPickFolder ? 'Choose folder…' : 'Sync Now',
         cancelText: 'Disconnect',
         onConfirm: () => {
-          // A sync has no folder chooser, so it can only cover the whole
-          // account — which is never started without saying so first.
-          showConfirm({
-            title: `Import the entire ${connector.name} account?`,
-            message: `Every document this ${connector.name} account can reach will be downloaded and indexed — not one folder or matter. The text of each document is sent to your configured embedding provider. To bring in specific files instead, cancel and use the file picker where one is offered.`,
-            type: 'warning',
-            confirmText: 'Import entire account',
-            cancelText: 'Cancel',
-            onConfirm: async () => {
-              try {
-                const result = await api.syncConnector(connector.id, { sync_all: true });
-                addToast(`Syncing ${connector.name}...`, 'info');
-                if (result.sync_id) {
-                  get().pollSyncStatus(connector, result.sync_id);
-                }
-              } catch (error: unknown) {
-                const message = error instanceof Error ? error.message : String(error);
-                addToast(`Sync failed: ${message}`, 'error');
-              }
-            },
-          });
+          if (canPickFolder) {
+            get().openFolderPicker(connector);
+            return;
+          }
+          // No folder chooser for this connector: a sync can only cover the
+          // whole account, which is never started without saying so first.
+          get().syncWholeAccount(connector);
         },
         onCancel: () => {
           showConfirm({
@@ -284,6 +327,7 @@ export const useConnectorsStore = create<ConnectorsState>((set, get) => ({
                 adminOnly: sc.admin_only === true,
                 available: true,
                 experimental: sc.experimental === true,
+                supportsFolderSync: sc.supports_folder_sync !== false,
                 docs: sc.docs_indexed || 0,
               };
             }

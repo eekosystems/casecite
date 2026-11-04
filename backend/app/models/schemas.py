@@ -1500,7 +1500,9 @@ class DemoLoginRequest(BaseModel):
 class AzureLoginRequest(BaseModel):
     """Request body for Azure AD login."""
 
-    token: str  # Azure AD access token
+    # The Azure AD ID token (audience = this app's client id), as MSAL's
+    # loginPopup/loginRedirect returns it; verified against the tenant's keys.
+    token: str
 
 
 class EmailLoginRequest(BaseModel):

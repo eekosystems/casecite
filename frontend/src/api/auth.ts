@@ -1,11 +1,24 @@
 import { api } from './client';
-import type { AuthResponse, UserInfo, MessageResponse, SessionInfo } from './types';
+import type { AuthResponse, AzureConfig, UserInfo, MessageResponse, SessionInfo } from './types';
 
 Object.assign(api, {
   async login(email: string, password: string): Promise<AuthResponse> {
     const result = await api.request('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
+    });
+    api.setToken(result.access_token);
+    return result;
+  },
+
+  async getAzureConfig(): Promise<AzureConfig> {
+    return api.request('/auth/azure/config');
+  },
+
+  async loginWithAzure(idToken: string): Promise<AuthResponse> {
+    const result = await api.request('/auth/azure/login', {
+      method: 'POST',
+      body: JSON.stringify({ token: idToken }),
     });
     api.setToken(result.access_token);
     return result;

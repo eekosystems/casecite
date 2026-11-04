@@ -12,6 +12,8 @@ export interface Connector {
   available?: boolean;
   /** Implemented against the vendor's API but not validated against a live tenant. */
   experimental?: boolean;
+  /** A sync can be scoped to one folder (the folder picker is offered). */
+  supportsFolderSync?: boolean;
   docs: number;
 }
 

@@ -12,6 +12,28 @@ export interface BrandingConfig {
 
 // ==================== API Response Types ====================
 
+/** GET /auth/azure/config — what MSAL needs to start a Microsoft sign-in. */
+export interface AzureConfig {
+  authority: string;
+  client_id: string;
+  redirect_uri: string | null;
+  scopes: string[];
+}
+
+/** One folder of a connected account (GET /connectors/{id}/folders). */
+export interface ConnectorFolder {
+  id: string;
+  name: string;
+  path: string | null;
+}
+
+export interface ConnectorFoldersResult {
+  connector: string;
+  parent_id: string | null;
+  folders: ConnectorFolder[];
+  next_page_token: string | null;
+}
+
 export interface AuthResponse {
   access_token: string;
   refresh_token?: string;
@@ -260,6 +282,8 @@ export interface ConnectorDataResponse {
     /** Implemented but not validated against a live tenant; only listed when enabled. */
     experimental?: boolean;
     docs_indexed?: number;
+    /** A sync can be scoped to one folder; the folder picker is offered. */
+    supports_folder_sync?: boolean;
   }>;
   [key: string]: unknown;
 }
@@ -1717,6 +1741,10 @@ export interface ApiClient {
 
   // Auth
   login(email: string, password: string): Promise<AuthResponse>;
+  /** Azure AD sign-in settings, or a 503 when SSO is not configured. */
+  getAzureConfig(): Promise<AzureConfig>;
+  /** Exchange an Azure AD ID token for this app's session. */
+  loginWithAzure(idToken: string): Promise<AuthResponse>;
   logout(): Promise<void>;
   getCurrentUser(): Promise<UserInfo>;
   register(email: string, name: string, password: string, company: string, bootstrapToken?: string): Promise<AuthResponse>;
@@ -1902,6 +1930,7 @@ export interface ApiClient {
   disconnectConnector(connectorId: string): Promise<MessageResponse>;
   /** The server refuses a sync with no scope: pass a folder, or ask for the whole account explicitly. */
   syncConnector(connectorId: string, scope: { folder_id: string } | { sync_all: true }): Promise<SyncStartResult>;
+  listConnectorFolders(connectorId: string, parentId?: string, pageToken?: string): Promise<ConnectorFoldersResult>;
   getConnectorSyncStatus(connectorId: string, syncId: string): Promise<SyncStatusResult>;
   getConnectorStatus(connectorId: string): Promise<ConnectorStatusResponse>;
 
