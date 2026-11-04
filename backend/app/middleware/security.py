@@ -478,7 +478,11 @@ class SessionManager:
       ``idle_timeout`` is ended
     - Concurrent session limit (oldest sign-in is evicted)
     - Optional session binding (IP)
-    - File-based persistence to survive restarts without Redis
+    - Shared through Redis when it is configured, so every worker process
+      and replica sees the same sign-ins, sign-outs and "terminate all"
+      (one JSON list per user, expiring with the longest session in it);
+      otherwise an in-memory dict mirrored to ``sessions.jsonl`` to survive
+      restarts of the single process
     """
 
     def __init__(self):
@@ -499,6 +503,87 @@ class SessionManager:
         # dir; the previous extra "data" segment created data/data/).
         self._session_file = Path(settings.upload_dir).parent / "sessions.jsonl"
         self._load_sessions_from_file()
+
+    # ---------- Shared store (Redis) ----------
+
+    @staticmethod
+    def _redis():
+        """The shared client, or None: then sessions are process-local."""
+        return get_redis()
+
+    @staticmethod
+    def _redis_key(user_id: str) -> str:
+        return f"sessions:{user_id}"
+
+    @staticmethod
+    def _to_entry(session: dict) -> dict:
+        return {
+            "jti": session["jti"],
+            "session_id": session.get("session_id") or session["jti"],
+            "ip_address": session["ip_address"],
+            "user_agent": session["user_agent"],
+            "client": session.get("client") or "web",
+            "created_at": session["created_at"].isoformat(),
+            "expires_at": session["expires_at"].isoformat(),
+            "last_activity": session["last_activity"].isoformat(),
+        }
+
+    @staticmethod
+    def _from_entry(entry: dict) -> dict:
+        return {
+            "jti": entry["jti"],
+            "session_id": entry.get("session_id") or entry["jti"],
+            "ip_address": entry.get("ip_address", "unknown"),
+            "user_agent": entry.get("user_agent", ""),
+            "client": entry.get("client") or "web",
+            "created_at": datetime.fromisoformat(entry["created_at"]),
+            "expires_at": datetime.fromisoformat(entry["expires_at"]),
+            "last_activity": datetime.fromisoformat(entry["last_activity"]),
+        }
+
+    def _load_list(self, user_id: str) -> list[dict]:
+        """The user's sessions: from Redis when shared, else this process's."""
+        redis_client = self._redis()
+        if redis_client is None:
+            return self._sessions[user_id]
+        try:
+            raw = redis_client.get(self._redis_key(user_id))
+        except RedisError as e:
+            logger.error(f"Session store read failed: {e}")
+            return []
+        if not raw:
+            return []
+        try:
+            return [self._from_entry(e) for e in json.loads(raw)]
+        except (ValueError, KeyError, TypeError) as e:
+            logger.error(f"Session store entry for {user_id} is unreadable: {e}")
+            return []
+
+    def _store_list(self, user_id: str, sessions: list[dict], *, appended: dict | None = None):
+        """Persist the user's sessions.
+
+        Shared: the whole list, expiring with its longest-lived session.
+        Process-local: the dict, and the file (an append for a new session,
+        a compaction for anything else).
+        """
+        redis_client = self._redis()
+        if redis_client is None:
+            self._sessions[user_id] = sessions
+            if appended is not None and len(sessions) > 0 and sessions[-1] is appended:
+                self._persist_session(user_id, appended)
+            else:
+                self._rewrite_session_file()
+            return
+        key = self._redis_key(user_id)
+        try:
+            if not sessions:
+                redis_client.delete(key)
+                return
+            now = datetime.now(UTC)
+            ttl = max(int((max(s["expires_at"] for s in sessions) - now).total_seconds()), 1)
+            redis_client.setex(key, ttl, json.dumps([self._to_entry(s) for s in sessions]))
+        except RedisError as e:
+            logger.error(f"Session store write failed: {e}")
 
     # ---------- File-based persistence ----------
 
@@ -634,14 +719,14 @@ class SessionManager:
         now = datetime.now(UTC)
 
         # Clean expired sessions
-        self._sessions[user_id] = [s for s in self._sessions[user_id] if self._is_live(s, now)]
+        sessions = [s for s in self._load_list(user_id) if self._is_live(s, now)]
 
         # Check session limit
         evicted = False
-        while len(self._sessions[user_id]) >= self.max_sessions_per_user:
+        while len(sessions) >= self.max_sessions_per_user:
             # Remove oldest session
-            self._sessions[user_id].sort(key=lambda s: s["created_at"])
-            self._sessions[user_id].pop(0)
+            sessions.sort(key=lambda s: s["created_at"])
+            sessions.pop(0)
             evicted = True
 
         # Add new session
@@ -655,12 +740,10 @@ class SessionManager:
             "expires_at": now + self.session_timeout,
             "last_activity": now,
         }
-        self._sessions[user_id].append(session)
-        if evicted:
-            # The evicted sign-in must not come back from disk after a restart.
-            self._rewrite_session_file()
-        else:
-            self._persist_session(user_id, session)
+        sessions.append(session)
+        # An evicted sign-in must not come back from disk after a restart:
+        # the file is compacted rather than appended to.
+        self._store_list(user_id, sessions, appended=None if evicted else session)
 
         return True
 
@@ -678,12 +761,12 @@ class SessionManager:
         if not session_id:
             return None
         now = datetime.now(UTC)
-        for session in self._sessions.get(user_id, []):
+        sessions = self._load_list(user_id)
+        for session in sessions:
             if session.get("session_id") != session_id:
                 continue
             if not self._is_live(session, now):
-                self._sessions[user_id] = [s for s in self._sessions[user_id] if s is not session]
-                self._rewrite_session_file()
+                self._store_list(user_id, [s for s in sessions if s is not session])
                 return None
             if settings.enforce_session_ip_binding and ip_address:
                 if session["ip_address"] != ip_address:
@@ -691,7 +774,7 @@ class SessionManager:
             old_jti: str = session["jti"]
             session["jti"] = new_jti
             session["last_activity"] = now
-            self._rewrite_session_file()
+            self._store_list(user_id, sessions)
             return old_jti
         return None
 
@@ -709,7 +792,8 @@ class SessionManager:
         if token_exp is not None and token_exp < now:
             return False
 
-        for session in self._sessions.get(user_id, []):
+        sessions = self._load_list(user_id)
+        for session in sessions:
             if session["jti"] == jti:
                 # Check absolute expiration
                 if session["expires_at"] < now:
@@ -724,24 +808,25 @@ class SessionManager:
                     if session["ip_address"] != ip_address:
                         return False
 
-                # Update last activity
+                # Update last activity. Process-local: in place, the file is
+                # compacted periodically. Shared: written back, so the idle
+                # clock is the same on every worker.
                 session["last_activity"] = now
+                if self._redis() is not None:
+                    self._store_list(user_id, sessions)
                 return True
 
         return False
 
     def terminate_session(self, user_id: str, jti: str):
         """Terminate a specific session."""
-        self._sessions[user_id] = [s for s in self._sessions[user_id] if s["jti"] != jti]
-        # Compact the persistence file immediately: a terminated session must
-        # not survive on disk until the periodic 15-minute compaction.
-        self._rewrite_session_file()
+        # Persisted immediately: a terminated session must not survive on
+        # disk until the periodic 15-minute compaction, nor on other workers.
+        self._store_list(user_id, [s for s in self._load_list(user_id) if s["jti"] != jti])
 
     def terminate_all_sessions(self, user_id: str):
         """Terminate all sessions for a user."""
-        self._sessions[user_id] = []
-        # Compact the persistence file immediately (see terminate_session).
-        self._rewrite_session_file()
+        self._store_list(user_id, [])
 
     def get_active_sessions(self, user_id: str) -> list:
         """Get all active sessions for a user (sanitized for API response)."""
@@ -757,14 +842,14 @@ class SessionManager:
                 # Sessions persisted before the label existed are web sign-ins.
                 "client": s.get("client") or "web",
             }
-            for s in self._sessions.get(user_id, [])
+            for s in self._load_list(user_id)
             if self._is_live(s, now)
         ]
 
     def get_active_sessions_raw(self, user_id: str) -> list:
         """Get all active sessions with JTIs (internal use for token revocation)."""
         now = datetime.now(UTC)
-        return [s for s in self._sessions.get(user_id, []) if self._is_live(s, now)]
+        return [s for s in self._load_list(user_id) if self._is_live(s, now)]
 
 
 # Global instances
