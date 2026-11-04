@@ -175,6 +175,14 @@ def second_boot(base_url: str) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description="CaseCite production-mode smoke test")
     parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument(
+        "--phase",
+        choices=("all", "first", "second"),
+        default="all",
+        help="'first' boots a fresh instance and registers the admin; 'second' boots over "
+        "existing data and signs in (the backup-and-restore drill runs them around a "
+        "backup, a wipe and a restore); 'all' runs both back to back",
+    )
     args = parser.parse_args()
 
     if os.environ.get("DEBUG", "").lower() in ("true", "1", "yes"):
@@ -186,14 +194,16 @@ def main() -> int:
 
     server = Server(args.port)
     try:
-        print("First boot")
-        server.start()
-        first_boot(server.base_url)
-        server.stop()
+        if args.phase in ("all", "first"):
+            print("First boot")
+            server.start()
+            first_boot(server.base_url)
+            server.stop()
 
-        print("Second boot (restart over the first boot's data)")
-        server.start()
-        second_boot(server.base_url)
+        if args.phase in ("all", "second"):
+            print("Second boot (restart over the first boot's data)")
+            server.start()
+            second_boot(server.base_url)
     except SmokeFailure as failure:
         print(f"\nFAILED  {failure}\n\n--- backend log (tail) ---\n{server.log_tail()}")
         return 1

@@ -630,12 +630,129 @@ jobs:
         run: python scripts/smoke_production.py
 
   # ====================
+  # Backup-and-restore drill
+  # ====================
+  backup-restore:
+    name: Backup and Restore Drill
+    runs-on: ubuntu-24.04
+    needs: [lint]
+    timeout-minutes: 20
+    # A backup nobody has restored is a hope, not a backup. This job boots the
+    # app in production mode, writes real data (the first admin account, its
+    # sessions, audit entries), backs up the database and the data directory
+    # with the shipped scripts, wipes both, restores them with the shipped
+    # script, boots again over the restored state and signs in. All values
+    # are CI-only dummies.
+    env:
+      DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/casecite_test
+      DB_SSL: internal
+      SECRET_KEY: test-secret-key-for-ci-only-not-production
+      ENCRYPTION_SALT: test-salt-for-ci-only
+      AUDIT_HMAC_KEY: test-audit-hmac-key-for-ci-only-not-production
+      REDIS_URL: redis://localhost:6379/0
+      OPENAI_API_KEY: sk-test-ci-dummy-key-not-real
+      DISK_ENCRYPTION_ACKNOWLEDGED: "true"
+      CORS_ORIGINS: https://ci.casecite.test
+      ALLOWED_HOSTS: ci.casecite.test
+      REGISTRATION_BOOTSTRAP_TOKEN: ci-only-bootstrap-token-not-a-secret
+      # The data directory the app writes (uploads, audit logs, key stores,
+      # sessions) is UPLOAD_DIR's parent; the scripts archive and restore it.
+      UPLOAD_DIR: ${{ github.workspace }}/.drill/data/uploads
+      CHROMA_PERSIST_DIR: ${{ github.workspace }}/.drill/data/chroma
+      # backup_database.sh / restore_database.sh in direct mode
+      BACKUP_MODE: direct
+      BACKUP_ALLOW_UNENCRYPTED: "true"
+      BACKUP_DIR: ${{ github.workspace }}/.drill/backups
+      DATA_DIR: ${{ github.workspace }}/.drill/data
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: casecite_test
+      POSTGRES_USER: test
+      PGPASSWORD: test
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: casecite_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache pip dependencies
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('backend/requirements.lock', 'backend/requirements-dev.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          cd backend
+          pip install -r requirements.lock
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+          mkdir -p "$DATA_DIR/uploads" "$BACKUP_DIR"
+
+      - name: Migrate and write real data (first boot)
+        run: |
+          cd backend && alembic upgrade head && cd ..
+          python scripts/smoke_production.py --phase first
+
+      - name: Back up with the shipped script
+        run: |
+          ./scripts/backup_database.sh
+          ls -l "$BACKUP_DIR"
+          test -s "$BACKUP_DIR"/casecite_test_*.sql.gz
+          test -s "$BACKUP_DIR"/rag_data_*.tar.gz
+
+      - name: Wipe the data directory and poison the database
+        # The restore must bring back what was there, not what is there now.
+        run: |
+          rm -rf "$DATA_DIR"/* "$DATA_DIR"/.[!.]* 2>/dev/null || true
+          psql -h localhost -U test -d casecite_test -v ON_ERROR_STOP=1 -c "DELETE FROM users;"
+          test "$(psql -h localhost -U test -d casecite_test -At -c 'SELECT count(*) FROM users')" = "0"
+
+      - name: Restore with the shipped script
+        run: |
+          ./scripts/restore_database.sh "$BACKUP_DIR"/casecite_test_*.sql.gz \
+            --data "$BACKUP_DIR"/rag_data_*.tar.gz --yes
+          test "$(psql -h localhost -U test -d casecite_test -At -c 'SELECT count(*) FROM users')" = "1"
+          test -d "$DATA_DIR/audit_logs"
+
+      - name: Boot over the restored state and sign in (second boot)
+        run: python scripts/smoke_production.py --phase second
+
+  # ====================
   # Build Docker Image
   # ====================
   build:
     name: Build Docker Image
     runs-on: ubuntu-24.04
-    needs: [security-scan, test, test-frontend, test-e2e, migration-check, production-smoke]
+    needs: [security-scan, test, test-frontend, test-e2e, migration-check, production-smoke, backup-restore]
     # Runs on pull requests too, so a Dockerfile change is built and
     # Trivy-scanned before it merges. Only pushes (main/develop, v* tags) log
     # in to GHCR, push the image and publish its SBOM — see the step `if`s.

@@ -327,7 +327,8 @@ does not run): create the role and hand it the schema, then set the two
 variables and restart.
 
 ```sh
-docker compose -f docker-compose.prod.yml exec postgres   psql -U "${POSTGRES_USER:-casecite}" -d casecite -v ON_ERROR_STOP=1 <<'SQL'
+docker compose -f docker-compose.prod.yml exec postgres \
+  psql -U "${POSTGRES_USER:-casecite}" -d casecite -v ON_ERROR_STOP=1 <<'SQL'
 CREATE ROLE casecite_app LOGIN NOSUPERUSER NOBYPASSRLS PASSWORD '<APP_DB_PASSWORD>';
 GRANT CONNECT ON DATABASE casecite TO casecite_app;
 ALTER DATABASE casecite OWNER TO casecite_app;
@@ -381,6 +382,14 @@ BACKUP_ENCRYPTION_KEY=… ./scripts/restore_database.sh \         # if the deplo
 ---
 
 ## Backups
+
+**The restore is exercised on every push.** CI's "Backup and Restore Drill"
+job boots the app in production mode, registers the first admin, backs up the
+database and the data directory with `scripts/backup_database.sh`, wipes the
+directory and deletes the users, restores both with
+`scripts/restore_database.sh`, boots again and signs in as that admin — so a
+change to the app, the schema or the scripts that would break a recovery
+fails the build rather than a real recovery.
 
 `scripts/backup_database.sh` runs on the **host**, from the directory that
 holds `docker-compose.prod.yml` (the backend image ships neither `pg_dump` nor
