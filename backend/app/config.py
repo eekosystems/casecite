@@ -85,10 +85,18 @@ class Settings(BaseSettings):
     # lives, and the minimum seconds between polls of /auth/device/token.
     device_code_ttl: int = 600
     device_code_interval: int = 5
-    # Origin the Word add-in's task pane is served from (e.g.
-    # https://addin.yourfirm.com). When set it is appended to the CORS allow
-    # list; when empty nothing changes.
+    # Origin the Word add-in's task pane is served from when it is hosted
+    # separately (e.g. https://addin.yourfirm.com). When set it is appended to
+    # the CORS allow list and used in the rendered manifest. When empty the
+    # pane bundled with the image is used: it is served at /addin/ on this
+    # site, so no CORS entry is needed.
     word_addin_origin: str = ""
+    # Add-in id in the rendered manifest (GET /api/v1/addin/manifest.xml).
+    # Empty keeps the template's id; set a new GUID for a second, independent
+    # deployment so the two never collide in a tenant's add-in catalog.
+    word_addin_id: str = ""
+    # Manifest template; empty = the copy in the image, else the repo's.
+    word_addin_manifest_path: str = ""
 
     # Encryption salt - generated per deployment, stored in .env
     encryption_salt: str = ""  # Will be auto-generated if not set

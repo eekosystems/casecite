@@ -124,6 +124,16 @@ export function openApprovalPage(url: string): void {
 }
 
 /** The approval URL for a code: the server's answer, made absolute if it was a bare path. */
+/**
+ * The CaseCite server to use when none is saved: when the pane is served by
+ * the CaseCite image itself (at /addin/ on the app's origin), that origin is
+ * the server, so a first sign-in needs no address typed in. Empty elsewhere.
+ */
+export function bundledServerUrl(loc: { origin: string; pathname: string } | null = typeof window === 'undefined' ? null : window.location): string {
+  if (!loc) return '';
+  return /^\/addin(\/|$)/.test(loc.pathname) ? loc.origin : '';
+}
+
 export function approvalUrl(serverUrl: string, code: DeviceStart): string {
   const uri = code.verification_uri_complete || code.verification_uri;
   if (/^https?:\/\//i.test(uri)) return uri;
@@ -178,7 +188,7 @@ export const useAddinStore = create<AddinState>((set, get) => {
     init: async () => {
       if (get().booted) return;
       const session = await readJson<StoredSession>(store, SESSION_KEY);
-      const savedUrl = (await store.get(SERVER_URL_KEY)) || session?.serverUrl || '';
+      const savedUrl = (await store.get(SERVER_URL_KEY)) || session?.serverUrl || bundledServerUrl();
       const matterId = (await store.get(MATTER_KEY)) || null;
       const tokens = session ? { accessToken: session.accessToken, refreshToken: session.refreshToken } : null;
       set({

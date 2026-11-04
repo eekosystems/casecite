@@ -30,6 +30,13 @@
         reverse_proxy backend:8000
     }
 
+    # Word add-in task pane (static files copied from the image with the SPA).
+    handle /addin/* {
+        root * /srv
+        try_files {path} {path}/ /addin/index.html
+        file_server
+    }
+
     # SPA: serve the built frontend, falling back to index.html for client-side
     # routes (e.g. /drafting) so deep links and refreshes don't 404.
     handle {

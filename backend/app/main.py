@@ -23,6 +23,7 @@ from app.logging_config import configure_logging
 from app.middleware.csrf import get_csrf_router
 from app.middleware.middleware_config import configure_middleware
 from app.routers import (
+    addin,
     audit,
     auth,
     branding,
@@ -531,6 +532,7 @@ app.include_router(jobs.router, prefix=settings.api_prefix)
 
 # White-Label Branding (public GET + admin mutations)
 app.include_router(branding.router, prefix=settings.api_prefix)
+app.include_router(addin.router, prefix=settings.api_prefix)
 
 # CSRF token endpoint (for SPA frontends)
 app.include_router(get_csrf_router(), prefix=settings.api_prefix)

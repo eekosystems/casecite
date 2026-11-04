@@ -19,6 +19,9 @@ const https: ServerOptions['https'] | undefined = haveOwnCert
   : undefined;
 
 export default defineConfig({
+  // The Docker image serves the pane at /addin/ on the app's own origin
+  // (ADDIN_BASE=/addin/); a standalone host serves it at its root.
+  base: process.env.ADDIN_BASE || '/',
   plugins: [react(), ...(haveOwnCert ? [] : [basicSsl()])],
   server: {
     port: Number(process.env.ADDIN_PORT || 3200),

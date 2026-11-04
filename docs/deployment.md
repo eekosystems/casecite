@@ -170,18 +170,29 @@ DOMAIN=app.yourfirm.com
 
 ## Word Add-in
 
-The task-pane add-in in `word-addin/` is static files served from an HTTPS
-origin of your choice; it is not part of the Docker image. Two server settings
-make it work:
+The task-pane add-in in `word-addin/` ships with the image: it is built into
+the container and served at `https://<your-site>/addin/` by nginx (single
+container) or Caddy (bundled stack), on the same origin as the web app, so
+there is nothing separate to host and no CORS entry to add.
 
-```bash
-# The origin the pane is served from. Appended to the CORS allow list; the
-# allow list is untouched when this is unset.
-WORD_ADDIN_ORIGIN=https://addin.yourfirm.com
-# Makes the approval link the pane opens absolute (otherwise the pane prefixes
-# its own server address, which is right for the bundled single-origin stack).
-FRONTEND_URL=https://casecite.yourfirm.com
+What Word needs is the manifest, and the manifest must name your origin, so
+the running instance renders it:
+
 ```
+https://casecite.yourfirm.com/api/v1/addin/manifest.xml
+```
+
+Publish that once through Centralized Deployment (Microsoft 365 admin center →
+*Settings → Integrated apps → Upload custom apps* → paste the URL, or upload
+the file it serves) and choose the users or groups. Word picks it up within a
+day. Set `FRONTEND_URL=https://casecite.yourfirm.com` so the manifest and the
+pane's approval links are absolute regardless of how the request reached the
+backend. Optional: `WORD_ADDIN_ID=<new GUID>` gives a second, independent
+deployment its own identity in the tenant's catalog.
+
+Hosting the pane elsewhere still works: build it, host `dist/`, and set
+`WORD_ADDIN_ORIGIN=https://addin.yourfirm.com` — the manifest then points
+there and the origin is added to the CORS allow list.
 
 Optional: `DEVICE_CODE_TTL` (seconds a pending sign-in code lives, default
 600) and `DEVICE_CODE_INTERVAL` (minimum seconds between polls, default 5).

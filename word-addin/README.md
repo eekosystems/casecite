@@ -91,9 +91,21 @@ sideloading guide covers edge cases: <https://learn.microsoft.com/office/dev/add
 
 ## Deploy for the firm
 
-1. Build the pane and host `dist/` on an HTTPS origin of your choice (any static
-   host; it is plain files). The pane and the API may share an origin, but the
-   pane must not be served from the CaseCite API path.
+The pane is built into the CaseCite Docker image and served at
+`https://<your-site>/addin/`; the server renders the manifest for your
+deployment at `https://<your-site>/api/v1/addin/manifest.xml`. Publish that
+through **Centralized Deployment**: Microsoft 365 admin center → *Settings →
+Integrated apps → Upload custom apps* → paste the URL (or upload the file it
+serves), choose the users or groups. Word picks it up within a day; sideloading
+is not needed. Set `FRONTEND_URL` on the server so the URLs are absolute, and
+`WORD_ADDIN_ID=<new GUID>` for a second, independent deployment.
+<https://learn.microsoft.com/microsoft-365/admin/manage/centralized-deployment-of-add-ins>
+
+To host the pane somewhere else instead:
+
+1. Build it and host `dist/` on an HTTPS origin of your choice (any static
+   host; it is plain files). The pane must not be served from the CaseCite
+   API path.
 
    ```bash
    npm run build
@@ -105,13 +117,10 @@ sideloading guide covers edge cases: <https://learn.microsoft.com/office/dev/add
    second, independent deployment.
 
 2. On the CaseCite server set `WORD_ADDIN_ORIGIN=https://addin.yourfirm.com`
-   and `FRONTEND_URL=https://casecite.yourfirm.com`, then restart.
+   and `FRONTEND_URL=https://casecite.yourfirm.com`, then restart; the
+   server's manifest then points at that origin too.
 
-3. Publish the manifest to users through **Centralized Deployment**: Microsoft
-   365 admin center → *Settings → Integrated apps → Upload custom apps* →
-   upload `dist/manifest.xml`, choose the users or groups. Word picks it up
-   within a day; sideloading is not needed.
-   <https://learn.microsoft.com/microsoft-365/admin/manage/centralized-deployment-of-add-ins>
+3. Publish the manifest as above.
 
 Each user then signs in once from the pane as described above.
 

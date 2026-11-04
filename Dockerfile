@@ -20,6 +20,21 @@ RUN npm run build && \
     echo "✓ Vite build successful" || \
     (echo "✗ FATAL: Vite build failed - dist/index.html not found" && exit 1)
 
+# ---- Stage 1b: Word add-in build ----
+# The task pane is plain static files; built here and served at /addin/ on the
+# app's own origin, so the add-in deploys with the stack. The manifest for a
+# deployment is rendered by the backend (GET /api/v1/addin/manifest.xml).
+FROM node:24-slim AS addin-build
+
+WORKDIR /addin
+COPY word-addin/package.json word-addin/package-lock.json* ./
+RUN npm ci
+COPY word-addin/ .
+RUN ADDIN_BASE=/addin/ npm run build && \
+    test -f dist/index.html && \
+    echo "✓ Word add-in build successful" || \
+    (echo "✗ FATAL: Word add-in build failed - dist/index.html not found" && exit 1)
+
 # ---- Stage 2: Python Runtime ----
 # Floating patch tag (see note above on the frontend stage).
 FROM python:3.11-slim AS python-base
@@ -85,6 +100,10 @@ COPY --chown=appuser:appuser backend/migrations ./migrations
 
 # Copy built frontend from stage 1
 COPY --chown=appuser:appuser --from=frontend-build /frontend/dist /var/www/html
+# The Word add-in pane, served at /addin/ (nginx here, Caddy in the bundled
+# stack), and the manifest template the backend renders per deployment.
+COPY --chown=appuser:appuser --from=addin-build /addin/dist /var/www/html/addin
+COPY --chown=appuser:appuser word-addin/manifest.xml /app/addin-manifest.xml
 
 # Verify the built index.html references assets (not /src/main.jsx)
 RUN grep -q '/assets/' /var/www/html/index.html && \
