@@ -478,32 +478,65 @@ class TestErrorHandling:
 
 
 class TestMultiWorkerGuard:
-    """The app is single-process: sessions, the document registry and the
-    connector caches are process-local, so UVICORN_WORKERS>1 must be refused
-    for EVERY vector backend (Pinecone alone does not make it safe)."""
+    """More than one worker process is allowed only on the footing that makes
+    the once process-local stores shared: PostgreSQL, Redis and a vector
+    store that is not the embedded Chroma client. Anything less is refused
+    with the reasons."""
 
-    @pytest.mark.parametrize("vector_db", ["chroma", "pinecone"])
-    def test_more_than_one_worker_is_refused_for_any_vector_db(self, vector_db):
+    def test_sqlite_chroma_and_no_redis_are_each_named(self):
         import os
 
         from app.main import check_single_process_deployment, settings
 
         guarded = MagicMock(wraps=settings)
-        guarded.vector_db = vector_db
+        guarded.vector_db = "chroma"
+        guarded.redis_url = None
         with (
             patch("app.main.settings", guarded),
+            patch("app.database.IS_POSTGRES", False),
             patch.dict(os.environ, {"UVICORN_WORKERS": "2"}),
             pytest.raises(RuntimeError) as excinfo,
         ):
             check_single_process_deployment()
         message = str(excinfo.value)
-        assert "UVICORN_WORKERS=2" in message
-        # The message names the three process-local stores and the fix.
-        assert "session store" in message
-        assert "document registry" in message
-        assert "connector credential caches" in message
-        assert "Redis/Postgres" in message
-        assert "Pinecone" in message
+        assert "UVICORN_WORKERS=2 needs" in message
+        assert "PostgreSQL" in message
+        assert "REDIS_URL" in message
+        assert "embedded Chroma" in message
+        assert "UVICORN_WORKERS=1" in message
+
+    def test_the_shared_footing_allows_workers(self):
+        import os
+
+        from app.main import check_single_process_deployment, settings
+
+        guarded = MagicMock(wraps=settings)
+        guarded.vector_db = "pinecone"
+        guarded.redis_url = "redis://redis:6379/0"
+        with (
+            patch("app.main.settings", guarded),
+            patch("app.database.IS_POSTGRES", True),
+            patch.dict(os.environ, {"UVICORN_WORKERS": "4"}),
+        ):
+            check_single_process_deployment()  # must not raise
+
+    def test_pinecone_alone_is_not_enough(self):
+        import os
+
+        from app.main import check_single_process_deployment, settings
+
+        guarded = MagicMock(wraps=settings)
+        guarded.vector_db = "pinecone"
+        guarded.redis_url = None
+        with (
+            patch("app.main.settings", guarded),
+            patch("app.database.IS_POSTGRES", True),
+            patch.dict(os.environ, {"UVICORN_WORKERS": "2"}),
+            pytest.raises(RuntimeError) as excinfo,
+        ):
+            check_single_process_deployment()
+        assert "REDIS_URL" in str(excinfo.value)
+        assert "PostgreSQL" not in str(excinfo.value)
 
     @pytest.mark.parametrize("workers", ["", "1", " 1 "])
     def test_single_worker_is_accepted(self, workers):

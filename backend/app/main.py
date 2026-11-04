@@ -109,41 +109,66 @@ async def _retention_loop() -> None:
         await asyncio.sleep(_AUDIT_RETENTION_INTERVAL_SECONDS)
 
 
-def check_single_process_deployment(workers: str | None = None) -> None:
-    """Refuse to start with more than one worker process, whatever the vector DB.
+def multi_process_requirements() -> list[str]:
+    """What a multi-worker / multi-replica deployment still lacks (empty = ready).
 
-    Three stores are process-local and are NOT safe to share between uvicorn
-    workers or container replicas behind one URL:
-
-    * the session store (``middleware/security.py`` ``SessionManager``: an
-      in-memory dict mirrored to ``sessions.jsonl``) — logins, logouts and
-      "terminate all sessions" only take effect in the process that handled
-      them;
-    * the document registry (``services/documents.py``: ``index.json`` is read
-      once per process and rewritten whole on every change) — two processes
-      overwrite each other's uploads and deletions;
-    * connector credential/state caches (``services/connectors``) — token
-      refreshes in one process are invisible to the others.
-
-    Switching VECTOR_DB to Pinecone does not fix any of these. Multi-worker /
-    multi-replica deployment needs them moved to Redis/Postgres first
-    (ROADMAP: "Multi-worker / multi-replica deployments"). Raises RuntimeError
-    for any UVICORN_WORKERS value other than unset/empty/"1".
+    Since migration 024 the stores that were process-local are shared: the document
+    registry and the shared version counters live in the database, sessions
+    live in Redis, the permission matrix, legal holds and connector
+    credentials reload when another process changes them, and the audit
+    chain is serialised through a lock file. What remains is the
+    infrastructure those rely on, and a vector store that is not an
+    embedded, single-process one.
     """
+    from app.database import IS_POSTGRES
+
+    missing: list[str] = []
+    if not IS_POSTGRES:
+        missing.append("a PostgreSQL DATABASE_URL (SQLite is single-process)")
+    if not settings.redis_url:
+        missing.append("REDIS_URL (sessions, revocations and rate limits are shared through Redis)")
+    if settings.vector_db == "chroma":
+        missing.append(
+            "a vector store that is not the embedded Chroma client (VECTOR_DB=pinecone): "
+            "the embedded store is opened by one process at a time"
+        )
+    return missing
+
+
+def multi_process_enabled(workers: str | None = None) -> bool:
+    """True when more than one worker process is configured."""
     if workers is None:
         workers = os.environ.get("UVICORN_WORKERS", "1")
-    if workers.strip() in ("", "1"):
+    return workers.strip() not in ("", "1")
+
+
+def check_single_process_deployment(workers: str | None = None) -> None:
+    """Refuse more than one worker process unless the shared stores are in place.
+
+    The session store, the document registry, the connector credential and
+    permission caches and the audit chain are all safe to share between
+    worker processes or container replicas now (see
+    ``multi_process_requirements``), provided the deployment has PostgreSQL,
+    Redis and a non-embedded vector store. Without one of those a second
+    worker would still corrupt or split state, so any UVICORN_WORKERS value
+    other than unset/empty/"1" is refused with the reasons.
+    """
+    if not multi_process_enabled(workers):
+        return
+    missing = multi_process_requirements()
+    if not missing:
+        logger.info(
+            "UVICORN_WORKERS=%s: multi-process deployment (shared registry, sessions, "
+            "caches and audit chain)",
+            (workers or os.environ.get("UVICORN_WORKERS", "")).strip(),
+        )
         return
     raise RuntimeError(
-        f"UVICORN_WORKERS={workers} is not supported: the session store "
-        "(middleware/security.py SessionManager, in-memory + sessions.jsonl), the "
-        "document registry (services/documents.py index.json, loaded once per "
-        "process and rewritten whole) and the connector credential caches are all "
-        "process-local, so a second worker or container replica corrupts them — "
-        "regardless of VECTOR_DB (Pinecone alone is not enough). Set "
-        "UVICORN_WORKERS=1 (or unset it) and run a single replica. Multi-worker / "
-        "multi-replica deployment requires moving those stores to Redis/Postgres "
-        "first (see ROADMAP: multi-worker / multi-replica deployments)."
+        f"UVICORN_WORKERS={(workers or os.environ.get('UVICORN_WORKERS', '')).strip()} needs: "
+        + "; ".join(missing)
+        + ". The session store, document registry, connector credential caches and "
+        "audit chain are shared between workers only on that footing (docs/deployment.md, "
+        "Scaling). Set UVICORN_WORKERS=1 (or unset it) to run a single process."
     )
 
 
@@ -152,20 +177,24 @@ def check_single_process_deployment(workers: str | None = None) -> None:
 _instance_lock_handle = None
 
 
-def acquire_instance_lock(data_dir: "str | os.PathLike[str] | None" = None) -> None:
-    """Hold an exclusive advisory lock on ``<data>/.instance.lock``.
+def acquire_instance_lock(
+    data_dir: "str | os.PathLike[str] | None" = None, shared: bool | None = None
+) -> None:
+    """Hold an advisory lock on ``<data>/.instance.lock``.
 
-    ``check_single_process_deployment`` only inspects the UVICORN_WORKERS
-    variable. ``uvicorn --workers 2``, gunicorn, or a second container replica
-    pointed at the same data volume never set it and would corrupt the same
-    process-local stores. A file lock in the data directory makes the second
-    process refuse to start instead of silently splitting the session store,
-    document registry and connector caches.
+    A single-process deployment takes it exclusively: ``uvicorn --workers 2``,
+    gunicorn, or a second container replica pointed at the same data volume
+    never set UVICORN_WORKERS and would otherwise run two processes against
+    stores that are only shared when the multi-process footing is in place.
+    A multi-process deployment (``multi_process_enabled`` and no missing
+    requirements) takes a shared lock instead, so its workers coexist while
+    a single-process start against the same volume is still refused, and
+    vice versa: the two modes never mix on one data directory.
 
     POSIX only (``fcntl``); on Windows development machines the check is
     skipped. Re-entrant within a process so a test harness that starts the app
     more than once does not lock itself out. Raises RuntimeError when another
-    process already holds the lock.
+    process holds a conflicting lock.
     """
     global _instance_lock_handle
     if _instance_lock_handle is not None:
@@ -175,21 +204,29 @@ def acquire_instance_lock(data_dir: "str | os.PathLike[str] | None" = None) -> N
     import fcntl
     from pathlib import Path
 
+    if shared is None:
+        shared = multi_process_enabled() and not multi_process_requirements()
     directory = Path(data_dir) if data_dir is not None else Path(settings.upload_dir).parent
     directory.mkdir(parents=True, exist_ok=True)
     lock_path = directory / ".instance.lock"
     handle = open(lock_path, "a+")  # noqa: SIM115 - deliberately kept open
+    mode = fcntl.LOCK_SH if shared else fcntl.LOCK_EX
     try:
-        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        fcntl.flock(handle.fileno(), mode | fcntl.LOCK_NB)
     except OSError:
         handle.close()
+        if shared:
+            raise RuntimeError(
+                f"A single-process CaseCite instance holds {lock_path} exclusively, so "
+                "a multi-worker instance cannot share this data directory with it. Stop "
+                "the other instance first."
+            ) from None
         raise RuntimeError(
-            f"Another CaseCite process already holds {lock_path}. Only one worker "
-            "process / container replica may serve a data directory: the session "
-            "store, document registry and connector credential caches are "
-            "process-local (see check_single_process_deployment). Stop the other "
-            "instance, or if it crashed without releasing the lock, remove the "
-            "file and start again."
+            f"Another CaseCite process already holds {lock_path}. A single-process "
+            "deployment may not share a data directory with another instance (set "
+            "UVICORN_WORKERS and the shared stores it needs for a multi-process one; "
+            "see docs/deployment.md, Scaling). Stop the other instance, or if it "
+            "crashed without releasing the lock, remove the file and start again."
         ) from None
     _instance_lock_handle = handle
 

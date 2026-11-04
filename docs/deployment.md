@@ -241,38 +241,38 @@ reason, in addition to whatever `ALLOWED_HOSTS` lists.
 
 ## Scaling Considerations
 
-**CaseCite currently runs as exactly one backend process.** The app refuses to
-start when `UVICORN_WORKERS` is set to anything other than `1` (or unset),
-whatever `VECTOR_DB` is, and the same constraint applies to running more than
-one container replica behind a single URL. Switching the vector database to
-Pinecone does **not** lift it. Since 1.3.0 the running process also holds an
-exclusive lock on `data/.instance.lock`; a second process pointed at the same
-data directory (gunicorn, `uvicorn --workers 2`, a second replica sharing the
-volume) exits with a message naming the lock instead of corrupting the stores
-below. If a container was killed without a clean shutdown the kernel releases
-the lock with it; the file itself can be deleted safely while nothing is running.
+**One process by default; several when the shared footing is in place.**
+Before migration 024 the session store, the document registry and the connector
+credential caches were process-local, and the audit hash chain was continued
+from each process's memory, so the app refused `UVICORN_WORKERS` above 1 and
+held an exclusive lock on `data/.instance.lock`. They are shared now:
 
-Three stores are process-local and are not safe to share between workers or
-replicas:
+| Store | Where it lives now | How other processes see a change |
+|-------|--------------------|----------------------------------|
+| Document registry | `document_registry` / `document_folders` tables (migration 024; `index.json` imported once and kept as `index.json.migrated-*`) | A `shared_versions` counter, checked at most twice a second; a three-way merge keeps a process's unsaved edit |
+| Session store | Redis (`sessions:<user>`; one JSON list per user, expiring with its longest session) | Every validation reads it; a terminate on one worker ends the session everywhere |
+| Role permission matrix, legal holds | The database, as before | `shared_versions` counters bumped on change (the hold counter in the same transaction as the hold) |
+| Connector credentials | Encrypted files on the data volume, as before | The cache reloads when the file's modification time changed |
+| Audit chain | Daily JSONL files on the data volume, as before | Each append takes `audit_logs/.chain.lock` and re-reads the last hash from the file tail under it |
 
-| Store | Where | What breaks with two processes |
-|-------|-------|--------------------------------|
-| Session store | `middleware/security.py` `SessionManager` — in-memory dict mirrored to `data/sessions.jsonl` | Logins, logouts and "terminate all sessions" only take effect in the process that handled them |
-| Document registry | `services/documents.py` — `data/uploads/index.json` is read once per process and rewritten whole on every change | Processes overwrite each other's uploads and deletions; documents "index" and can never be found |
-| Connector caches | `services/connectors/*` — per-process credential/state caches | Token refreshes in one process are invisible to the others |
+What remains is the infrastructure those rely on. `UVICORN_WORKERS` above 1
+(read by `start.sh`) is accepted only when all three hold, and refused with
+the missing ones named otherwise:
 
-(The embedded Chroma store is a fourth, but it is the only one Pinecone fixes.)
+- a PostgreSQL `DATABASE_URL` (SQLite is single-process);
+- `REDIS_URL` (sessions, token revocations, lockouts and rate limits);
+- `VECTOR_DB=pinecone` (the embedded Chroma store is opened by one process
+  at a time; `PINECONE_API_KEY`, `PINECONE_ENVIRONMENT`, `PINECONE_INDEX_NAME`).
 
-Horizontal scaling therefore needs those stores moved to Redis/Postgres first —
-this is tracked in `ROADMAP.md` under "Multi-worker / multi-replica
-deployments". Until then, scale vertically (CPU/RAM for the single container)
-and keep `UVICORN_WORKERS` unset.
+Replicas must share the data volume (`rag_data`): the encrypted originals,
+connector credentials and audit logs are files on it. In multi-process mode
+each worker takes a *shared* lock on `data/.instance.lock`; a single-process
+start against the same volume still takes it exclusively, so the two modes
+never mix. Put a load balancer in front of the replicas; nothing is sticky.
 
-PostgreSQL and Redis themselves already support multi-instance deployments, so
-once the app-side stores move there, the remaining steps are: switch to Pinecone
-(`VECTOR_DB=pinecone`, `PINECONE_API_KEY`, `PINECONE_ENVIRONMENT`,
-`PINECONE_INDEX_NAME`), raise `UVICORN_WORKERS` (read by `start.sh`), and put a
-load balancer in front of the replicas.
+Background work (connector syncs, deep research, workflows, retention) runs
+in whichever worker accepted the job; job state is in Redis, so another
+worker can report it.
 
 ---
 
