@@ -323,6 +323,13 @@ class MatterResponse(BaseModel):
     role: str  # the caller's role in this matter: "owner" | "member"
     member_count: int
     created_at: datetime
+    # Governance (see app/services/governance.py): a legal hold blocks every
+    # delete of the matter and its content; retention removes content older
+    # than N days (suspended by a hold). None = keep everything.
+    legal_hold: bool = False
+    legal_hold_reason: str | None = None
+    legal_hold_set_at: datetime | None = None
+    retention_days: int | None = None
 
 
 class MatterListResponse(BaseModel):
@@ -334,10 +341,30 @@ class MatterDetailResponse(MatterResponse):
 
 
 class UpdateMatterRequest(BaseModel):
-    """Rename a matter or change its client name. Omitted fields keep their value."""
+    """Rename a matter, change its client name or its retention policy.
+    Omitted fields keep their value; ``retention_days`` set to 0 clears the
+    policy (keep everything)."""
 
     name: str | None = Field(None, min_length=1, max_length=300)
     client_name: str | None = Field(None, max_length=300)
+    retention_days: int | None = Field(None, ge=0, le=365 * 30)
+
+
+class SetLegalHoldRequest(BaseModel):
+    """Place (``on=True``) or lift a legal hold, with the reason for the record."""
+
+    on: bool
+    reason: str | None = Field(None, max_length=500)
+
+
+class MatterRetentionResponse(BaseModel):
+    """GET /matters/{id}/retention: the policy and what the next run removes."""
+
+    matter_id: str
+    retention_days: int | None = None
+    legal_hold: bool = False
+    documents_due: int = 0
+    chat_sessions_due: int = 0
 
 
 class TransferMatterRequest(BaseModel):

@@ -94,6 +94,15 @@ network, disk encryption, backups and the firm's own policies. No SOC 2, ISO
 - The document registry never fails silently: a write that fails is a 503 and
   the operation rolls back; a registry that cannot be read at startup is fatal
   rather than replaced by an empty one.
+- Legal hold: a matter's owner or an admin can place a hold (with a reason,
+  audited). While held, the matter and everything filed under it — documents,
+  conversations — cannot be deleted through any path: a member's delete, a
+  purge of a departing owner's account, replacement by re-upload, or
+  retention. A single document can be held on its own. Holds are enforced in
+  the services that delete, so new delete paths inherit the check.
+- Retention: a matter can keep documents and conversations for N days (7 to
+  30 years); a daily run removes older content through the normal delete
+  path and audits each removal as `retention_expired`. A hold suspends it.
 
 ### Data Protection
 - Application-layer AES-256-GCM encryption for uploaded document originals,

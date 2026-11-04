@@ -212,14 +212,30 @@ async def get_session_with_messages(
         }
 
 
+class ChatSessionOnHoldError(RuntimeError):
+    """The conversation's matter is on legal hold; it cannot be deleted."""
+
+
 async def delete_session(
     session_id: str, user_id: str, accessible_matter_ids: set[str] | None = None
 ) -> bool:
-    """Delete a session (and its messages) the caller may access. False if not."""
+    """Delete a session (and its messages) the caller may access. False if not.
+    Raises ChatSessionOnHoldError when its matter is on legal hold."""
+    from app.models.matters import Matter
+
     async with get_db_context() as db:
         session = await _get_owned_session(db, session_id, user_id, accessible_matter_ids)
         if session is None:
             return False
+        if session.matter_id:
+            held = (
+                await db.execute(select(Matter.legal_hold).where(Matter.id == session.matter_id))
+            ).scalar_one_or_none()
+            if held:
+                raise ChatSessionOnHoldError(
+                    "This conversation is filed under a matter on legal hold and cannot be "
+                    "deleted until the hold is lifted."
+                )
 
         # Explicit message delete: FK cascade covers Postgres/SQLite-with-pragma,
         # but delete deterministically rather than relying on driver behaviour.

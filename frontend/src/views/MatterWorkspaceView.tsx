@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useMattersStore, type MatterTab } from '../stores/mattersStore';
+import { MatterGovernancePanel } from '../components/shared/MatterGovernancePanel';
 import { useAuthStore } from '../stores/authStore';
 import { useRagDocsStore } from '../stores/ragDocsStore';
 import { useContractsStore } from '../stores/contractsStore';
@@ -31,6 +32,7 @@ function MatterWorkspaceView() {
     workspace, workspaceLoading, workspaceError, tab, setTab,
     documents, chats, analyses, activity, tabLoading,
     loadWorkspace, renameMatter, addMember, removeMember, transferOwnership, deleteMatter,
+    setLegalHold, setRetention,
     moveDocumentsHere, movableDocuments, activeMatterId, setActiveMatter, init,
   } = useMattersStore();
   const currentUserId = useAuthStore((st) => st.user?.id ?? null);
@@ -87,6 +89,7 @@ function MatterWorkspaceView() {
   const isOwner = workspace.role === 'owner';
   const isActive = activeMatterId === workspace.id;
   const title = workspace.is_personal ? 'Personal' : workspace.name;
+  const onHold = !!workspace.legal_hold;
 
   return (
     <div className={s.container}>
@@ -106,6 +109,15 @@ function MatterWorkspaceView() {
               {isActive && (
                 <span className={s.activeBadge} title="Research, Contracts and Drafting are scoped to this matter">
                   <Icon name="CheckCircle2" size={11} /> Active matter
+                </span>
+              )}
+              {onHold && (
+                <span
+                  className={s.holdBadge}
+                  data-testid="legal-hold-badge"
+                  title={workspace.legal_hold_reason ? `Legal hold: ${workspace.legal_hold_reason}` : 'Legal hold'}
+                >
+                  <Icon name="Lock" size={11} /> Legal hold
                 </span>
               )}
               {workspaceLoading && <Icon name="Loader2" size={14} className={s.spin} />}
@@ -132,13 +144,30 @@ function MatterWorkspaceView() {
                 <button className={s.secondaryBtn} onClick={renaming ? () => setRenaming(false) : startRename}>
                   <Icon name="Pencil" size={14} /> {renaming ? 'Cancel' : 'Rename'}
                 </button>
-                <button className={s.dangerBtn} onClick={deleteMatter}>
+                <button
+                  className={s.dangerBtn}
+                  onClick={deleteMatter}
+                  disabled={onHold}
+                  title={onHold ? 'On legal hold: lift the hold before deleting' : undefined}
+                >
                   <Icon name="Trash2" size={14} /> Delete
                 </button>
               </>
             )}
           </div>
         </div>
+
+        {isOwner && !workspace.is_personal && (
+          <MatterGovernancePanel
+            legalHold={onHold}
+            legalHoldReason={workspace.legal_hold_reason ?? null}
+            legalHoldSetAt={workspace.legal_hold_set_at ?? null}
+            retentionDays={workspace.retention_days ?? null}
+            onSetHold={setLegalHold}
+            onSetRetention={setRetention}
+            styles={s}
+          />
+        )}
 
         {renaming && (
           <form className={s.renameForm} onSubmit={submitRename}>

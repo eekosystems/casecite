@@ -78,6 +78,10 @@ export interface MattersState {
   loadWorkspace: (matterId: string) => Promise<void>;
   loadTab: (tab: MatterTab) => Promise<void>;
   renameMatter: (name: string, clientName: string | null) => Promise<boolean>;
+  /** Place or lift a legal hold on the open matter. */
+  setLegalHold: (on: boolean, reason: string | null) => Promise<boolean>;
+  /** Set the open matter's retention policy in days (0 clears it). */
+  setRetention: (days: number) => Promise<boolean>;
   addMember: (email: string) => Promise<boolean>;
   removeMember: (userId: string, label: string) => void;
   transferOwnership: (userId: string, label: string) => void;
@@ -231,6 +235,43 @@ export const useMattersStore = create<MattersState>((set, get) => ({
       useUIStore.getState().addToast(`Could not load ${tab}: ${errorMessage(e, 'unknown error')}`, 'error');
     } finally {
       set((state) => ({ tabLoading: { ...state.tabLoading, [tab]: false } }));
+    }
+  },
+
+  setLegalHold: async (on, reason) => {
+    const { workspaceId } = get();
+    if (!workspaceId) return false;
+    try {
+      const updated = await api.setMatterHold(workspaceId, on, reason);
+      set((state) => ({
+        workspace: state.workspace ? { ...state.workspace, ...updated, members: state.workspace.members } : null,
+        matters: state.matters.map((m) => (m.id === updated.id ? { ...m, ...updated } : m)),
+      }));
+      useUIStore.getState().addToast(on ? 'Legal hold placed: nothing in this matter can be deleted' : 'Legal hold lifted', 'success');
+      return true;
+    } catch (e: unknown) {
+      useUIStore.getState().addToast(errorMessage(e, 'The hold could not be changed.'), 'error');
+      return false;
+    }
+  },
+
+  setRetention: async (days) => {
+    const { workspaceId } = get();
+    if (!workspaceId) return false;
+    try {
+      const updated = await api.updateMatter(workspaceId, { retention_days: days });
+      set((state) => ({
+        workspace: state.workspace ? { ...state.workspace, retention_days: updated.retention_days } : null,
+        matters: state.matters.map((m) => (m.id === updated.id ? { ...m, retention_days: updated.retention_days } : m)),
+      }));
+      useUIStore.getState().addToast(
+        updated.retention_days ? `Content older than ${updated.retention_days} days will be removed daily` : 'Retention policy cleared: everything is kept',
+        'success',
+      );
+      return true;
+    } catch (e: unknown) {
+      useUIStore.getState().addToast(errorMessage(e, 'The retention policy could not be changed.'), 'error');
+      return false;
     }
   },
 

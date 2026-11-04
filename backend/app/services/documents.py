@@ -70,6 +70,12 @@ class DocumentMoveError(RuntimeError):
     must never disagree about who may search it). Safe to show the user."""
 
 
+class DocumentOnHoldError(RuntimeError):
+    """The document, or the matter it is filed under, is on legal hold: it
+    cannot be deleted through any path until the hold is lifted. Safe to
+    show the user."""
+
+
 class RegistryWriteError(ServiceUnavailableError):
     """The document registry (index.json) could not be written to disk.
 
@@ -92,8 +98,45 @@ class DocumentService:
         self.documents: dict[str, Document] = {}
         # Per-user list of explicit (possibly empty) knowledge-base folders.
         self.folders: dict[str, list[str]] = {}
+        # Matters on legal hold. Loaded at startup and refreshed on every hold
+        # change by app/services/governance.py; process-local, which is
+        # correct for the supported single-process deployment.
+        self.held_matter_ids: set[str] = set()
         self._load_index()
         self._load_folders()
+
+    # ==================== Legal hold ====================
+
+    def is_held(self, doc: Document) -> bool:
+        """True when the document itself, or its matter, is on legal hold."""
+        if (doc.metadata or {}).get("legal_hold"):
+            return True
+        return bool(doc.matter_id) and doc.matter_id in self.held_matter_ids
+
+    def set_document_hold(
+        self, doc_id: str, *, on: bool, reason: str | None, set_by: str
+    ) -> Document | None:
+        """Place or lift a hold on one document (the matter-level hold is
+        separate). Persisted in the registry. None when the id is unknown."""
+        doc = self.documents.get(doc_id)
+        if doc is None:
+            return None
+        if on:
+            doc.metadata["legal_hold"] = {
+                "reason": (reason or "").strip()[:500] or None,
+                "set_by": set_by,
+                "set_at": datetime.now(UTC).isoformat(),
+            }
+        else:
+            doc.metadata.pop("legal_hold", None)
+        self._save_index()
+        return doc
+
+    def _refuse_if_held(self, doc: Document) -> None:
+        if self.is_held(doc):
+            raise DocumentOnHoldError(
+                f"'{doc.filename}' is on legal hold and cannot be deleted until the hold is lifted."
+            )
 
     def _get_index_path(self) -> str:
         return os.path.join(settings.upload_dir, "index.json")
@@ -592,6 +635,10 @@ class DocumentService:
         """Delete a document that a successful re-upload has superseded."""
         try:
             deleted = await self.delete_document(old.id, old.user_id)
+        except DocumentOnHoldError:
+            # The old copy is on legal hold: both stay.
+            logger.info(f"Replaced document {old.id} kept: it is on legal hold")
+            return
         except (DocumentDeletionError, RegistryWriteError, OSError, ValueError, KeyError) as e:
             # The new copy is indexed and persisted; keeping the old one too is
             # the safe failure. (A RegistryWriteError here means the old
@@ -982,6 +1029,9 @@ class DocumentService:
         entry, in that order, resuming at the first step not already recorded
         as done. The caller saves the index. Returns the completed steps."""
         doc_id = doc.id
+        # A hold is checked before anything is touched, on every path (user
+        # delete, purge, clear-all, replacement by re-upload, retention).
+        self._refuse_if_held(doc)
         progress = self.deletion_progress(doc)
 
         # Vectors first: if these cannot be removed, stop before anything else.
@@ -1128,10 +1178,13 @@ class DocumentService:
         doc_ids = [doc_id for doc_id, doc in self.documents.items() if doc.user_id == user_id]
         deleted = 0
         failed = 0
+        on_hold = 0
         for doc_id in doc_ids:
             try:
                 if await self.delete_document(doc_id, user_id):
                     deleted += 1
+            except DocumentOnHoldError:
+                on_hold += 1
             except (DocumentDeletionError, OSError, ValueError, KeyError) as e:
                 failed += 1
                 logger.error(f"Error deleting document {doc_id} during purge: {e}")
@@ -1142,7 +1195,7 @@ class DocumentService:
         # treat the purge as complete while the user's files remain.
         user_dir = os.path.join(settings.upload_dir, user_id)
         upload_dir_removed = False
-        if not failed:
+        if not failed and not on_hold:
             try:
                 if os.path.isdir(user_dir):
                     shutil.rmtree(user_dir)
@@ -1157,6 +1210,7 @@ class DocumentService:
         return {
             "documents_deleted": deleted,
             "documents_failed": failed,
+            "documents_on_hold": on_hold,
             "upload_dir_removed": upload_dir_removed,
         }
 
@@ -1197,17 +1251,20 @@ class DocumentService:
         user_docs = self._get_user_documents(user_id)
         cleared = 0
         failed = 0
+        on_hold = 0
         for doc in list(user_docs.values()):
             try:
                 await self._remove_document(doc)
                 cleared += 1
+            except DocumentOnHoldError:
+                on_hold += 1
             except (DocumentDeletionError, OSError, ValueError, KeyError) as e:
                 failed += 1
                 logger.error(f"Error clearing document {doc.id}: {e}")
         self._save_index()
 
         # Remove stray files — only once nothing that failed still needs its file.
-        if not failed:
+        if not failed and not on_hold:
             import shutil
 
             user_upload_dir = self._get_user_upload_dir(user_id)
@@ -1224,7 +1281,8 @@ class DocumentService:
         return {
             "cleared_documents": cleared,
             "failed_documents": failed,
-            "status": "success" if not failed else "partial",
+            "on_hold_documents": on_hold,
+            "status": "success" if not failed and not on_hold else "partial",
         }
 
     def _get_folder_path(self, doc: Document) -> str:

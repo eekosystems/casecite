@@ -6,7 +6,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_db
-from app.exceptions import AppError, BadRequestError, ForbiddenError, NotFoundError, UpstreamError
+from app.exceptions import (
+    AppError,
+    BadRequestError,
+    ConflictError,
+    ForbiddenError,
+    NotFoundError,
+    UpstreamError,
+)
 from app.models.responses.documents import (
     DocumentContentResponse,
     DocumentDeleteResponse,
@@ -21,13 +28,19 @@ from app.models.schemas import (
     DocumentStatus,
     DocumentTreeResponse,
     MoveDocumentRequest,
+    SetLegalHoldRequest,
 )
 from app.routers._matter_deps import accessible_matter_ids as _accessible_matter_ids
 from app.routers._matter_deps import owned_matter_ids as _owned_matter_ids
 from app.services import matters as matters_service
 from app.services.audit import AuditEventType, audit_service
 from app.services.auth import TokenData
-from app.services.documents import DELETION_STEPS, DocumentDeletionError, document_service
+from app.services.documents import (
+    DELETION_STEPS,
+    DocumentDeletionError,
+    DocumentOnHoldError,
+    document_service,
+)
 from app.services.permissions import require_permission
 from app.services.user_keys import UserAPIKeys
 from app.utils.error_handler import handle_service_error
@@ -297,6 +310,8 @@ async def retry_failed_deletion(
     has completed."""
     try:
         ok = await document_service.retry_failed_deletion(document_id)
+    except DocumentOnHoldError as e:
+        raise ConflictError(str(e))
     except DocumentDeletionError as e:
         await audit_service.log_event(
             event_type=AuditEventType.DOCUMENT_DELETE,
@@ -326,6 +341,42 @@ async def retry_failed_deletion(
     return DocumentDeleteResponse(
         status="deleted", id=document_id, removed=dict.fromkeys(DELETION_STEPS, True)
     )
+
+
+@router.post("/{document_id}/hold", response_model=Document)
+async def set_document_hold(
+    document_id: str,
+    body: SetLegalHoldRequest,
+    request: Request,
+    current_user: TokenData = require_permission("documents.delete"),
+    owned_matters: set[str] = Depends(_owned_matter_ids),
+) -> Document:
+    """Place or lift a legal hold on one document (its owner, or the owner of
+    the matter it is filed under, or an admin). While held, the document
+    cannot be deleted through any path — including a purge of its owner's
+    account and replacement by re-upload — until the hold is lifted."""
+    from app.services.permissions import effective_permissions
+
+    doc = document_service.documents.get(document_id)
+    perms = await effective_permissions(current_user.roles or [])
+    if doc is None or not (
+        document_service._can_access(doc, current_user.user_id, owned_matters)
+        or "admin.users" in perms
+    ):
+        raise NotFoundError("Document not found")
+    updated = document_service.set_document_hold(
+        document_id, on=body.on, reason=body.reason, set_by=current_user.user_id
+    )
+    await audit_service.log_event(
+        event_type=AuditEventType.DATA_MODIFICATION,
+        user_id=current_user.user_id,
+        user_email=current_user.email,
+        resource_type="document",
+        resource_id=document_id,
+        ip_address=get_client_ip(request),
+        details={"action": "legal_hold_set" if body.on else "legal_hold_lifted"},
+    )
+    return updated
 
 
 @router.post("/{document_id}/move")
@@ -533,6 +584,8 @@ async def delete_document(
             raise NotFoundError("Document not found")
     except (HTTPException, AppError):
         raise
+    except DocumentOnHoldError as e:
+        raise ConflictError(str(e))
     except DocumentDeletionError as e:
         # The search index (or the analyses derived from the document) could not
         # be cleaned up, so the service left the document in place. Say so

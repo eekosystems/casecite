@@ -435,10 +435,25 @@ export interface Matter {
   role: 'owner' | 'member' | 'none' | string;
   member_count: number;
   created_at: string;
+  /** While on legal hold nothing filed under the matter can be deleted. */
+  legal_hold?: boolean;
+  legal_hold_reason?: string | null;
+  legal_hold_set_at?: string | null;
+  /** Content older than this many days is removed daily; null = keep. */
+  retention_days?: number | null;
 }
 
 export interface MatterDetail extends Matter {
   members: MatterMember[];
+}
+
+/** GET /matters/{id}/retention: the policy and what the next run removes. */
+export interface MatterRetention {
+  matter_id: string;
+  retention_days: number | null;
+  legal_hold: boolean;
+  documents_due: number;
+  chat_sessions_due: number;
 }
 
 export interface MatterAnalysisItem {
@@ -1791,7 +1806,12 @@ export interface ApiClient {
   listMatters(): Promise<{ matters: Matter[] }>;
   createMatter(name: string, clientName?: string | null): Promise<Matter>;
   getMatter(matterId: string): Promise<MatterDetail>;
-  updateMatter(matterId: string, changes: { name?: string; client_name?: string | null }): Promise<Matter>;
+  updateMatter(
+    matterId: string,
+    changes: { name?: string; client_name?: string | null; retention_days?: number },
+  ): Promise<Matter>;
+  setMatterHold(matterId: string, on: boolean, reason?: string | null): Promise<Matter>;
+  getMatterRetention(matterId: string): Promise<MatterRetention>;
   deleteMatter(matterId: string): Promise<{ status: string; id: string }>;
   addMatterMember(matterId: string, email: string): Promise<MatterDetail>;
   removeMatterMember(matterId: string, userId: string): Promise<MatterDetail>;

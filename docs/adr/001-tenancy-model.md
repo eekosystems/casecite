@@ -45,7 +45,7 @@ System-wide reference data (the clause taxonomy, jurisdiction rules, the cached 
 - **Sharing is coarse.** Matters share documents and chats with all members of the matter; there are no per-document permissions, no ethical walls, and deleting a user deletes the matters they own rather than transferring them.
 - **Application-enforced, not database-enforced.** A bug in a service function that omits the `user_id` filter could leak data across users. PostgreSQL RLS would provide defense-in-depth at the database layer.
 - **Scaling ceiling.** All users share one set of tables. At very high user counts (10K+), table scans and index pressure increase. Partitioning by `user_id` or sharding would require architectural changes.
-- **No per-tenant customization.** Cannot offer different schema versions, data retention policies, or storage locations per customer.
+- **No per-tenant customization.** Cannot offer different schema versions or storage locations per customer. (Retention and legal hold exist per matter, not per tenant — see `app/services/governance.py`.)
 
 ### Migration path
 

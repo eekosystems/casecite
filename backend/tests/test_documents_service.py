@@ -414,7 +414,12 @@ class TestDocumentService:
         ):
             result = await svc.clear_all("user-1")
 
-        assert result == {"cleared_documents": 1, "failed_documents": 1, "status": "partial"}
+        assert result == {
+            "cleared_documents": 1,
+            "failed_documents": 1,
+            "on_hold_documents": 0,
+            "status": "partial",
+        }
         assert "d1" not in svc.documents
         assert "d2" in svc.documents
         # The stray-file sweep is skipped: d2 still needs its stored file.

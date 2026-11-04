@@ -20,7 +20,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.exceptions import BadRequestError, NotFoundError, ServiceUnavailableError
+from app.exceptions import BadRequestError, ConflictError, NotFoundError, ServiceUnavailableError
 from app.models.audit import AuditLog as AuditLogDB
 from app.models.auth import User as DBUser
 from app.models.clause_intel import ContractAnalysisRun
@@ -38,13 +38,16 @@ from app.models.schemas import (
     MatterListResponse,
     MatterMemberResponse,
     MatterResponse,
+    MatterRetentionResponse,
     MoveMatterDocumentsRequest,
     MoveMatterDocumentsResponse,
+    SetLegalHoldRequest,
     TransferMatterRequest,
     UpdateMatterRequest,
 )
 from app.routers._matter_deps import owned_matter_ids as _owned_matter_ids
 from app.services import chat_sessions as chat_session_service
+from app.services import governance
 from app.services import matters as matters_service
 from app.services.audit import AuditEventType, audit_service
 from app.services.auth import TokenData, get_current_user
@@ -90,7 +93,27 @@ async def _to_response(
         role=role,
         member_count=await matters_service.member_count(db, matter.id),
         created_at=matter.created_at,
+        legal_hold=bool(matter.legal_hold),
+        legal_hold_reason=matter.legal_hold_reason,
+        legal_hold_set_at=matter.legal_hold_set_at,
+        retention_days=matter.retention_days,
     )
+
+
+async def _require_owned_or_admin_matter(
+    db: AsyncSession, matter_id: str, current_user: TokenData
+) -> Matter:
+    """The matter, for its owner or for an admin (user management); else 404."""
+    from app.services.permissions import effective_permissions
+
+    matter = await matters_service.get_matter(db, matter_id)
+    if matter is None:
+        raise NotFoundError("Matter not found")
+    if matter.owner_id == current_user.user_id:
+        return matter
+    if "admin.users" in await effective_permissions(current_user.roles or []):
+        return matter
+    raise NotFoundError("Matter not found")
 
 
 async def _members_with_identity(db: AsyncSession, matter_id: str) -> list[MatterMemberResponse]:
@@ -340,6 +363,10 @@ async def delete_matter(
     matter = await _require_owned_matter(db, matter_id, current_user.user_id)
     if matter.is_personal:
         raise BadRequestError("A personal matter cannot be deleted.")
+    if matter.legal_hold:
+        raise ConflictError(
+            "This matter is on legal hold and cannot be deleted until the hold is lifted."
+        )
     await db.delete(matter)  # memberships cascade via MatterMember.matter_id FK
     await db.commit()
     await _audit(
@@ -356,15 +383,56 @@ async def update_matter(
     current_user: TokenData = require_permission("matters.manage"),
     db: AsyncSession = Depends(get_db),
 ) -> MatterResponse:
-    """Rename a matter or change its client name. Owner only."""
-    if body.name is None and body.client_name is None:
-        raise BadRequestError("Nothing to change: send a name and/or a client_name.")
+    """Rename a matter, change its client name or its retention policy. Owner only."""
+    if body.name is None and body.client_name is None and body.retention_days is None:
+        raise BadRequestError("Nothing to change: send a name, client_name or retention_days.")
     matter = await _require_owned_matter(db, matter_id, current_user.user_id)
     try:
-        await matters_service.update_matter(
-            db, matter, name=body.name, client_name=body.client_name
+        if body.name is not None or body.client_name is not None:
+            await matters_service.update_matter(
+                db, matter, name=body.name, client_name=body.client_name
+            )
+        if body.retention_days is not None:
+            await governance.set_retention(db, matter, body.retention_days or None)
+    except (matters_service.MatterAccessError, governance.GovernanceError) as e:
+        raise BadRequestError(str(e))
+    await db.commit()
+    fields = [f for f in ("name", "client_name", "retention_days") if getattr(body, f) is not None]
+    await _audit(
+        request,
+        current_user,
+        AuditEventType.DATA_MODIFICATION,
+        matter_id,
+        {
+            "action": "matter_updated",
+            "fields": fields,
+            **({"retention_days": body.retention_days} if body.retention_days is not None else {}),
+        },
+    )
+    return await _to_response(db, matter, current_user.user_id)
+
+
+@router.post("/{matter_id}/hold", response_model=MatterResponse)
+async def set_matter_hold(
+    matter_id: str,
+    body: SetLegalHoldRequest,
+    request: Request,
+    current_user: TokenData = require_permission("matters.manage"),
+    db: AsyncSession = Depends(get_db),
+) -> MatterResponse:
+    """Place or lift a legal hold. The matter's owner, or an admin.
+
+    While held, nothing filed under the matter can be deleted through any
+    path — a member's delete, a purge of a departing owner's account,
+    replacement by re-upload, retention — and the retention policy is
+    suspended. The reason is kept for the record and audited.
+    """
+    matter = await _require_owned_or_admin_matter(db, matter_id, current_user)
+    try:
+        await governance.set_legal_hold(
+            db, matter, on=body.on, reason=body.reason, set_by=current_user.user_id
         )
-    except matters_service.MatterAccessError as e:
+    except governance.GovernanceError as e:
         raise BadRequestError(str(e))
     await db.commit()
     await _audit(
@@ -373,11 +441,29 @@ async def update_matter(
         AuditEventType.DATA_MODIFICATION,
         matter_id,
         {
-            "action": "matter_updated",
-            "fields": [f for f in ("name", "client_name") if getattr(body, f) is not None],
+            "action": "legal_hold_set" if body.on else "legal_hold_lifted",
+            "reason": (body.reason or "")[:200] or None,
         },
     )
     return await _to_response(db, matter, current_user.user_id)
+
+
+@router.get("/{matter_id}/retention", response_model=MatterRetentionResponse)
+async def get_matter_retention(
+    matter_id: str,
+    current_user: TokenData = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> MatterRetentionResponse:
+    """The matter's retention policy and what the next daily run would remove."""
+    matter = await _require_member_matter(db, matter_id, current_user.user_id)
+    due = await governance.retention_due(db, matter)
+    return MatterRetentionResponse(
+        matter_id=matter_id,
+        retention_days=matter.retention_days,
+        legal_hold=bool(matter.legal_hold),
+        documents_due=len(due["documents"]),
+        chat_sessions_due=len(due["chat_sessions"]),
+    )
 
 
 @router.post("/{matter_id}/transfer", response_model=MatterDetailResponse)

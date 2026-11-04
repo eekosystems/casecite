@@ -19,6 +19,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     String,
     UniqueConstraint,
 )
@@ -49,11 +50,22 @@ class Matter(Base):
     # shown as a shareable matter and never deletable. Preserves single-user
     # behavior: all of a solo user's data lives in their personal matter.
     is_personal = Column(Boolean, default=False, nullable=False)
+    # Legal hold: while set, nothing filed under the matter (documents,
+    # conversations, the matter itself) can be deleted through any path, and
+    # the retention policy is suspended. See app/services/governance.py.
+    legal_hold = Column(Boolean, default=False, nullable=False, server_default="0")
+    legal_hold_reason = Column(String(500), nullable=True)
+    legal_hold_set_by = Column(String(36), nullable=True)
+    legal_hold_set_at = Column(DateTime, nullable=True)
+    # Retention policy: documents and conversations filed under the matter are
+    # removed by the daily retention run once older than this. None = keep.
+    retention_days = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     __table_args__ = (
         Index("idx_matter_owner", "owner_id"),
+        Index("idx_matter_legal_hold", "legal_hold"),
         # Enforce at most one personal matter per user at the DB layer. Only rows
         # with is_personal truthy participate (partial unique index on Postgres;
         # on SQLite this degrades to a plain index, so the service also guards).

@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.exceptions import BadRequestError, ConflictError, NotFoundError, ServiceUnavailableError
 from app.models.db_models import User as DBUser
+from app.models.matters import Matter, MatterMember
 from app.models.schemas import (
     AdminUserItem,
     AdminUserListResponse,
@@ -622,6 +623,33 @@ async def delete_user(
             raise BadRequestError("The receiving user was not found.")
         if not transferee.is_active:
             raise BadRequestError("The receiving user is deactivated; choose an active user.")
+    if mode == "purge":
+        # A legal hold wins over a purge: the held matters and documents must
+        # be released (or the work transferred) before the account can go.
+        from app.services.documents import document_service
+        from app.services.governance import held_matter_ids
+
+        held = await held_matter_ids(db)
+        owned_held = (
+            (
+                await db.execute(
+                    select(Matter.id).where(Matter.owner_id == user_id, Matter.legal_hold.is_(True))
+                )
+            )
+            .scalars()
+            .all()
+        )
+        held_docs = [
+            d.id
+            for d in document_service.documents.values()
+            if d.user_id == user_id and (document_service.is_held(d) or d.matter_id in held)
+        ]
+        if owned_held or held_docs:
+            raise ConflictError(
+                f"{target.email} owns {len(owned_held)} matter(s) and {len(held_docs)} "
+                "document(s) on legal hold, which a purge cannot remove. Lift the holds or "
+                "delete with mode=transfer instead."
+            )
     elif mode is None and owned.total:
         raise ConflictError(
             f"{target.email} owns work product ({owned.total} item(s): "
@@ -781,8 +809,6 @@ async def delete_user(
     # Matters & memberships have no users FK (they tolerate demo/SSO accounts),
     # so purge them explicitly. Remove the user's memberships everywhere, then
     # the matters they own (which cascades those matters' remaining members).
-    from app.models.matters import Matter, MatterMember
-
     await db.execute(sa_delete(MatterMember).where(MatterMember.user_id == user_id))
     await db.execute(sa_delete(Matter).where(Matter.owner_id == user_id))
 

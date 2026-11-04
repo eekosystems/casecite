@@ -6,6 +6,7 @@ import type {
   MatterActivityEvent,
   MatterAnalysisItem,
   MatterDetail,
+  MatterRetention,
 } from './types';
 
 const matterPath = (matterId: string, suffix = '') => `/matters/${encodeURIComponent(matterId)}${suffix}`;
@@ -28,9 +29,20 @@ Object.assign(api, {
 
   async updateMatter(
     matterId: string,
-    changes: { name?: string; client_name?: string | null },
+    changes: { name?: string; client_name?: string | null; retention_days?: number },
   ): Promise<Matter> {
     return api.request(matterPath(matterId), { method: 'PATCH', body: JSON.stringify(changes) });
+  },
+
+  async setMatterHold(matterId: string, on: boolean, reason: string | null = null): Promise<Matter> {
+    return api.request(matterPath(matterId, '/hold'), {
+      method: 'POST',
+      body: JSON.stringify({ on, reason }),
+    });
+  },
+
+  async getMatterRetention(matterId: string): Promise<MatterRetention> {
+    return api.request(matterPath(matterId, '/retention'));
   },
 
   async deleteMatter(matterId: string): Promise<{ status: string; id: string }> {

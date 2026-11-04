@@ -86,6 +86,28 @@ async def _audit_retention_loop() -> None:
         await asyncio.sleep(_AUDIT_RETENTION_INTERVAL_SECONDS)
 
 
+async def _retention_loop() -> None:
+    """Apply matter retention policies once shortly after startup, then daily.
+
+    Every removal goes through the normal delete path (holds, tracked
+    deletion, registry rules) and is audited as retention_expired.
+    """
+    from app.database import get_db_context
+    from app.services.governance import run_retention
+
+    while True:
+        try:
+            async with get_db_context() as db:
+                result = await run_retention(db)
+            if result.get("matters"):
+                logger.info("Matter retention run: %s", result)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:  # retention must never crash the app
+            logger.warning("Matter retention failed (non-fatal): %s", e)
+        await asyncio.sleep(_AUDIT_RETENTION_INTERVAL_SECONDS)
+
+
 def check_single_process_deployment(workers: str | None = None) -> None:
     """Refuse to start with more than one worker process, whatever the vector DB.
 
@@ -380,16 +402,32 @@ async def lifespan(app: FastAPI):
     if orphaned:
         logger.info(f"Recovered {orphaned} orphaned jobs from previous run")
 
-    # Start the daily audit-log retention task (compress/delete old JSONL files).
+    # Legal holds are enforced by the document service without a DB session:
+    # load the held matters now, before any delete can run.
+    try:
+        from app.database import get_db_context
+        from app.services.governance import refresh_document_service_holds
+
+        async with get_db_context() as db:
+            held = await refresh_document_service_holds(db)
+        if held:
+            logger.info(f"{len(held)} matter(s) on legal hold")
+    except Exception as e:  # a missing column on a half-migrated DB must not block startup
+        logger.error(f"Could not load legal holds: {e}")
+
+    # Start the daily audit-log retention task (compress/delete old JSONL files)
+    # and the daily matter-retention task.
     retention_task = asyncio.create_task(_audit_retention_loop())
+    matter_retention_task = asyncio.create_task(_retention_loop())
 
     yield
 
     # Shutdown
     logger.info("Shutting down...")
-    retention_task.cancel()
-    with suppress(asyncio.CancelledError):
-        await retention_task
+    for task in (retention_task, matter_retention_task):
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
     await job_manager.graceful_shutdown()
     await close_sqlalchemy_db()
     release_instance_lock()

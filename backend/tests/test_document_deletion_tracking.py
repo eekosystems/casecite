@@ -181,7 +181,12 @@ async def test_purge_reports_failures_and_keeps_the_upload_dir(svc, tmp_path):
         patch("app.services.documents.os.remove", side_effect=PermissionError(13, "busy")),
     ):
         result = await svc.purge_user_data("u1")
-    assert result == {"documents_deleted": 0, "documents_failed": 1, "upload_dir_removed": False}
+    assert result == {
+        "documents_deleted": 0,
+        "documents_failed": 1,
+        "documents_on_hold": 0,
+        "upload_dir_removed": False,
+    }
     assert (tmp_path / "u1" / "d1.pdf").exists()
     assert svc.documents["d1"].status == DocumentStatus.DELETE_FAILED
 
@@ -192,7 +197,12 @@ async def test_purge_removes_the_upload_dir_when_every_delete_completed(svc, tmp
         patch.object(svc, "_delete_derived_data", AsyncMock()),
     ):
         result = await svc.purge_user_data("u1")
-    assert result == {"documents_deleted": 1, "documents_failed": 0, "upload_dir_removed": True}
+    assert result == {
+        "documents_deleted": 1,
+        "documents_failed": 0,
+        "documents_on_hold": 0,
+        "upload_dir_removed": True,
+    }
     assert not (tmp_path / "u1").exists()
 
 

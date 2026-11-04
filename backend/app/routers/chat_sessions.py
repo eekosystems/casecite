@@ -95,9 +95,15 @@ async def delete_chat_session(
     Allowed for the session's owner and for the OWNER of the matter it is filed
     under; plain matter members can read a shared session but not delete it.
     """
-    deleted = await chat_session_service.delete_session(
-        session_id, current_user.user_id, accessible_matter_ids=owned_matters
-    )
+    from app.exceptions import ConflictError
+    from app.services.chat_sessions import ChatSessionOnHoldError
+
+    try:
+        deleted = await chat_session_service.delete_session(
+            session_id, current_user.user_id, accessible_matter_ids=owned_matters
+        )
+    except ChatSessionOnHoldError as e:
+        raise ConflictError(str(e))
     if not deleted:
         raise NotFoundError("Chat session not found")
     await audit_service.log_event(
