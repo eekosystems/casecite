@@ -197,24 +197,58 @@ def _structure_metadata(doc: dict[str, Any]) -> dict[str, Any]:
     return {k: doc[k] for k in STRUCTURE_FIELDS if doc.get(k) not in (None, "")}
 
 
-def _has_tenant_scope(filter: dict | None) -> bool:
-    """True when the filter pins a tenant scope — user_id or matter_id.
+def _is_tenant_pin(key: str, value: object) -> bool:
+    """Whether ``{key: value}`` restricts rows to named tenants.
 
-    The scope may be a top-level key or nested inside an $and/$or clause: a
-    shared-matter search is expressed as
-    {"$or": [{"user_id": ...}, {"matter_id": {"$in": [...]}}]}, and a
-    document-scoped search as {"$and": [{"user_id": ...}, {"document_id": ...}]}.
-    Either shape keeps the query tenant-isolated. Checked recursively so the
-    guard cannot be defeated by nesting.
+    Only an equality pins a scope: ``user_id`` to one id, ``matter_id`` to
+    one id or an ``$in`` list of ids. An operator that admits everything but
+    the named value (``$ne``, ``$nin``), an empty id or an empty list is not
+    a scope, whatever key it sits under.
     """
-    if not filter:
+    if isinstance(value, str):
+        return bool(value)
+    if not isinstance(value, dict) or len(value) != 1:
         return False
-    if filter.get("user_id") or filter.get("matter_id"):
+    ((op, operand),) = value.items()
+    if op == "$eq":
+        return isinstance(operand, str) and bool(operand)
+    if op == "$in" and key == "matter_id":
+        return (
+            isinstance(operand, list)
+            and bool(operand)
+            and all(isinstance(v, str) and v for v in operand)
+        )
+    return False
+
+
+def _has_tenant_scope(filter: dict | None) -> bool:
+    """True when every row the filter can match belongs to a named tenant.
+
+    A top-level ``user_id`` or ``matter_id`` equality pins the scope. Inside
+    an ``$and`` one scoped branch is enough, because the other branches can
+    only narrow it: a document-scoped search is
+    {"$and": [{"user_id": ...}, {"document_id": ...}]}. Inside an ``$or``
+    EVERY branch must be scoped, because an unscoped branch widens the match
+    to every tenant's rows: the shared-matter search
+    {"$or": [{"user_id": ...}, {"matter_id": {"$in": [...]}}]} is scoped;
+    {"$or": [{"user_id": ...}, {"document_id": ...}]} is not. Checked
+    recursively, so neither nesting nor an operator like ``$ne`` under a
+    tenant key gets past the guard. The callers in app/services/rag/search.py
+    always AND the server-built scope outside any optional condition; this
+    guard is the last check that nothing else reaches the store unscoped.
+    """
+    if not filter or not isinstance(filter, dict):
+        return False
+    if any(_is_tenant_pin(k, filter.get(k)) for k in ("user_id", "matter_id") if k in filter):
         return True
-    for key in ("$and", "$or"):
-        for cond in filter.get(key) or []:
-            if isinstance(cond, dict) and _has_tenant_scope(cond):
-                return True
+    and_branches = filter.get("$and")
+    if isinstance(and_branches, list) and any(
+        isinstance(c, dict) and _has_tenant_scope(c) for c in and_branches
+    ):
+        return True
+    or_branches = filter.get("$or")
+    if isinstance(or_branches, list) and or_branches:
+        return all(isinstance(c, dict) and _has_tenant_scope(c) for c in or_branches)
     return False
 
 

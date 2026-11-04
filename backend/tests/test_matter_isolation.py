@@ -46,6 +46,79 @@ def test_tenant_scope_rejects_missing_scope():
     assert _has_tenant_scope({"$and": [{"document_id": "d1"}]}) is False
 
 
+@pytest.mark.parametrize(
+    "filter",
+    [
+        # One scoped branch does not scope an $or: the other branch matches
+        # every tenant's chunks for that document / source / anything.
+        {"$or": [{"user_id": "u1"}, {"document_id": "d1"}]},
+        {"$or": [{"document_id": "d1"}, {"matter_id": {"$in": ["m1"]}}]},
+        {"$or": [{"user_id": "u1"}, {}]},
+        {"$or": [{"user_id": "u1"}, {"$and": [{"document_id": "d1"}]}]},
+        # Nesting an unscoped $or under a scoped-looking $and of nothing else.
+        {"$and": [{"$or": [{"user_id": "u1"}, {"source": "upload"}]}]},
+        # An $or hidden two levels down.
+        {"$or": [{"user_id": "u1"}, {"$or": [{"matter_id": {"$in": ["m1"]}}, {"source": "x"}]}]},
+        # A tenant key whose operator admits everyone else.
+        {"user_id": {"$ne": "u1"}},
+        {"matter_id": {"$nin": ["m1"]}},
+        {"$and": [{"document_id": "d1"}, {"user_id": {"$ne": "u1"}}]},
+        # Empty or malformed pins.
+        {"user_id": ""},
+        {"user_id": {"$eq": ""}},
+        {"matter_id": {"$in": []}},
+        {"matter_id": {"$in": ["m1", ""]}},
+        {"matter_id": {"$in": "m1"}},
+        {"user_id": {"$in": ["u1"]}},  # a user searches as one user, never a list
+        {"user_id": None},
+        {"$or": []},
+        {"$and": []},
+        {"$or": "user_id"},
+    ],
+)
+def test_tenant_scope_rejects_half_scoped_and_inverted_filters(filter):
+    assert _has_tenant_scope(filter) is False
+
+
+@pytest.mark.parametrize(
+    "filter",
+    [
+        {"user_id": {"$eq": "u1"}},
+        {"matter_id": "m1"},
+        {"matter_id": {"$eq": "m1"}},
+        # Every $or branch scoped, including through nesting.
+        {"$or": [{"user_id": "u1"}, {"$and": [{"matter_id": {"$in": ["m1"]}}, {"source": "x"}]}]},
+        {"$or": [{"$or": [{"user_id": "u1"}, {"matter_id": "m1"}]}, {"user_id": "u2"}]},
+        # The scope ANDed outside an unscoped optional $or, as the callers build it.
+        {"$and": [{"user_id": "u1"}, {"$or": [{"source": "upload"}, {"doc_type": "contract"}]}]},
+        {
+            "$and": [
+                {"$or": [{"user_id": "u1"}, {"matter_id": {"$in": ["m1"]}}]},
+                {"document_id": "d1"},
+            ]
+        },
+    ],
+)
+def test_tenant_scope_accepts_fully_scoped_filters(filter):
+    assert _has_tenant_scope(filter) is True
+
+
+@pytest.mark.asyncio
+async def test_the_store_refuses_a_half_scoped_or():
+    """The guard is enforced at the store, not only by the filter builders."""
+    from app.services.vectordb import ChromaDB
+
+    store = ChromaDB.__new__(ChromaDB)
+    with pytest.raises(ValueError):
+        await store.search(
+            query_embedding=[0.0] * 8,
+            top_k=5,
+            filter={"$or": [{"user_id": "u1"}, {"document_id": "d1"}]},
+        )
+    with pytest.raises(ValueError):
+        await store.get_document_chunks("d1", scope={"$or": [{"user_id": "u1"}, {"source": "x"}]})
+
+
 # ---------------------------------------------------------------------------
 # The search filter fuses owner + matter membership as $or
 # ---------------------------------------------------------------------------

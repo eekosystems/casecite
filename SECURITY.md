@@ -71,7 +71,9 @@ network, disk encryption, backups and the firm's own policies. No SOC 2, ISO
   and the Users tab shows an alert while a degraded source is in force.
 - Every document, chat, analysis and job is scoped to its owner (or to the
   members of the matter it is filed under). The vector store refuses a query
-  that carries no tenant scope.
+  that is not pinned to named tenants: every branch of an `$or` must carry a
+  `user_id` or `matter_id` equality, and the server builds that scope and
+  ANDs it outside any optional condition.
 - On PostgreSQL, row-level security is a second fence (migration 024,
   `app/rls.py`): every transaction carries the authenticated user's id, and
   forced policies on the content tables (conversations, analyses, review
