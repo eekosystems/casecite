@@ -3,6 +3,9 @@
 CaseCite is self-hosted: the firm runs the application, database and vector
 index on its own infrastructure. There is no CaseCite-operated backend, no
 telemetry and no analytics; nothing is ever sent to the CaseCite maintainers.
+(The optional request *tracing* exports to an OpenTelemetry collector the
+firm runs, and only when the firm configures one; it is listed below like
+every other recipient.)
 
 **But AI features send content to the AI providers you configure.** When a
 document is uploaded, its text is sent to the embeddings provider. When a
@@ -30,6 +33,7 @@ InfoSec team can assess and control it.
 | **SendGrid** | Password-reset email | Recipient email address, reset link | Optional; leave `SENDGRID_API_KEY` unset |
 | **Microsoft identity platform** (`login.microsoftonline.com`) | Azure AD SSO token validation | Fetches Microsoft's public signing keys; no user data sent | Only when Azure AD SSO is configured |
 | **Document-storage providers** — Google Drive, Microsoft OneDrive/SharePoint (Graph), Box, Dropbox, Filevine, Clio; iManage and NetDocuments (experimental) | When a user connects an account, picks files or runs a sync | OAuth tokens; requests for the files being imported. Data flows *in* from the provider | Each connector is off until its client ID/secret is configured. iManage and NetDocuments are untested against a live tenant and are additionally unregistered until `EXPERIMENTAL_CONNECTORS=true` |
+| **Your OpenTelemetry collector** (the host in `OTEL_EXPORTER_OTLP_ENDPOINT`) | Only when the variable is set; one trace per request | Timing, counts, names and identifiers (route, status, model name, token counts, document and user ids). Never the question, the prompt, document text or an answer | Off by default (unset = nothing exported). The collector is one you run; you choose where it forwards |
 | **OpenAI public blob storage** (`openaipublic.blob.core.windows.net`) | First use of the tokenizer after a fresh install outside Docker (the Docker image ships the file in `/opt/tiktoken`) | Nothing about your data — a one-time download of the `tiktoken` encoding file | Behind a strict egress allowlist, allow this host once or pre-seed `TIKTOKEN_CACHE_DIR` |
 
 A custom OpenAI-compatible gateway (Groq, Together, an internal proxy, …) set

@@ -569,7 +569,9 @@ added). The collector forwards to whatever the firm runs (Jaeger, Tempo,
 Honeycomb, Datadog). Spans carry counts, names and identifiers only, never
 the question, the prompt or document text. `/health` (admin view) reports
 `tracing.enabled`. Without the variable nothing is exported and the spans
-cost nothing.
+cost nothing. This is tracing to a collector you run, not telemetry: nothing
+is ever sent to the CaseCite maintainers, with or without the variable
+([subprocessors](subprocessors.md) lists the collector as a recipient).
 
 ### Audit Logs
 

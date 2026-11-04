@@ -56,6 +56,11 @@ you choose:
 - **Asking a question, analysing or drafting** sends the question and the
   relevant document text to the LLM provider (OpenAI, Anthropic or Gemini).
 - **Case-law tools** send search queries and citations to CourtListener.
+- **Request tracing, only if you turn it on** (`OTEL_EXPORTER_OTLP_ENDPOINT`)
+  sends traces to the OpenTelemetry collector at that address, which you run.
+  Traces carry counts, names and identifiers, never a question, a prompt or
+  document text. Off by default, and never to the CaseCite maintainers: this
+  is your observability, not telemetry.
 
 To keep document text entirely on your network, run both models yourself: set
 `OPENAI_BASE_URL` (chat) **and** `EMBEDDING_BASE_URL` (embeddings) to
@@ -294,23 +299,17 @@ docker-compose.yml       Behind an existing proxy (Coolify/Traefik); external Po
 docker-compose.dev.yml   Local development
 ```
 
-## API-only (no UI yet)
+## What has a UI
 
-These are implemented and reachable over the API, but the frontend does not
-expose them yet. Treat them as preview:
+Everything in the feature table above has one, including Matters
+(`/matters`), strategy briefs (the Matter Strategy workspace under Research;
+each proposition is searched on CourtListener and a citation is kept only
+when a verbatim quote is found in the real opinion text), Microsoft sign-in
+(a button on the login dialog when Azure AD is configured), user
+administration and the audit log (Settings, admins only). Every feature is
+also reachable over the API (`/docs` on a running instance).
 
-- **Matters** (`/api/v1/matters`) — matter records, membership, and sharing of
-  documents and chats between members. Creating matters and changing
-  membership requires the `matters.manage` permission.
-- **Strategy briefs** (`/api/v1/strategy`) — each proposition is searched on
-  CourtListener, candidate opinions are read, and a citation is kept only when
-  a verbatim quote can be located in the real opinion text. Unsupported
-  citations are dropped rather than shown.
-- **Azure AD SSO** — backend token exchange only; there is no sign-in button.
-  SAML, generic OIDC and SCIM are not supported.
-
-Everything else in the feature table above, plus user administration and the
-audit log (Settings, admins only), has a UI.
+Not supported: SAML, generic OIDC and SCIM.
 
 ## Security
 
