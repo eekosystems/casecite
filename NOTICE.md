@@ -24,7 +24,7 @@ dynamically linked library. PyMuPDF (AGPL) is deliberately not a dependency
 
 ## Python (backend image)
 
-142 packages pinned in `backend/requirements.lock`. The lock is
+152 packages pinned in `backend/requirements.lock`. The lock is
 universal, so it includes a few packages that install only on some platforms.
 
 | Package | Version | License |
@@ -39,6 +39,7 @@ universal, so it includes a few packages that install only on some platforms.
 | [annotated-types](https://github.com/annotated-types/annotated-types) | 0.7.0 | MIT License |
 | [anthropic](https://github.com/anthropics/anthropic-sdk-python) | 2.3.0 | Apache-2.0 |
 | [anyio](https://pypi.org/project/anyio/) | 4.14.2 | MIT |
+| [asgiref](https://github.com/django/asgiref/) | 3.13.0 | BSD-3-Clause |
 | [async-timeout](https://github.com/aio-libs/async-timeout) | 5.0.1 | Apache 2 |
 | [asyncpg](https://pypi.org/project/asyncpg/) | 0.29.0 | Apache License, Version 2.0 |
 | [attrs](https://pypi.org/project/attrs/) | 26.1.0 | MIT |
@@ -95,13 +96,21 @@ universal, so it includes a few packages that install only on some platforms.
 | [onnxruntime](https://onnxruntime.ai) | 1.27.0 | MIT License |
 | [openai](https://github.com/openai/openai-python) | 3.40.0 | Apache-2.0 |
 | [openpyxl](https://openpyxl.readthedocs.io) | 3.1.5 | MIT |
-| [opentelemetry-api](https://github.com/open-telemetry/opentelemetry-python/tree/main/opentelemetry-api) | 1.45.1 | Apache-2.0 |
-| [opentelemetry-exporter-otlp-common](https://github.com/open-telemetry/opentelemetry-python/tree/main/exporter/opentelemetry-exporter-otlp-common) | 0.66b1 | Apache-2.0 |
-| [opentelemetry-exporter-otlp-proto-common](https://github.com/open-telemetry/opentelemetry-python/tree/main/exporter/opentelemetry-exporter-otlp-proto-common) | 1.45.1 | Apache-2.0 |
-| [opentelemetry-exporter-otlp-proto-grpc](https://github.com/open-telemetry/opentelemetry-python/tree/main/exporter/opentelemetry-exporter-otlp-proto-grpc) | 1.45.1 | Apache-2.0 |
-| [opentelemetry-proto](https://github.com/open-telemetry/opentelemetry-python/tree/main/opentelemetry-proto) | 1.45.1 | Apache-2.0 |
-| [opentelemetry-sdk](https://github.com/open-telemetry/opentelemetry-python/tree/main/opentelemetry-sdk) | 1.45.1 | Apache-2.0 |
-| [opentelemetry-semantic-conventions](https://github.com/open-telemetry/opentelemetry-python/tree/main/opentelemetry-semantic-conventions) | 0.66b1 | Apache-2.0 |
+| [opentelemetry-api](https://github.com/open-telemetry/opentelemetry-python/tree/main/opentelemetry-api) | 1.45.2 | Apache-2.0 |
+| [opentelemetry-exporter-http-transport](https://github.com/open-telemetry/opentelemetry-python/tree/main/exporter/opentelemetry-exporter-http-transport) | 0.66b2 | Apache-2.0 |
+| [opentelemetry-exporter-otlp-common](https://github.com/open-telemetry/opentelemetry-python/tree/main/exporter/opentelemetry-exporter-otlp-common) | 0.66b2 | Apache-2.0 |
+| [opentelemetry-exporter-otlp-proto-common](https://github.com/open-telemetry/opentelemetry-python/tree/main/exporter/opentelemetry-exporter-otlp-proto-common) | 1.45.2 | Apache-2.0 |
+| [opentelemetry-exporter-otlp-proto-grpc](https://github.com/open-telemetry/opentelemetry-python/tree/main/exporter/opentelemetry-exporter-otlp-proto-grpc) | 1.45.2 | Apache-2.0 |
+| [opentelemetry-exporter-otlp-proto-http](https://github.com/open-telemetry/opentelemetry-python/tree/main/exporter/opentelemetry-exporter-otlp-proto-http) | 1.45.2 | Apache-2.0 |
+| [opentelemetry-instrumentation](https://github.com/open-telemetry/opentelemetry-python-contrib/tree/main/opentelemetry-instrumentation) | 0.66b2 | Apache-2.0 |
+| [opentelemetry-instrumentation-asgi](https://github.com/open-telemetry/opentelemetry-python-contrib/tree/main/instrumentation/opentelemetry-instrumentation-asgi) | 0.66b2 | Apache-2.0 |
+| [opentelemetry-instrumentation-fastapi](https://github.com/open-telemetry/opentelemetry-python-contrib/tree/main/instrumentation/opentelemetry-instrumentation-fastapi) | 0.66b2 | Apache-2.0 |
+| [opentelemetry-instrumentation-httpx](https://github.com/open-telemetry/opentelemetry-python-contrib/tree/main/instrumentation/opentelemetry-instrumentation-httpx) | 0.66b2 | Apache-2.0 |
+| [opentelemetry-instrumentation-sqlalchemy](https://github.com/open-telemetry/opentelemetry-python-contrib/tree/main/instrumentation/opentelemetry-instrumentation-sqlalchemy) | 0.66b2 | Apache-2.0 |
+| [opentelemetry-proto](https://github.com/open-telemetry/opentelemetry-python/tree/main/opentelemetry-proto) | 1.45.2 | Apache-2.0 |
+| [opentelemetry-sdk](https://github.com/open-telemetry/opentelemetry-python/tree/main/opentelemetry-sdk) | 1.45.2 | Apache-2.0 |
+| [opentelemetry-semantic-conventions](https://github.com/open-telemetry/opentelemetry-python/tree/main/opentelemetry-semantic-conventions) | 0.66b2 | Apache-2.0 |
+| [opentelemetry-util-http](https://github.com/open-telemetry/opentelemetry-python-contrib/tree/main/util/opentelemetry-util-http) | 0.66b2 | Apache-2.0 |
 | [orjson](https://pypi.org/project/orjson/) | 3.11.9 | MPL-2.0 AND (Apache-2.0 OR MIT) |
 | [overrides](https://github.com/mkorpela/overrides) | 7.7.0 | Apache License, Version 2.0 |
 | [packaging](https://github.com/pypa/packaging) | 26.2 | Apache-2.0 OR BSD-2-Clause |
@@ -168,6 +177,7 @@ universal, so it includes a few packages that install only on some platforms.
 | [watchfiles](https://github.com/samuelcolvin/watchfiles) | 1.2.0 | MIT |
 | [websocket-client](https://github.com/websocket-client/websocket-client.git) | 1.9.0 | Apache-2.0 |
 | [websockets](https://github.com/python-websockets/websockets) | 14.2 | BSD-3-Clause |
+| [wrapt](https://github.com/GrahamDumpleton/wrapt) | 2.5.2 | BSD-2-Clause |
 | [xlrd](http://www.python-excel.org/) | 2.0.2 | BSD |
 | [xlsxwriter](https://github.com/jmcnamara/XlsxWriter) | 3.2.9 | BSD-2-Clause |
 | [yarl](https://github.com/aio-libs/yarl) | 1.25.1 | Apache-2.0 |

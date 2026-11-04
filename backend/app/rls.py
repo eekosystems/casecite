@@ -220,8 +220,9 @@ def rls_enable_statements() -> list[str]:
         matter_expr = f"{table}.{matter}" if matter else "NULL"
         statements += _policy(table, f"app_rls_visible({table}.{owner}, {matter_expr})")
     for table, parent, key in CHILD_TABLES:
+        # DDL built from the identifiers in CHILD_TABLES above, never from input.
         statements += _policy(
-            table, f"EXISTS (SELECT 1 FROM {parent} p WHERE p.id = {table}.{key})"
+            table, f"EXISTS (SELECT 1 FROM {parent} p WHERE p.id = {table}.{key})"  # nosec B608
         )
     return statements
 
