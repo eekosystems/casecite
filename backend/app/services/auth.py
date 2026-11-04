@@ -676,6 +676,13 @@ async def get_current_user(
     if auth_service._is_user_revoked(token_data.user_id):
         raise HTTPException(status_code=401, detail="Account disabled or deleted")
 
+    # From here on, every database transaction in this request (and in tasks
+    # it spawns) is scoped to this user at the database too (app/rls.py).
+    from app import rls
+
+    rls.request_user_id.set(token_data.user_id)
+    rls.rls_bypass.set(False)
+
     # Verify user is still active in the database
     from sqlalchemy import select
 

@@ -72,6 +72,15 @@ network, disk encryption, backups and the firm's own policies. No SOC 2, ISO
 - Every document, chat, analysis and job is scoped to its owner (or to the
   members of the matter it is filed under). The vector store refuses a query
   that carries no tenant scope.
+- On PostgreSQL, row-level security is a second fence (migration 023,
+  `app/rls.py`): every transaction carries the authenticated user's id, and
+  forced policies on the content tables (conversations, analyses, review
+  tables, workflows, deep research runs, workspace sessions and their child
+  rows) admit a row only when the caller owns it or belongs to its matter
+  and is not walled off. Endpoints gated by an `admin.*` permission lift the
+  fence; unscoped sessions (background jobs, startup, migrations) see
+  everything. A query that forgets its user filter still cannot return
+  another user's rows. SQLite has no RLS.
 - Ethical walls: an admin can wall a user off a matter
   (`POST /matters/{id}/walls`). The wall removes their membership, refuses to
   add them back (with the same generic answer as an unknown address, so the

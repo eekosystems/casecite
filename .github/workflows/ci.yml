@@ -540,6 +540,14 @@ jobs:
           }
           echo "✅ No schema drift detected"
 
+      - name: Row-level security holds on PostgreSQL
+        # The SQLite suite skips this: it proves that a query with no user
+        # filter still returns only the caller's rows (app/rls.py).
+        run: |
+          cd backend
+          pip install $(grep -E '^(pytest|pytest-asyncio|pytest-cov|anyio)==' requirements-dev.txt)
+          python -m pytest tests/test_rls_postgres.py -q -p no:cacheprovider
+
   # ====================
   # Production-mode Smoke Test
   # ====================

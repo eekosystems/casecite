@@ -163,6 +163,23 @@ async def health_check(request: Request) -> dict:
             redis_ok = False
             overall_healthy = False
 
+    # Row-level security: PostgreSQL only; None on SQLite. "enforced" is False
+    # when the app's database role is a superuser (which RLS exempts).
+    rls_info: dict = {"enforced": None}
+    if db_ok:
+        try:
+            from app.database import IS_POSTGRES, get_db_context
+            from app.rls import rls_status
+
+            if IS_POSTGRES:
+                async with get_db_context() as _db:
+                    rls_info = await asyncio.wait_for(
+                        rls_status(_db), timeout=_PROBE_TIMEOUT_SECONDS
+                    )
+        except Exception as e:
+            logger.debug("Health check: row-level security status unavailable: %s", e)
+            rls_info = {"enforced": False, "error": type(e).__name__}
+
     # Role permission policy. Served from the stored matrix normally; from the
     # last-known-good snapshot, or locked permissions only, when the store is
     # unreadable (see app/services/permissions.py). Either degraded state is
@@ -224,6 +241,7 @@ async def health_check(request: Request) -> dict:
             "redis": {"healthy": redis_ok, "configured": redis_configured},
             "llm": {"configured": llm_server_key, "byok": True},
             "role_permissions": policy,
+            "row_level_security": rls_info,
         }
 
     return response

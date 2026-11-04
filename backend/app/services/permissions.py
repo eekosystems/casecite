@@ -388,6 +388,12 @@ def require_permission(key: str):
                 detail=f"Your role does not include permission: {_permission_label(key)}. "
                 "Ask an administrator to grant it in Settings > Users.",
             )
+        if key.startswith("admin."):
+            # Admin oversight, export and deletion read every user's rows:
+            # lift the database row-level security scope for this request.
+            from app import rls
+
+            rls.rls_bypass.set(True)
         return current_user
 
     return Depends(checker)
@@ -414,6 +420,10 @@ def require_any_permission(*keys: str):
                 detail=f"Your role does not include any of these permissions: {labels}. "
                 "Ask an administrator to grant one in Settings > Users.",
             )
+        if all(k.startswith("admin.") for k in keys):
+            from app import rls
+
+            rls.rls_bypass.set(True)
         return current_user
 
     return Depends(checker)

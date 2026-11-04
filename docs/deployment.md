@@ -277,7 +277,61 @@ keep it (the older code ignores tables and columns it does not know about —
 usually fine) or roll it back too (below, **before** starting the old image).
 When in doubt, restore the pre-deploy backup instead.
 
+### Row-level security needs a non-superuser app role
+
+Migration 023 enables and **forces** PostgreSQL row-level security on the
+user-content tables (`app/rls.py`, SECURITY.md): a query that forgets its
+user filter still returns only the caller's rows. PostgreSQL exempts
+**superusers** from it, and the bundled stack's `POSTGRES_USER` is one. The
+app logs an error at startup and `/health` reports
+`row_level_security.enforced: false` (admin view) while it connects as a
+superuser.
+
+**Fresh install:** set `APP_DB_USER=casecite_app` and an `APP_DB_PASSWORD` in
+`.env` before the first `up`. `deploy/postgres-init/10-app-role.sh` creates
+that non-superuser role as owner of the database on first start, and the app
+connects as it. Alembic runs as the app role, so it creates and owns every
+table and the policies apply to the app.
+
+**Existing install** (the data volume already exists, so the init script
+does not run): create the role and hand it the schema, then set the two
+variables and restart.
+
+```sh
+docker compose -f docker-compose.prod.yml exec postgres   psql -U "${POSTGRES_USER:-casecite}" -d casecite -v ON_ERROR_STOP=1 <<'SQL'
+CREATE ROLE casecite_app LOGIN NOSUPERUSER NOBYPASSRLS PASSWORD '<APP_DB_PASSWORD>';
+GRANT CONNECT ON DATABASE casecite TO casecite_app;
+ALTER DATABASE casecite OWNER TO casecite_app;
+ALTER SCHEMA public OWNER TO casecite_app;
+DO $$ DECLARE r record; BEGIN
+  FOR r IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' LOOP
+    EXECUTE format('ALTER TABLE public.%I OWNER TO casecite_app', r.tablename);
+  END LOOP;
+  FOR r IN SELECT sequencename FROM pg_sequences WHERE schemaname = 'public' LOOP
+    EXECUTE format('ALTER SEQUENCE public.%I OWNER TO casecite_app', r.sequencename);
+  END LOOP;
+  FOR r IN SELECT p.proname, pg_get_function_identity_arguments(p.oid) AS args
+           FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+           WHERE n.nspname = 'public' LOOP
+    EXECUTE format('ALTER FUNCTION public.%I(%s) OWNER TO casecite_app', r.proname, r.args);
+  END LOOP;
+END $$;
+SQL
+```
+
+(`REASSIGN OWNED BY` cannot be used for the bootstrap superuser, hence the
+loop.) Backups keep using `POSTGRES_USER`.
+
+Two more consequences:
+
+- FORCE means even the table owner is subject to the policies, which is the
+  point; never run the app as a superuser or a role with `BYPASSRLS`.
+- Ad-hoc SQL run in a session with no `app.user_id` set sees every row
+  (unscoped), exactly as before 023. To look at the data as a particular
+  user, `SET app.user_id = '<id>'` first.
+
 ### Database migration
+
 
 ```bash
 # Roll back the most recent migration (runs inside the backend container)

@@ -50,8 +50,16 @@ services:
       POSTGRES_DB: casecite
       POSTGRES_USER: ${POSTGRES_USER:-casecite}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      # The role the app connects as. PostgreSQL exempts superusers (which
+      # POSTGRES_USER is) from row-level security, so a fresh install should
+      # set APP_DB_USER and APP_DB_PASSWORD in .env: the init script below
+      # creates that non-superuser role on first start. Existing installs:
+      # docs/deployment.md, "Row-level security needs a non-superuser app role".
+      APP_DB_USER: ${APP_DB_USER:-}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:-}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./deploy/postgres-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-casecite} -d casecite"]
       interval: 10s
@@ -128,7 +136,9 @@ services:
       # Must be an IP or CIDR (hostnames are not parseable). Matches the pinned
       # casecite_network subnet below so Caddy's X-Forwarded-For is honored.
       - TRUSTED_PROXIES=${TRUSTED_PROXIES:-172.28.0.0/24}
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-casecite}:${POSTGRES_PASSWORD}@postgres:5432/casecite
+      # Connect as the non-superuser app role when one is configured (so
+      # row-level security is enforced), else as POSTGRES_USER as before.
+      - DATABASE_URL=postgresql+asyncpg://${APP_DB_USER:-${POSTGRES_USER:-casecite}}:${APP_DB_PASSWORD:-${POSTGRES_PASSWORD}}@postgres:5432/casecite
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
     volumes:
       - rag_data:/app/data

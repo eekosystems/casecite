@@ -402,6 +402,28 @@ async def lifespan(app: FastAPI):
     if orphaned:
         logger.info(f"Recovered {orphaned} orphaned jobs from previous run")
 
+    # Row-level security is the database's second fence around user content,
+    # but PostgreSQL exempts superusers from it: say so loudly if the app has
+    # been pointed at the database as one.
+    try:
+        from app.database import IS_POSTGRES, get_db_context
+        from app.rls import rls_status
+
+        if IS_POSTGRES:
+            async with get_db_context() as db:
+                status = await rls_status(db)
+            if status["enforced"]:
+                logger.info("Row-level security enforced for database role %s", status["role"])
+            else:
+                logger.error(
+                    "Row-level security is NOT enforced: the app connects as database role "
+                    "%s, which is a superuser or has BYPASSRLS. Create a non-superuser role "
+                    "that owns the tables and point DATABASE_URL at it (docs/deployment.md).",
+                    status["role"],
+                )
+    except Exception as e:  # a probe must never block startup
+        logger.warning("Could not check row-level security enforcement: %s", e)
+
     # Legal holds are enforced by the document service without a DB session:
     # load the held matters now, before any delete can run.
     try:
