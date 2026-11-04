@@ -1,6 +1,7 @@
 import { api, API_BASE_URL } from './client';
 import type {
-  AdminUser, AuditLogEntry, AuditLogQuery, AuditVerifyResult, InviteUserResult, RolePermissionsMatrix,
+  AdminUser, AuditLogEntry, AuditLogQuery, AuditVerifyResult, DeleteUserOptions, InviteUserResult,
+  RolePermissionsMatrix, UserOwnership,
 } from './types';
 
 function auditQueryString(query: AuditLogQuery = {}): string {
@@ -56,9 +57,21 @@ Object.assign(api, {
     });
   },
 
-  async deleteUser(userId: string): Promise<unknown> {
-    // Deletion purges the user's files, vectors and conversations server-side.
-    return api.request(`/admin/users/${encodeURIComponent(userId)}`, { method: 'DELETE', timeout: 120000 });
+  async getUserOwnership(userId: string): Promise<{ user_id: string; owned: UserOwnership }> {
+    return api.request(`/admin/users/${encodeURIComponent(userId)}/ownership`);
+  },
+
+  async deleteUser(userId: string, options: DeleteUserOptions = {}): Promise<unknown> {
+    // The server refuses (409) to delete a user who owns work product unless
+    // told to transfer it (mode=transfer&transfer_to=...) or purge it.
+    const params = new URLSearchParams();
+    if (options.mode) params.set('mode', options.mode);
+    if (options.transferTo) params.set('transfer_to', options.transferTo);
+    const query = params.toString();
+    return api.request(`/admin/users/${encodeURIComponent(userId)}${query ? `?${query}` : ''}`, {
+      method: 'DELETE',
+      timeout: 120000,
+    });
   },
 
   async exportUserData(userId: string): Promise<Record<string, unknown>> {

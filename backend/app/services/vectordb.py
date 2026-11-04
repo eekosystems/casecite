@@ -159,6 +159,18 @@ class VectorDBBase(ABC):
         """
         return False
 
+    async def update_document_owner(self, document_id: str, user_id: str) -> bool:
+        """Re-tag every chunk of a document with a new owner.
+
+        The owner tag is the tenant scope for a document in no shared matter,
+        so handing a departing user's documents to a colleague must rewrite it
+        on the vectors too, or the colleague could never retrieve them and the
+        old scope would still match. Returns False when the store could not be
+        updated; the caller must then not record the transfer. Default:
+        unsupported.
+        """
+        return False
+
 
 # Where a chunk sits in its document (set by the structured chunker). Stored
 # only when present: vector stores reject None-valued metadata.
@@ -492,6 +504,34 @@ class ChromaDB(VectorDBBase):
             logger.error(f"Could not re-tag chunks of document {document_id}: {e}")
             return False
 
+    async def update_document_owner(self, document_id: str, user_id: str) -> bool:
+        """Rewrite the owner tag on every chunk of a document (see base class)."""
+        try:
+            existing = self.collection.get(
+                where={"document_id": document_id}, include=["metadatas"]
+            )
+            ids = list((existing or {}).get("ids") or [])
+            if not ids:
+                return True  # nothing indexed — nothing to re-own
+            metadatas: list[Mapping[str, Any]] = []
+            for meta in existing.get("metadatas") or [{}] * len(ids):
+                updated: dict[str, Any] = dict(meta or {})
+                updated["user_id"] = user_id
+                metadatas.append(updated)
+            self.collection.update(ids=ids, metadatas=metadatas)
+            self._mirror("re-own", lambda lx: lx.update_owner(document_id, user_id))
+            return True
+        except (
+            chromadb.errors.ChromaError,
+            ValueError,
+            KeyError,
+            RuntimeError,
+            OSError,
+            sqlite3.Error,
+        ) as e:
+            logger.error(f"Could not re-own chunks of document {document_id}: {e}")
+            return False
+
     async def get_stats(self) -> dict[str, Any]:
         """Get collection statistics."""
         count = self.collection.count()
@@ -756,6 +796,23 @@ class PineconeDB(VectorDBBase):
             return True
         except (PineconeException, ConnectionError, ValueError, AttributeError) as e:
             logger.error(f"Could not re-tag chunks of document {document_id}: {e}")
+            return False
+
+    async def update_document_owner(self, document_id: str, user_id: str) -> bool:
+        """Rewrite the owner tag on every chunk of a document (see base class)."""
+        try:
+            results = self.index.query(
+                vector=self._probe_vector(),
+                top_k=10_000,
+                filter={"document_id": document_id},
+                include_metadata=False,
+            )
+            for match in results.matches:
+                self.index.update(id=match.id, set_metadata={"user_id": user_id})
+            self._mirror("re-own", lambda lx: lx.update_owner(document_id, user_id))
+            return True
+        except (PineconeException, ConnectionError, ValueError, AttributeError) as e:
+            logger.error(f"Could not re-own chunks of document {document_id}: {e}")
             return False
 
     async def get_stats(self) -> dict[str, Any]:

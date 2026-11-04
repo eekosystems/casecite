@@ -1185,6 +1185,27 @@ export interface LocalLlmConfig {
 
 // ==================== Admin User Management Types ====================
 
+/** What a user owns that deleting them must decide about (GET /admin/users/{id}/ownership). */
+export interface UserOwnership {
+  shared_matters: number;
+  documents: number;
+  chat_sessions: number;
+  contract_analyses: number;
+  review_tables: number;
+  review_schemas: number;
+  workflows: number;
+  total: number;
+}
+
+/** How a delete treats the user's work product. */
+export type DeleteUserMode = 'transfer' | 'purge';
+
+export interface DeleteUserOptions {
+  mode?: DeleteUserMode;
+  /** Receiving user id, required with mode "transfer". */
+  transferTo?: string;
+}
+
 export interface AdminUser {
   id: string;
   email: string;
@@ -1741,7 +1762,8 @@ export interface ApiClient {
   updateRolePermissions(role: string, permissions: string[]): Promise<RolePermissionsMatrix>;
   resetRolePermissions(): Promise<RolePermissionsMatrix>;
   setUserActive(userId: string, isActive: boolean): Promise<AdminUser>;
-  deleteUser(userId: string): Promise<unknown>;
+  deleteUser(userId: string, options?: DeleteUserOptions): Promise<unknown>;
+  getUserOwnership(userId: string): Promise<{ user_id: string; owned: UserOwnership }>;
   exportUserData(userId: string): Promise<Record<string, unknown>>;
   forceSignOutUser(userId: string): Promise<unknown>;
   resetUserMfa(userId: string): Promise<unknown>;

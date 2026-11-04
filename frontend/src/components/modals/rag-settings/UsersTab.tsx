@@ -4,7 +4,7 @@ import { useUIStore } from '../../../stores/uiStore';
 import { useAuthStore } from '../../../stores/authStore';
 import { Icon } from '../../shared/Icon';
 import { downloadBlob } from '../../../utils/downloadBlob';
-import type { AdminUser, RolePermissionsMatrix } from '../../../api/types';
+import type { AdminUser, DeleteUserMode, RolePermissionsMatrix, UserOwnership } from '../../../api/types';
 
 interface UsersTabProps {
   styles: Record<string, string>;
@@ -34,6 +34,11 @@ export const UsersTab = ({ styles }: UsersTabProps) => {
   const [busyUserId, setBusyUserId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<AdminUser | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  // What the user owns, and the decision about it. Loaded when the panel
+  // opens; the mode defaults to transfer whenever there is anything to hand over.
+  const [deleteOwnership, setDeleteOwnership] = useState<UserOwnership | null>(null);
+  const [deleteMode, setDeleteMode] = useState<DeleteUserMode>('transfer');
+  const [deleteTransferTo, setDeleteTransferTo] = useState('');
 
   const load = useCallback(async () => {
     try {
@@ -192,16 +197,56 @@ export const UsersTab = ({ styles }: UsersTabProps) => {
       addToast(`Exported data for ${user.email}`, 'success');
     }, 'Failed to export user data');
 
-  const openDelete = (user: AdminUser) => { setDeleteTarget(user); setDeleteConfirmText(''); };
-  const closeDelete = () => { setDeleteTarget(null); setDeleteConfirmText(''); };
+  const openDelete = async (user: AdminUser) => {
+    setDeleteTarget(user);
+    setDeleteConfirmText('');
+    setDeleteOwnership(null);
+    setDeleteMode('transfer');
+    setDeleteTransferTo('');
+    try {
+      const res = await api.getUserOwnership(user.id);
+      setDeleteOwnership(res.owned);
+    } catch (e) {
+      addToast(e instanceof Error ? e.message : 'Could not load what this user owns', 'error');
+    }
+  };
+  const closeDelete = () => { setDeleteTarget(null); setDeleteConfirmText(''); setDeleteOwnership(null); };
+
+  const ownsWork = (deleteOwnership?.total ?? 0) > 0;
+  const transferCandidates = users.filter(u => u.is_active && u.id !== deleteTarget?.id);
 
   const handleDelete = (user: AdminUser) =>
     runUserAction(user, async () => {
-      await api.deleteUser(user.id);
+      const options = !ownsWork
+        ? {}
+        : deleteMode === 'transfer'
+          ? { mode: 'transfer' as const, transferTo: deleteTransferTo }
+          : { mode: 'purge' as const };
+      await api.deleteUser(user.id, options);
       setUsers((prev) => prev.filter(u => u.id !== user.id));
       closeDelete();
-      addToast(`${user.email} and their data were permanently deleted`, 'success');
+      const receiver = transferCandidates.find(u => u.id === deleteTransferTo);
+      addToast(
+        options.mode === 'transfer'
+          ? `${user.email} was deleted; their work now belongs to ${receiver?.email ?? 'the chosen user'}`
+          : `${user.email} and their data were permanently deleted`,
+        'success',
+      );
     }, 'Failed to delete the user');
+
+  const ownershipSummary = (o: UserOwnership) =>
+    [
+      [o.shared_matters, 'shared matter', 'shared matters'],
+      [o.documents, 'document', 'documents'],
+      [o.chat_sessions, 'conversation', 'conversations'],
+      [o.contract_analyses, 'contract analysis', 'contract analyses'],
+      [o.review_tables, 'review table', 'review tables'],
+      [o.review_schemas, 'saved review schema', 'saved review schemas'],
+      [o.workflows, 'workflow', 'workflows'],
+    ]
+      .filter(([n]) => (n as number) > 0)
+      .map(([n, one, many]) => `${n} ${n === 1 ? one : many}`)
+      .join(', ');
 
   const copyTempPassword = () => {
     if (tempPassword) {
@@ -319,15 +364,64 @@ export const UsersTab = ({ styles }: UsersTabProps) => {
               {deleteTarget?.id === u.id && (
                 <div className={styles.dangerPanel} role="group" aria-label={`Delete ${u.email}`}>
                   <div className={styles.dangerTitle}>
-                    <Icon name="AlertTriangle" size={14} /> Permanently delete this user and everything they own
+                    <Icon name="AlertTriangle" size={14} /> Permanently delete this user
                   </div>
-                  <p className={styles.dangerText}>
-                    This destroys {u.email}&apos;s uploaded documents and their search index, their
-                    conversations, contract analyses, saved API keys and connector
-                    connections, and every matter they own. Nothing is transferred to another user and
-                    it cannot be undone. If the firm must keep this work product, <strong>deactivate</strong> the
-                    account instead — that blocks sign-in and keeps the data. Export first if you need a record.
-                  </p>
+                  {deleteOwnership === null ? (
+                    <p className={styles.dangerText}>Checking what {u.email} owns…</p>
+                  ) : ownsWork ? (
+                    <>
+                      <p className={styles.dangerText} data-testid="delete-ownership">
+                        {u.email} owns {ownershipSummary(deleteOwnership)}. Decide what happens to that work
+                        before the account is deleted. Their saved API keys, connector connections and
+                        settings are removed either way. If the firm must keep everything exactly as it is,
+                        <strong> deactivate</strong> the account instead — that blocks sign-in and changes nothing.
+                      </p>
+                      <label className={styles.settingLabel}>
+                        <input
+                          type="radio"
+                          name={`${id}-delete-mode`}
+                          checked={deleteMode === 'transfer'}
+                          onChange={() => setDeleteMode('transfer')}
+                        />{' '}
+                        Transfer everything to a colleague, then delete the account
+                      </label>
+                      {deleteMode === 'transfer' && (
+                        <select
+                          aria-label="Transfer to"
+                          className={styles.userRoleSelect}
+                          value={deleteTransferTo}
+                          onChange={e => setDeleteTransferTo(e.target.value)}
+                        >
+                          <option value="">Choose a colleague…</option>
+                          {transferCandidates.map(c => (
+                            <option key={c.id} value={c.id}>{c.name ? `${c.name} (${c.email})` : c.email}</option>
+                          ))}
+                        </select>
+                      )}
+                      <label className={styles.settingLabel}>
+                        <input
+                          type="radio"
+                          name={`${id}-delete-mode`}
+                          checked={deleteMode === 'purge'}
+                          onChange={() => setDeleteMode('purge')}
+                        />{' '}
+                        Permanently destroy everything they own
+                      </label>
+                      {deleteMode === 'purge' && (
+                        <p className={styles.dangerText}>
+                          This destroys {u.email}&apos;s uploaded documents and their search index, their
+                          conversations, contract analyses, review tables, workflows, and every matter they
+                          own. Nothing is transferred and it cannot be undone. Export first if you need a record.
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    <p className={styles.dangerText}>
+                      {u.email} owns no matters, documents, conversations, analyses, review tables or
+                      workflows. Deleting removes the account, its saved API keys, connector connections
+                      and settings. It cannot be undone.
+                    </p>
+                  )}
                   <label className={styles.settingLabel} htmlFor={`${id}-delete-confirm`}>
                     Type <strong>{u.email}</strong> to confirm
                   </label>
@@ -342,7 +436,12 @@ export const UsersTab = ({ styles }: UsersTabProps) => {
                     <button className={styles.btnSecondaryXSmall} onClick={closeDelete}>Cancel</button>
                     <button
                       className={styles.btnDangerXSmall}
-                      disabled={busy || deleteConfirmText.trim().toLowerCase() !== u.email.toLowerCase()}
+                      disabled={
+                        busy
+                        || deleteOwnership === null
+                        || deleteConfirmText.trim().toLowerCase() !== u.email.toLowerCase()
+                        || (ownsWork && deleteMode === 'transfer' && !deleteTransferTo)
+                      }
                       onClick={() => handleDelete(u)}
                     >
                       {busy ? 'Deleting…' : 'Delete user and all their data'}

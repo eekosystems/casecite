@@ -419,6 +419,14 @@ class LexicalIndex:
                 (matter_id or "", matter_id or "", document_id),
             )
 
+    def update_owner(self, document_id: str, user_id: str) -> None:
+        with self._lock:
+            self._conn.execute(
+                "UPDATE chunks SET user_id = ?, metadata = json_set(metadata, '$.user_id', ?) "
+                "WHERE document_id = ?",
+                (user_id, user_id, document_id),
+            )
+
     # -- reads ------------------------------------------------------------
     def has_document(self, document_id: str) -> bool:
         with self._lock:

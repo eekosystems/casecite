@@ -15,7 +15,7 @@ import string
 import uuid
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -541,20 +541,57 @@ async def export_user_data(
     return export
 
 
+@router.get("/{user_id}/ownership")
+async def get_user_ownership(
+    user_id: str,
+    current_user: TokenData = require_permission("admin.users"),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """What the user owns that a delete must decide about: shared matters,
+    documents, conversations, analyses, review tables, saved schemas and
+    workflows. The Users tab shows this before offering transfer or purge."""
+    from app.services import offboarding
+
+    target = (await db.execute(select(DBUser).where(DBUser.id == user_id))).scalar_one_or_none()
+    if target is None:
+        raise NotFoundError("User not found")
+    work = await offboarding.owned_work(db, user_id)
+    return {"user_id": user_id, "owned": work.as_dict()}
+
+
+DELETE_MODES = ("transfer", "purge")
+
+
 @router.delete("/{user_id}")
 async def delete_user(
     user_id: str,
     request: Request,
+    mode: str | None = Query(
+        None,
+        description="Required when the user owns work product: 'transfer' hands it to "
+        "transfer_to before the account is removed; 'purge' destroys it.",
+    ),
+    transfer_to: str | None = Query(None, description="Receiving user id for mode=transfer."),
     current_user: TokenData = require_permission("admin.users"),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    """Delete a user and erase their data (right-to-erasure, GDPR/CCPA).
+    """Delete a user and erase their personal data (right-to-erasure, GDPR/CCPA).
+
+    An account that owns work product — shared matters, documents,
+    conversations, analyses, review tables, workflows — is not deleted
+    until the caller says what happens to it: ``mode=transfer`` with
+    ``transfer_to`` hands all of it to another active user first,
+    ``mode=purge`` destroys it. With no mode the request is refused (409)
+    and the inventory returned, so a delete can never silently destroy a
+    firm's client work. (To keep everything and just block sign-in,
+    deactivate instead.)
 
     Purges uploaded files + vector embeddings + the encrypted key store +
     connector OAuth tokens (revoked provider-side where cheap) + per-user
     settings, then deletes the DB row (relational data cascades). Guards
     against deleting yourself or the last remaining admin.
     """
+    from app.services import offboarding
     from app.services.connectors.base import delete_user_credentials
     from app.services.documents import document_service
     from app.services.key_storage import delete_user_keys
@@ -566,6 +603,37 @@ async def delete_user(
 
     if target.id == current_user.user_id:
         raise BadRequestError("You cannot delete your own account.")
+
+    if mode is not None and mode not in DELETE_MODES:
+        raise BadRequestError(f"mode must be one of {list(DELETE_MODES)}")
+
+    # The decision about their work product, before anything is touched.
+    owned = await offboarding.owned_work(db, user_id)
+    transferee: DBUser | None = None
+    if mode == "transfer":
+        if not transfer_to:
+            raise BadRequestError("mode=transfer needs transfer_to (the receiving user id).")
+        if transfer_to == user_id:
+            raise BadRequestError("A user cannot receive their own work.")
+        transferee = (
+            await db.execute(select(DBUser).where(DBUser.id == transfer_to))
+        ).scalar_one_or_none()
+        if transferee is None:
+            raise BadRequestError("The receiving user was not found.")
+        if not transferee.is_active:
+            raise BadRequestError("The receiving user is deactivated; choose an active user.")
+    elif mode is None and owned.total:
+        raise ConflictError(
+            f"{target.email} owns work product ({owned.total} item(s): "
+            + ", ".join(
+                f"{v} {k.replace('_', ' ')}"
+                for k, v in owned.as_dict().items()
+                if k != "total" and v
+            )
+            + "). Delete again with mode=transfer and transfer_to=<user id> to hand it to a "
+            "colleague, or mode=purge to destroy it. To keep it and only block sign-in, "
+            "deactivate the account instead."
+        )
 
     if target.is_active and isinstance(target.roles, list) and UserRole.ADMIN.value in target.roles:
         # Count ACTIVE admins only — an inactive admin row must not satisfy the
@@ -581,6 +649,27 @@ async def delete_user(
             raise BadRequestError("Cannot delete the last remaining admin.")
 
     target_email = target.email
+
+    transferred: dict[str, int] = {}
+    if transferee is not None:
+        # Hand the work over before anything is purged. Documents are the one
+        # step that can stop part-way (index tags); it raises a 503 that names
+        # the document, leaves the account intact and what moved, moved.
+        transferred = await offboarding.transfer_all(db, user_id, transferee.id)
+        await db.commit()
+        await audit_service.log_event(
+            event_type=AuditEventType.DATA_MODIFICATION,
+            user_id=current_user.user_id,
+            user_email=current_user.email,
+            resource_type="user",
+            resource_id=user_id,
+            ip_address=get_client_ip(request),
+            details={
+                "action": "work_product_transferred",
+                "to_user_id": transferee.id,
+                **transferred,
+            },
+        )
 
     # Stored API keys go first, before anything else is touched: if the key
     # store cannot be written the deletion stops here with the account intact,
@@ -679,6 +768,16 @@ async def delete_user(
 
     await db.execute(sa_delete(ChatSessionDB).where(ChatSessionDB.user_id == user_id))
 
+    # Review tables, saved schemas and workflows are work product too; their
+    # children cascade from these rows. After a transfer there is nothing left
+    # to remove here.
+    from app.models.review_tables import ReviewSchema, ReviewTable
+    from app.models.workflows import Workflow
+
+    await db.execute(sa_delete(ReviewTable).where(ReviewTable.owner_id == user_id))
+    await db.execute(sa_delete(ReviewSchema).where(ReviewSchema.owner_id == user_id))
+    await db.execute(sa_delete(Workflow).where(Workflow.owner_id == user_id))
+
     # Matters & memberships have no users FK (they tolerate demo/SSO accounts),
     # so purge them explicitly. Remove the user's memberships everywhere, then
     # the matters they own (which cascades those matters' remaining members).
@@ -698,7 +797,12 @@ async def delete_user(
         resource_type="user",
         resource_id=user_id,
         ip_address=get_client_ip(request),
-        details={"deleted_email": target_email, **purge_result},
+        details={
+            "deleted_email": target_email,
+            "mode": mode or "none",
+            "transferred_to": transferee.id if transferee else None,
+            **purge_result,
+        },
     )
     await audit_service.log_event(
         event_type=AuditEventType.DATA_DELETION,
@@ -709,4 +813,11 @@ async def delete_user(
         ip_address=get_client_ip(request),
         details=purge_result,
     )
-    return {"status": "deleted", "user_id": user_id, **purge_result}
+    return {
+        "status": "deleted",
+        "user_id": user_id,
+        "mode": mode or "none",
+        "transferred": transferred,
+        "transferred_to": transferee.id if transferee else None,
+        **purge_result,
+    }

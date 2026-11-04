@@ -44,8 +44,24 @@ def db_add(*objects) -> None:
     """Insert ORM objects with a committed synchronous write."""
     engine = _sync_engine()
     try:
-        with Session(engine) as session:
+        # Keep attributes readable after the commit so a test can still use
+        # the objects (ids, owners) and hand them to db_delete.
+        with Session(engine, expire_on_commit=False) as session:
             session.add_all(objects)
+            session.commit()
+    finally:
+        engine.dispose()
+
+
+def db_delete(*objects) -> None:
+    """Delete ORM rows by primary key (objects may be detached or already gone)."""
+    engine = _sync_engine()
+    try:
+        with Session(engine) as session:
+            for obj in objects:
+                row = session.get(type(obj), obj.id)
+                if row is not None:
+                    session.delete(row)
             session.commit()
     finally:
         engine.dispose()

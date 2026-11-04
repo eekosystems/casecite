@@ -7,6 +7,7 @@ vi.mock('../../../api', () => ({
     getRolePermissions: vi.fn(),
     setUserActive: vi.fn(),
     deleteUser: vi.fn(),
+    getUserOwnership: vi.fn(),
     exportUserData: vi.fn(),
     forceSignOutUser: vi.fn(),
     resetUserMfa: vi.fn(),
@@ -40,6 +41,10 @@ beforeEach(() => {
   useAuthStore.setState({ user: { id: 'admin-1', email: 'admin@firm.com', roles: ['admin'] }, isAuthenticated: true });
   mock(api.getUsers).mockResolvedValue({ users: [admin, departed] });
   mock(api.getRolePermissions).mockRejectedValue(new Error('not needed here'));
+  mock(api.getUserOwnership).mockResolvedValue({
+    user_id: 'u-2',
+    owned: { shared_matters: 0, documents: 0, chat_sessions: 0, contract_analyses: 0, review_tables: 0, review_schemas: 0, workflows: 0, total: 0 },
+  });
 });
 
 const matrixBase = {
@@ -112,12 +117,12 @@ describe('UsersTab offboarding', () => {
     expect(within(card).getByText('Reactivate')).toBeInTheDocument();
   });
 
-  it('only deletes once the email has been typed, and says what is destroyed', async () => {
+  it('only deletes once the email has been typed, and says the user owns nothing', async () => {
     mock(api.deleteUser).mockResolvedValue({ status: 'deleted' });
     const card = await renderTab();
 
     fireEvent.click(within(card).getByText('Delete…'));
-    expect(within(card).getByText(/destroys departed@firm.com's uploaded documents/)).toBeInTheDocument();
+    expect(await within(card).findByText(/owns no matters, documents/)).toBeInTheDocument();
     const confirm = within(card).getByRole('button', { name: 'Delete user and all their data' });
     expect(confirm).toBeDisabled();
 
@@ -127,8 +132,49 @@ describe('UsersTab offboarding', () => {
     expect(confirm).toBeEnabled();
     fireEvent.click(confirm);
 
-    await waitFor(() => expect(api.deleteUser).toHaveBeenCalledWith('u-2'));
+    await waitFor(() => expect(api.deleteUser).toHaveBeenCalledWith('u-2', {}));
     await waitFor(() => expect(screen.queryByText('departed@firm.com')).toBeNull());
+  });
+
+  it('requires a transfer-or-purge decision when the user owns work, defaulting to transfer', async () => {
+    mock(api.getUserOwnership).mockResolvedValue({
+      user_id: 'u-2',
+      owned: { shared_matters: 2, documents: 14, chat_sessions: 3, contract_analyses: 0, review_tables: 1, review_schemas: 0, workflows: 0, total: 20 },
+    });
+    mock(api.deleteUser).mockResolvedValue({ status: 'deleted', mode: 'transfer' });
+    const card = await renderTab();
+
+    fireEvent.click(within(card).getByText('Delete…'));
+    const summary = await within(card).findByTestId('delete-ownership');
+    expect(summary.textContent).toContain('2 shared matters, 14 documents, 3 conversations, 1 review table');
+
+    const confirm = within(card).getByRole('button', { name: 'Delete user and all their data' });
+    fireEvent.change(within(card).getByRole('textbox'), { target: { value: 'departed@firm.com' } });
+    // Transfer is selected but no colleague chosen: still blocked.
+    expect(confirm).toBeDisabled();
+    fireEvent.change(within(card).getByLabelText('Transfer to'), { target: { value: 'admin-1' } });
+    expect(confirm).toBeEnabled();
+    fireEvent.click(confirm);
+
+    await waitFor(() => expect(api.deleteUser).toHaveBeenCalledWith('u-2', { mode: 'transfer', transferTo: 'admin-1' }));
+  });
+
+  it('purges only when the admin picks that option explicitly', async () => {
+    mock(api.getUserOwnership).mockResolvedValue({
+      user_id: 'u-2',
+      owned: { shared_matters: 0, documents: 1, chat_sessions: 0, contract_analyses: 0, review_tables: 0, review_schemas: 0, workflows: 0, total: 1 },
+    });
+    mock(api.deleteUser).mockResolvedValue({ status: 'deleted', mode: 'purge' });
+    const card = await renderTab();
+
+    fireEvent.click(within(card).getByText('Delete…'));
+    await within(card).findByTestId('delete-ownership');
+    fireEvent.click(within(card).getByLabelText(/Permanently destroy everything they own/));
+    expect(within(card).getByText(/Nothing is transferred and it cannot be undone/)).toBeInTheDocument();
+    fireEvent.change(within(card).getByRole('textbox'), { target: { value: 'departed@firm.com' } });
+    fireEvent.click(within(card).getByRole('button', { name: 'Delete user and all their data' }));
+
+    await waitFor(() => expect(api.deleteUser).toHaveBeenCalledWith('u-2', { mode: 'purge' }));
   });
 
   it('exports a user\'s data as a JSON download', async () => {

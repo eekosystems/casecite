@@ -85,6 +85,12 @@ network, disk encryption, backups and the firm's own policies. No SOC 2, ISO
   `POST /documents/{id}/retry-delete`).
 - Deleting a user stops, with the account intact and signed out everywhere,
   if any of their documents could not be removed.
+- Deleting a user who owns work product (shared matters, documents,
+  conversations, analyses, review tables, saved schemas, workflows) is refused
+  until the admin decides: `mode=transfer&transfer_to=<user>` hands all of it
+  to an active colleague first (index tags and stored files included),
+  `mode=purge` destroys it. Personal data (API keys, connector credentials,
+  settings) is never transferred. Both paths are audited with what moved.
 - The document registry never fails silently: a write that fails is a 503 and
   the operation rolls back; a registry that cannot be read at startup is fatal
   rather than replaced by an empty one.
