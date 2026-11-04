@@ -111,6 +111,15 @@ class Settings(BaseSettings):
     otel_exporter_otlp_endpoint: str | None = None
     otel_service_name: str = "casecite"
 
+    # PostgreSQL row-level security (app/rls.py) is the database's own fence
+    # around each user's content, and PostgreSQL exempts superusers from it.
+    # In production the app refuses to start unless the role it connects as
+    # has the fence in force (docs/deployment.md, "Row-level security needs a
+    # non-superuser app role"). Set to false ONLY to bring an old install up
+    # long enough to create the role; the startup log then carries an error
+    # on every boot until it is removed.
+    rls_enforcement_required: bool = True
+
     # Encryption salt - generated per deployment, stored in .env
     encryption_salt: str = ""  # Will be auto-generated if not set
     # Previous encryption salts for key rotation (comma-separated)

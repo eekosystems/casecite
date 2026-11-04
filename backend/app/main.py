@@ -460,26 +460,32 @@ async def lifespan(app: FastAPI):
         logger.info(f"Recovered {orphaned} orphaned jobs from previous run")
 
     # Row-level security is the database's second fence around user content,
-    # but PostgreSQL exempts superusers from it: say so loudly if the app has
-    # been pointed at the database as one.
-    try:
-        from app.database import IS_POSTGRES, get_db_context
-        from app.rls import rls_status
+    # but PostgreSQL exempts superusers from it. In production the app does
+    # not run without the fence (app/rls.py: require_enforced); a probe that
+    # fails counts as "not in force", since an unverifiable fence is no fence.
+    from app.database import IS_POSTGRES, get_db_context
+    from app.rls import require_enforced, rls_status
 
-        if IS_POSTGRES:
+    if IS_POSTGRES:
+        status: dict[str, object] | None = None
+        probe_error: str | None = None
+        try:
             async with get_db_context() as db:
                 status = await rls_status(db)
-            if status["enforced"]:
-                logger.info("Row-level security enforced for database role %s", status["role"])
-            else:
-                logger.error(
-                    "Row-level security is NOT enforced: the app connects as database role "
-                    "%s, which is a superuser or has BYPASSRLS. Create a non-superuser role "
-                    "that owns the tables and point DATABASE_URL at it (docs/deployment.md).",
-                    status["role"],
-                )
-    except Exception as e:  # a probe must never block startup
-        logger.warning("Could not check row-level security enforcement: %s", e)
+        except Exception as e:
+            probe_error = f"{type(e).__name__}: {e}"
+        problem = require_enforced(
+            status,
+            production=not settings.debug,
+            required=settings.rls_enforcement_required,
+            error=probe_error,
+        )
+        if problem is None:
+            logger.info(
+                "Row-level security enforced for database role %s", (status or {}).get("role")
+            )
+        else:
+            logger.error(problem)
 
     # Legal holds are enforced by the document service without a DB session:
     # load the held matters now, before any delete can run.

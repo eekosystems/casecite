@@ -311,10 +311,14 @@ When in doubt, restore the pre-deploy backup instead.
 Migration 024 enables and **forces** PostgreSQL row-level security on the
 user-content tables (`app/rls.py`, SECURITY.md): a query that forgets its
 user filter still returns only the caller's rows. PostgreSQL exempts
-**superusers** from it, and the bundled stack's `POSTGRES_USER` is one. The
-app logs an error at startup and `/health` reports
-`row_level_security.enforced: false` (admin view) while it connects as a
-superuser.
+**superusers** (and roles with `BYPASSRLS`) from it, and the bundled stack's
+`POSTGRES_USER` is one. **In production the app refuses to start** while it
+connects as such a role — or while it cannot verify the role at all — and
+the startup log names the fix. `/health` reports
+`row_level_security.enforced` (admin view). `RLS_ENFORCEMENT_REQUIRED=false`
+lets an old install boot without the fence long enough to create the role
+below; the log then carries an error on every start until it is removed.
+Development (`DEBUG=true`) only logs.
 
 **Fresh install:** set `APP_DB_USER=casecite_app` and an `APP_DB_PASSWORD` in
 `.env` before the first `up`. `deploy/postgres-init/10-app-role.sh` creates
@@ -350,7 +354,11 @@ SQL
 ```
 
 (`REASSIGN OWNED BY` cannot be used for the bootstrap superuser, hence the
-loop.) Backups keep using `POSTGRES_USER`.
+loop.) Backups keep using `POSTGRES_USER`; `scripts/restore_database.sh`
+runs this same hand-over after a restore when `APP_DB_USER` is set, because
+the dump carries no ownership. CI's production smoke test and backup drill
+run as the app role, created by the same init script, so the refusal, the
+hand-over and the fence are exercised on every push.
 
 Two more consequences:
 

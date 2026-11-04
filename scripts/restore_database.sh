@@ -159,10 +159,38 @@ SELECT pg_terminate_backend(pid) FROM pg_stat_activity
  WHERE datname = :'db' AND pid <> pg_backend_pid();
 SQL
 psql_admin -c "DROP DATABASE IF EXISTS \"${POSTGRES_DB}\";"
-psql_admin -c "CREATE DATABASE \"${POSTGRES_DB}\" OWNER \"${POSTGRES_USER}\";"
+psql_admin -c "CREATE DATABASE \"${POSTGRES_DB}\" OWNER \"${APP_DB_USER:-$POSTGRES_USER}\";"
 
 log "Restoring database from $DB_BACKUP…"
 read_backup "$DB_BACKUP" | gunzip -c | psql_target -q
+
+# The dump carries no ownership (--no-owner), so everything it created belongs
+# to the superuser running this script. When the app connects as its own
+# non-superuser role (APP_DB_USER, docs/deployment.md "Row-level security
+# needs a non-superuser app role"), hand the schema to that role: as owner it
+# can run migrations, and the FORCED row-level security policies apply to it.
+if [ -n "${APP_DB_USER:-}" ]; then
+    log "Handing the restored schema to the application role '${APP_DB_USER}'…"
+    psql_target -q -v app_user="$APP_DB_USER" <<'SQL'
+ALTER SCHEMA public OWNER TO :"app_user";
+-- psql does not interpolate :variables inside the dollar-quoted block, so
+-- pass the name through a session setting.
+SELECT set_config('restore.app_user', :'app_user', false) AS _ \gset
+DO $$ DECLARE r record; app text := current_setting('restore.app_user'); BEGIN
+  FOR r IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' LOOP
+    EXECUTE format('ALTER TABLE public.%I OWNER TO %I', r.tablename, app);
+  END LOOP;
+  FOR r IN SELECT sequencename FROM pg_sequences WHERE schemaname = 'public' LOOP
+    EXECUTE format('ALTER SEQUENCE public.%I OWNER TO %I', r.sequencename, app);
+  END LOOP;
+  FOR r IN SELECT p.proname, pg_get_function_identity_arguments(p.oid) AS args
+           FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+           WHERE n.nspname = 'public' LOOP
+    EXECUTE format('ALTER FUNCTION public.%I(%s) OWNER TO %I', r.proname, r.args, app);
+  END LOOP;
+END $$;
+SQL
+fi
 
 if [ -n "$DATA_BACKUP" ]; then
     if [ -n "${DATA_VOLUME:-}" ]; then

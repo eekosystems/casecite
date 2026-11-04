@@ -133,6 +133,71 @@ async def rls_status(session) -> dict[str, object]:
     }
 
 
+class RLSNotEnforcedError(RuntimeError):
+    """The app would run without the database fence in production."""
+
+
+def enforcement_problem(
+    status: dict[str, object] | None, *, error: str | None = None
+) -> str | None:
+    """Why the database fence is not in force, or None when it is.
+
+    ``status`` is :func:`rls_status`'s answer (None when the probe itself
+    failed, with ``error`` saying how). On SQLite there is no fence to
+    enforce and nothing to report.
+    """
+    if status is not None and status.get("enforced") is None:
+        return None  # SQLite
+    if status is not None and status.get("enforced"):
+        return None
+    how = "it could not be verified" if status is None else "it is not in force"
+    if status is None:
+        detail = f"the probe failed ({error})"
+    elif status.get("superuser"):
+        detail = f"database role {status.get('role')!r} is a superuser"
+    elif status.get("bypass_rls"):
+        detail = f"database role {status.get('role')!r} has BYPASSRLS"
+    else:
+        detail = f"database role {status.get('role')!r} could not be inspected"
+    return (
+        f"Row-level security is NOT enforced: {how} because {detail}. PostgreSQL "
+        "exempts such a role from the policies, so a query that forgets its user "
+        "filter would return every user's rows. Create a non-superuser role that "
+        "owns the tables and point DATABASE_URL at it (docs/deployment.md, "
+        '"Row-level security needs a non-superuser app role"; the bundled stack '
+        "does this with APP_DB_USER / APP_DB_PASSWORD)."
+    )
+
+
+def require_enforced(
+    status: dict[str, object] | None,
+    *,
+    production: bool,
+    required: bool,
+    error: str | None = None,
+) -> str | None:
+    """Startup's decision: raise, warn, or pass.
+
+    In production (``DEBUG`` off) with ``RLS_ENFORCEMENT_REQUIRED`` on, a
+    fence that is not in force (or cannot be verified) stops the start with
+    :class:`RLSNotEnforcedError`. With the requirement switched off, or in
+    development, the problem is returned for the log and the app runs
+    without the fence. Returns None when the fence is in force or there is
+    none to enforce (SQLite).
+    """
+    problem = enforcement_problem(status, error=error)
+    if problem is None:
+        return None
+    if production and required:
+        raise RLSNotEnforcedError(
+            problem + " The app refuses to start in production without the fence; "
+            "RLS_ENFORCEMENT_REQUIRED=false overrides this for one boot at a time."
+        )
+    if production:
+        return problem + " Running WITHOUT the fence because RLS_ENFORCEMENT_REQUIRED=false."
+    return problem + " (development: continuing)"
+
+
 # ── The policies (shared by migration 024 and the PostgreSQL tests) ──────
 
 # (table, owner column, matter column) — rows the caller owns, or filed under

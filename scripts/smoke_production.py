@@ -163,6 +163,12 @@ def first_boot(base_url: str) -> None:
         health = expect(client.get("/health", headers=auth), 200, "GET /health as admin").json()
         if not health.get("components"):
             raise SmokeFailure("GET /health as admin: no component details returned")
+        if os.environ.get("DATABASE_URL", "").startswith("postgresql"):
+            rls = health["components"].get("row_level_security") or {}
+            if rls.get("enforced") is not True:
+                raise SmokeFailure(
+                    f"row-level security is not enforced on the production boot: {rls}"
+                )
         expect(client.get("/metrics", headers=auth), 200, "GET /metrics as admin")
         expect(client.get("/metrics"), 401, "GET /metrics anonymously is refused")
         expect(

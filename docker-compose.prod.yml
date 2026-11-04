@@ -51,10 +51,11 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-casecite}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       # The role the app connects as. PostgreSQL exempts superusers (which
-      # POSTGRES_USER is) from row-level security, so a fresh install should
-      # set APP_DB_USER and APP_DB_PASSWORD in .env: the init script below
-      # creates that non-superuser role on first start. Existing installs:
-      # docs/deployment.md, "Row-level security needs a non-superuser app role".
+      # POSTGRES_USER is) from row-level security, and the app refuses to
+      # start in production as one, so set APP_DB_USER and APP_DB_PASSWORD in
+      # .env: the init script below creates that non-superuser role on first
+      # start. Existing installs: docs/deployment.md, "Row-level security
+      # needs a non-superuser app role".
       APP_DB_USER: ${APP_DB_USER:-}
       APP_DB_PASSWORD: ${APP_DB_PASSWORD:-}
     volumes:

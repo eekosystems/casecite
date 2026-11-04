@@ -561,7 +561,17 @@ jobs:
     # Redis, fail-closed config — and then restarts it over the data the first
     # boot wrote. All values are CI-only dummies.
     env:
-      DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/casecite_test
+      # The app connects as the non-superuser role the bundled stack's init
+      # script creates (deploy/postgres-init/10-app-role.sh): production
+      # refuses to start as a superuser, which PostgreSQL exempts from
+      # row-level security.
+      DATABASE_URL: postgresql+asyncpg://casecite_app:app-ci-only@localhost:5432/casecite_test
+      APP_DB_USER: casecite_app
+      APP_DB_PASSWORD: app-ci-only
+      POSTGRES_USER: test
+      POSTGRES_DB: casecite_test
+      PGHOST: localhost
+      PGPASSWORD: test
       # The service container's Postgres has no TLS; production mode otherwise forces it.
       DB_SSL: internal
       SECRET_KEY: test-secret-key-for-ci-only-not-production
@@ -620,8 +630,12 @@ jobs:
         run: |
           cd backend
           pip install -r requirements.lock
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
 
-      - name: Migrate
+      - name: Create the application role with the shipped init script
+        run: sh deploy/postgres-init/10-app-role.sh
+
+      - name: Migrate (as the application role, which then owns every table)
         run: |
           cd backend
           alembic upgrade head
@@ -732,7 +746,14 @@ jobs:
     # script, boots again over the restored state and signs in. All values
     # are CI-only dummies.
     env:
-      DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/casecite_test
+      # The app runs as the non-superuser application role (as production
+      # requires); the backup and restore scripts run as POSTGRES_USER, the
+      # superuser, and the restore hands the restored schema back to the app
+      # role — the drill proves that hand-over too.
+      DATABASE_URL: postgresql+asyncpg://casecite_app:app-ci-only@localhost:5432/casecite_test
+      APP_DB_USER: casecite_app
+      APP_DB_PASSWORD: app-ci-only
+      PGHOST: localhost
       DB_SSL: internal
       SECRET_KEY: test-secret-key-for-ci-only-not-production
       ENCRYPTION_SALT: test-salt-for-ci-only
@@ -804,6 +825,9 @@ jobs:
           pip install -r requirements.lock
           sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
           mkdir -p "$DATA_DIR/uploads" "$BACKUP_DIR"
+
+      - name: Create the application role with the shipped init script
+        run: sh deploy/postgres-init/10-app-role.sh
 
       - name: Migrate and write real data (first boot)
         run: |
