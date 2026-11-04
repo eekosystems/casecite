@@ -146,6 +146,11 @@ _loaded = False
 # matrix.
 _FAILED_LOAD_RETRY_SECONDS = 5.0
 _failed_load_at: float | None = None
+# A loaded matrix is re-read when another process saved one: the shared
+# version counter is checked at most this often (one primary-key read).
+_VERSION_CHECK_SECONDS = 1.0
+_version_seen = 0
+_version_checked_at = 0.0
 # What the matrix currently being served came from, for /health and the admin
 # UI: "stored" (the instance settings row, or its absence = defaults),
 # "snapshot" (the encrypted last-known-good copy, because the store is
@@ -247,10 +252,25 @@ async def _read_store() -> dict[str, set[str]]:
         raise PolicyUnavailableError(f"{type(e).__name__}: {e}") from e
 
 
+async def _stale() -> bool:
+    """True when another process saved a matrix since this one loaded it."""
+    global _version_checked_at
+    now = time.monotonic()
+    if now - _version_checked_at < _VERSION_CHECK_SECONDS:
+        return False
+    _version_checked_at = now
+    from app.services import shared_versions
+
+    return await shared_versions.get_version_async(shared_versions.PERMISSIONS) != _version_seen
+
+
 async def _load_overrides() -> dict[str, set[str]]:
     global _overrides, _loaded, _failed_load_at, _policy_source, _policy_error, _degraded
+    global _version_seen
     if _loaded:
-        return _overrides or {}
+        if not await _stale():
+            return _overrides or {}
+        invalidate_cache()
     now = time.monotonic()
     if _failed_load_at is not None and now - _failed_load_at < _FAILED_LOAD_RETRY_SECONDS:
         return _degraded if _degraded is not None else _locked_only()
@@ -289,6 +309,10 @@ async def _load_overrides() -> dict[str, set[str]]:
     _policy_source = SOURCE_STORED
     _policy_error = None
     _write_snapshot(overrides)
+    from app.services import shared_versions
+
+    _version_seen = await shared_versions.get_version_async(shared_versions.PERMISSIONS)
+    _version_checked_at = time.monotonic()
     return overrides
 
 
@@ -340,6 +364,9 @@ async def set_role_permissions(role: str, keys: list[str]) -> None:
     await set_secret(_SECRET_NAME, json.dumps(stored))
     invalidate_cache()
     _write_snapshot(current)
+    from app.services import shared_versions
+
+    await shared_versions.bump_async(shared_versions.PERMISSIONS)
 
 
 async def reset_role_permissions() -> None:
@@ -349,6 +376,9 @@ async def reset_role_permissions() -> None:
     await delete_secret(_SECRET_NAME)
     invalidate_cache()
     _write_snapshot({})
+    from app.services import shared_versions
+
+    await shared_versions.bump_async(shared_versions.PERMISSIONS)
 
 
 async def effective_permissions(user_roles: list[str]) -> set[str]:

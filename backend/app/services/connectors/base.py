@@ -143,6 +143,10 @@ class BaseConnector(ABC):
         # Kept in memory for the lifetime of the process to avoid repeated
         # disk reads within a single request.  Each entry is small (~1 KB).
         self._credentials_cache: dict[str, dict[str, Any]] = {}
+        # Modification time of the credentials file each cached entry was
+        # read from: a token refresh written by another process changes it,
+        # and the next read here reloads instead of serving the stale token.
+        self._credentials_mtime: dict[str, float | None] = {}
 
     # ------------------------------------------------------------------
     # User context helpers (async-safe via contextvars)
@@ -263,6 +267,7 @@ class BaseConnector(ABC):
 
     def _clear_credentials_for_user(self, user_id: str) -> None:
         self._credentials_cache.pop(user_id, None)
+        getattr(self, "_credentials_mtime", {}).pop(user_id, None)
         path = self._get_credentials_path(user_id)
         if os.path.exists(path):
             try:
@@ -274,14 +279,33 @@ class BaseConnector(ABC):
     # self.credentials property – drop-in replacement for subclasses
     # ------------------------------------------------------------------
 
+    def _credentials_file_mtime(self, user_id: str) -> float | None:
+        try:
+            return os.stat(self._get_credentials_path(user_id)).st_mtime
+        except OSError:
+            return None
+
     @property
     def credentials(self) -> dict[str, Any]:
-        """Return credentials for the *current* user (set via set_current_user)."""
+        """Return credentials for the *current* user (set via set_current_user).
+
+        Cached per user, but the cache follows the credentials file: when the
+        file changed since this entry was read (a refresh in another worker
+        process, a reconnect, a removal), it is reloaded. An entry set here
+        and not yet saved is kept until ``_save_credentials`` writes it.
+        """
         user_id = _connector_user_ctx.get()
         if not user_id:
             return {}
-        if user_id not in self._credentials_cache:
+        mtimes = getattr(self, "_credentials_mtime", None)
+        if mtimes is None:
+            mtimes = self._credentials_mtime = {}
+        current = self._credentials_file_mtime(user_id)
+        if user_id not in self._credentials_cache or (
+            user_id in mtimes and mtimes[user_id] != current
+        ):
             self._credentials_cache[user_id] = self._load_credentials_for_user(user_id)
+            mtimes[user_id] = current
         return self._credentials_cache[user_id]
 
     @credentials.setter
@@ -289,6 +313,8 @@ class BaseConnector(ABC):
         user_id = _connector_user_ctx.get()
         if user_id:
             self._credentials_cache[user_id] = value
+            # Unsaved: not tied to any file state until _save_credentials runs.
+            getattr(self, "_credentials_mtime", {}).pop(user_id, None)
 
     # Legacy helpers – now user-scoped via the property
     def _save_credentials(self) -> None:
@@ -299,6 +325,9 @@ class BaseConnector(ABC):
             return
         creds = self._credentials_cache.get(user_id, {})
         self._save_credentials_for_user(user_id, creds)
+        mtimes = getattr(self, "_credentials_mtime", None)
+        if mtimes is not None:
+            mtimes[user_id] = self._credentials_file_mtime(user_id)
 
     def _clear_credentials(self) -> None:
         """Clear credentials for the current user."""

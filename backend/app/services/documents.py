@@ -221,10 +221,40 @@ class DocumentService:
 
     # ==================== Legal hold ====================
 
+    def _refresh_holds_if_stale(self) -> None:
+        """Reload the held matters when another process changed a hold."""
+        store = getattr(self, "_store", None)
+        if store is None or not store.shared:
+            return
+        now = time.monotonic()
+        if now - getattr(self, "_holds_checked_at", 0.0) < _REFRESH_CHECK_SECONDS * 2:
+            return
+        self._holds_checked_at = now
+        from app.services import shared_versions
+
+        version = shared_versions.get_version(shared_versions.LEGAL_HOLDS)
+        if version == getattr(self, "_holds_version", 0):
+            return
+        try:
+            from app.database import SyncSessionLocal
+            from app.models.matters import Matter
+
+            with SyncSessionLocal() as db:
+                held = {
+                    str(matter_id)
+                    for (matter_id,) in db.query(Matter.id).filter(Matter.legal_hold.is_(True))
+                }
+        except Exception as e:  # noqa: BLE001 - keep the set we have
+            logger.warning(f"Could not refresh legal holds: {e}")
+            return
+        self.held_matter_ids = held
+        self._holds_version = version
+
     def is_held(self, doc: Document) -> bool:
         """True when the document itself, or its matter, is on legal hold."""
         if (doc.metadata or {}).get("legal_hold"):
             return True
+        self._refresh_holds_if_stale()
         return bool(doc.matter_id) and doc.matter_id in self.held_matter_ids
 
     def set_document_hold(

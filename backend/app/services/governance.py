@@ -77,6 +77,11 @@ async def set_legal_hold(
         matter.legal_hold_set_by = None
         matter.legal_hold_set_at = None
     await session.flush()
+    # The counter commits with the hold, so other processes reload the set
+    # of held matters together with the change, never before it.
+    from app.services import shared_versions
+
+    await shared_versions.bump_in_session(session, shared_versions.LEGAL_HOLDS)
     await refresh_document_service_holds(session)
     return matter
 

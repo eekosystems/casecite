@@ -31,10 +31,12 @@ import hmac as hmac_mod
 import json
 import logging
 import re
+import sys
 import threading
 import uuid
 from collections import OrderedDict
 from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from enum import Enum
@@ -418,6 +420,48 @@ def check_chain(entries: list[dict[str, Any]]) -> ChainCheck:
     return ChainCheck(valid=True, entries_checked=len(entries), legacy_entries=legacy)
 
 
+@contextmanager
+def _chain_file_lock(log_dir: Path):
+    """An exclusive advisory lock on ``<log_dir>/.chain.lock`` for the duration
+    of one append, so several worker processes writing the same daily file
+    never interleave or fork the hash chain. Best effort: if the lock cannot
+    be taken the append proceeds as a single process would."""
+    handle = None
+    locked = False
+    try:
+        handle = open(log_dir / ".chain.lock", "a+")  # noqa: SIM115 - held for the block
+        if sys.platform == "win32":
+            import msvcrt
+
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        locked = True
+    except OSError as e:
+        logging.getLogger(__name__).warning(f"Audit chain lock unavailable: {e}")
+    try:
+        yield
+    finally:
+        if handle is not None:
+            if locked:
+                try:
+                    if sys.platform == "win32":
+                        import msvcrt
+
+                        handle.seek(0)
+                        msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+                    else:
+                        import fcntl
+
+                        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+                except OSError:
+                    pass
+            handle.close()
+
+
 class AuditService:
     """Writes, queries, verifies and rotates the audit trail."""
 
@@ -547,19 +591,60 @@ class AuditService:
 
     # ==================== Writing ====================
 
+    def _last_hash_on_disk(self) -> str | None:
+        """The hash of the last entry in today's file, read from its tail
+        (a few KB, however large the file), or of the last entry at all when
+        today's file is empty. None when nothing is stored."""
+        log_file = self._get_log_file()
+        try:
+            size = log_file.stat().st_size
+        except OSError:
+            size = 0
+        if size:
+            try:
+                with open(log_file, "rb") as f:
+                    f.seek(max(0, size - 65536))
+                    chunk = f.read().decode("utf-8", "ignore")
+                for line in reversed(chunk.splitlines()):
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        entry = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    found = (entry.get("integrity") or {}).get("entry_hash")
+                    if found:
+                        return found
+                    return None
+            except OSError:
+                return None
+        try:
+            tail = self._tail_entries(1)
+        except (OSError, EOFError, ValueError):
+            return None
+        return (tail[-1].get("integrity") or {}).get("entry_hash") if tail else None
+
     async def log(self, entry: AuditLog):
         """Write an audit log entry to both JSONL file and database.
 
         The entry is linked to the last stored entry, signed and appended
         under one lock with no await in between, so concurrent coroutines and
-        threads cannot interleave. The chain only advances once the line is on
-        disk: a failed write leaves no gap for the next entry to trip over.
+        threads cannot interleave; a lock file beside the logs serialises
+        worker processes on the same data volume the same way, and the last
+        hash is re-read from disk under it so an entry another process just
+        appended is what this one chains to. The chain only advances once
+        the line is on disk: a failed write leaves no gap for the next entry
+        to trip over.
         """
         import os
         import stat
 
         written = False
-        with AuditLog._chain_lock:
+        with AuditLog._chain_lock, _chain_file_lock(self.log_dir):
+            on_disk = self._last_hash_on_disk()
+            if on_disk is not None and on_disk != AuditLog._last_hash:
+                AuditLog._last_hash = on_disk  # another process wrote since we last did
             entry.seal(AuditLog._last_hash)
             log_file = self._get_log_file()
 
