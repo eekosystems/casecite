@@ -419,6 +419,35 @@ class StrategyService:
             logger.warning(f"Case-law target crafting failed, using point text: {e}")
         return fallback
 
+    @staticmethod
+    def _number_case_law_by_point(
+        points: list[dict[str, Any]], citations: list[dict[str, Any]]
+    ) -> None:
+        """Renumber the attached case law c0, c1, ... in point order.
+
+        Ids are handed out as each point's search completes, and which point
+        finishes first depends on CourtListener's and the provider's response
+        times, so the same brief could come back with its authorities numbered
+        differently from one run to the next. Once every point is in, number
+        them by point so the brief reads the same for the same inputs. (A
+        stage cut off by its time budget keeps the completion-order ids; they
+        are unique and the refs still match.)
+        """
+        attached = [c for c in citations if c.get("type") == "case_law"]
+        if not attached:
+            return
+        by_old_id = {c["id"]: c for c in attached}
+        citations[:] = [c for c in citations if c.get("type") != "case_law"]
+        counter = itertools.count()
+        for point in points:
+            refs = point.get("case_refs") or []
+            for old_id in refs:
+                authority = by_old_id[old_id]
+                authority["id"] = f"c{next(counter)}"
+                citations.append(authority)
+            if refs:
+                point["case_refs"] = [by_old_id[r]["id"] for r in refs]
+
     async def _attach_case_law(
         self, sections: dict[str, Any], citations: list[dict[str, Any]], client
     ) -> dict[str, Any]:
@@ -533,6 +562,7 @@ class StrategyService:
         await asyncio.gather(
             *(support_and_attach(p, t) for p, t in zip(points, targets, strict=False))
         )
+        self._number_case_law_by_point(points, citations)
         if search_errors:
             status["search_error"] = search_errors[0]
         return status

@@ -12,6 +12,7 @@ os.environ["SECRET_KEY"] = "test-secret-key-for-testing-only-32chars!"
 os.environ["ENCRYPTION_SALT"] = "test-salt-16chars!"
 os.environ["DEBUG"] = "true"
 
+import asyncio
 import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -445,6 +446,53 @@ class TestGenerateBrief:
             "errors": 0,
             "searches_failed": 0,
         }
+
+    @pytest.mark.asyncio
+    async def test_case_law_is_numbered_by_point_not_by_which_search_finished_first(self):
+        # Points are searched concurrently, so the weakness's authorities can
+        # come back before the strength's. The ids on the brief must not
+        # depend on that: c0, c1 belong to the first point either way.
+        judge = {
+            "supports": True,
+            "quote": "Late notice does not defeat coverage absent prejudice",
+            "how": "Holds that late notice alone does not defeat the claim.",
+        }
+        llm_client = _mock_llm_client_seq([self.LLM_PAYLOAD, self.CRAFT_PAYLOAD, judge])
+        patches = self._patches(
+            doc_ids=["a", "b"],
+            search_results=[_chunk("a", "alpha", 0.9), _chunk("b", "beta", 0.5)],
+            llm_client=llm_client,
+        )
+
+        async def slow_for_the_strength(query, **_):
+            if query == self.CRAFT_PAYLOAD["targets"][0]["query"]:
+                await asyncio.sleep(0.05)
+                return [_opinion(101), _opinion(102)]
+            return [_opinion(201), _opinion(202)]
+
+        patches += [
+            patch(
+                "app.services.strategy.courtlistener_service.search_opinions",
+                new=AsyncMock(side_effect=slow_for_the_strength),
+            ),
+            patch(
+                "app.services.strategy.courtlistener_service.get_opinion",
+                new=AsyncMock(return_value=SimpleNamespace(text=self.OPINION_TEXT)),
+            ),
+        ]
+        result = await self._run(patches, include_case_law=True)
+
+        assert result["strengths"][0]["case_refs"] == ["c0", "c1"]
+        assert result["weaknesses"][0]["case_refs"] == ["c2", "c3"]
+        case_citations = [c for c in result["citations"] if c["type"] == "case_law"]
+        assert [c["id"] for c in case_citations] == ["c0", "c1", "c2", "c3"]
+        assert [c["source"] for c in case_citations] == [
+            "Case 101",
+            "Case 102",
+            "Case 201",
+            "Case 202",
+        ]
+        assert result["case_law"]["attached"] == 4
 
     @pytest.mark.asyncio
     async def test_unverifiable_quote_drops_the_authority(self):
