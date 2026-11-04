@@ -12,6 +12,10 @@ must go through :func:`safe_download` rather than calling httpx directly. It:
 - requires the host to match a caller-supplied allowlist of provider domains,
 - re-validates the target on every redirect hop (a naive host check is defeated
   by an allowed host that 302-redirects to an internal address),
+- connects to the address that passed validation (the name is never resolved a
+  second time, so a DNS record that flips between lookups buys nothing), with
+  the Host header and TLS server name set to the hostname so certificates are
+  still checked against it,
 - streams the body with a hard byte ceiling to prevent memory-exhaustion DoS.
 """
 
@@ -20,7 +24,8 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import logging
-from urllib.parse import urlsplit
+from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
@@ -69,7 +74,7 @@ async def _resolve_host(host: str) -> list[str]:
     return [str(info[4][0]) for info in infos]
 
 
-async def assert_public_url(url: str, allowed_hosts: tuple[str, ...]) -> None:
+async def assert_public_url(url: str, allowed_hosts: tuple[str, ...]) -> list[str]:
     """Validate that *url* is safe to fetch server-side, or raise UnsafeURLError.
 
     *allowed_hosts* is REQUIRED: the host must match one of the entries
@@ -77,6 +82,10 @@ async def assert_public_url(url: str, allowed_hosts: tuple[str, ...]) -> None:
     only if that suffix is listed; list the exact download domains). There is
     deliberately no default that skips allowlisting — every caller must state
     which provider hosts it trusts. An empty tuple rejects every host.
+
+    Returns the public addresses the host resolved to (the literal itself for
+    an IP URL), every one of them checked; :func:`safe_download` connects to
+    the first so that what was validated is what is reached.
     """
     parts = urlsplit(url)
     if parts.scheme.lower() not in _ALLOWED_SCHEMES:
@@ -100,6 +109,26 @@ async def assert_public_url(url: str, allowed_hosts: tuple[str, ...]) -> None:
     for addr in addresses:
         if not _address_is_public(addr):
             raise UnsafeURLError(f"Host resolves to a non-public address: {host} -> {addr}")
+    return addresses
+
+
+def _pinned(url: str, address: str) -> tuple[str, dict[str, str], dict[str, Any]]:
+    """*url* rewritten to connect to *address*, with the headers and request
+    extensions that keep the hostname in the picture.
+
+    The connection goes to the validated IP; the ``Host`` header carries the
+    hostname (and its explicit port) so the server routes the request, and
+    for https the TLS server name is the hostname so the certificate is
+    verified against it, exactly as a by-name connection would.
+    """
+    parts = urlsplit(url)
+    host = parts.hostname or ""
+    ip_host = f"[{address}]" if ipaddress.ip_address(address).version == 6 else address
+    port = f":{parts.port}" if parts.port else ""
+    pinned = urlunsplit((parts.scheme, ip_host + port, parts.path, parts.query, ""))
+    headers = {"Host": host + port}
+    extensions: dict[str, Any] = {"sni_hostname": host} if parts.scheme.lower() == "https" else {}
+    return pinned, headers, extensions
 
 
 # Request headers that carry credentials; never replayed to a different origin.
@@ -135,14 +164,11 @@ async def safe_download(
     :class:`UnsafeURLError` if any target is unsafe, and ``ValueError`` if the
     body exceeds *max_bytes*.
 
-    DNS-rebinding residual: the hostname is resolved once here for validation
-    and again by httpx when it actually connects. A TTL-0 DNS name whose
-    records flip between the two lookups could pass validation yet connect to
-    a different (internal) address. The required host allowlist is the primary
-    control — only trusted provider domains should ever be listed — so
-    exploiting the race additionally requires control of a listed provider's
-    DNS. Pinning the resolved IP for the actual connection would close the
-    race entirely and is the known residual here.
+    No DNS-rebinding window: the hostname is resolved once, every address is
+    checked, and the connection is made to the first of them (:func:`_pinned`)
+    rather than by name, so a TTL-0 record that flips between validation and
+    connection changes nothing. The Host header and TLS server name stay the
+    hostname, so certificate verification is unchanged.
 
     Credentials stay with the origin they were issued for: once a redirect
     leaves the original scheme/host/port, credential headers (``Authorization``
@@ -155,14 +181,19 @@ async def safe_download(
     origin = _origin(url)
     async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
         for _ in range(max_redirects + 1):
-            await assert_public_url(current, allowed_hosts)
-            async with client.stream("GET", current, headers=hop_headers) as response:
+            addresses = await assert_public_url(current, allowed_hosts)
+            pinned, host_header, extensions = _pinned(current, addresses[0])
+            async with client.stream(
+                "GET", pinned, headers={**(hop_headers or {}), **host_header}, extensions=extensions
+            ) as response:
                 if response.is_redirect:
                     location = response.headers.get("location")
                     if not location:
                         response.raise_for_status()
                         raise UnsafeURLError("Redirect without a Location header")
-                    current = str(response.url.join(location))
+                    # Relative redirects resolve against the hostname URL, not
+                    # the pinned one, so the next hop is validated by name.
+                    current = str(httpx.URL(current).join(location))
                     if hop_headers and _origin(current) != origin:
                         hop_headers = {
                             k: v

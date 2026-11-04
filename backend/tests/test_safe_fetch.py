@@ -111,6 +111,130 @@ class TestAllowlistRequired:
             await assert_public_url("https://example.com/x")
 
 
+PUBLIC = "93.184.216.34"
+PUBLIC_V6 = "2606:2800:220:1:248:1893:25c8:1946"
+
+
+def _by_name(request: httpx.Request) -> str:
+    """The URL as the caller named it: the connection goes to the pinned
+    address, the Host header carries the hostname."""
+    return f"{request.url.scheme}://{request.headers['host']}{request.url.raw_path.decode()}"
+
+
+def _mock_client(handler):
+    real_client = httpx.AsyncClient
+
+    def factory(*args, **kwargs):
+        kwargs["transport"] = httpx.MockTransport(handler)
+        return real_client(*args, **kwargs)
+
+    return patch("app.utils.safe_fetch.httpx.AsyncClient", side_effect=factory)
+
+
+class TestPinnedConnection:
+    """The connection is made to the address that passed validation."""
+
+    async def test_connects_to_the_validated_address_with_host_and_sni(self):
+        seen = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen.append(request)
+            return httpx.Response(200, content=b"file")
+
+        with (
+            _mock_client(handler),
+            patch("app.utils.safe_fetch._resolve_host", new=AsyncMock(return_value=[PUBLIC])),
+        ):
+            body = await safe_download(
+                "https://api.box.com/2.0/files/1/content?x=1",
+                max_bytes=1024,
+                allowed_hosts=("box.com",),
+            )
+        assert body == b"file"
+        (request,) = seen
+        assert request.url.host == PUBLIC  # the socket goes to the validated IP
+        assert request.url.path == "/2.0/files/1/content" and request.url.query == b"x=1"
+        assert request.headers["host"] == "api.box.com"  # the server still sees the name
+        assert (
+            request.extensions["sni_hostname"] == "api.box.com"
+        )  # and the cert is checked against it
+
+    async def test_plain_http_and_explicit_ports_keep_the_port_and_skip_sni(self):
+        seen = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen.append(request)
+            return httpx.Response(200, content=b"ok")
+
+        with (
+            _mock_client(handler),
+            patch("app.utils.safe_fetch._resolve_host", new=AsyncMock(return_value=[PUBLIC])),
+        ):
+            await safe_download(
+                "http://files.box.com:8080/a", max_bytes=16, allowed_hosts=("box.com",)
+            )
+        (request,) = seen
+        assert request.url.host == PUBLIC and request.url.port == 8080
+        assert request.headers["host"] == "files.box.com:8080"
+        assert "sni_hostname" not in request.extensions
+
+    async def test_an_ipv6_address_is_bracketed(self):
+        seen = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen.append(request)
+            return httpx.Response(200, content=b"ok")
+
+        with (
+            _mock_client(handler),
+            patch("app.utils.safe_fetch._resolve_host", new=AsyncMock(return_value=[PUBLIC_V6])),
+        ):
+            await safe_download("https://api.box.com/a", max_bytes=16, allowed_hosts=("box.com",))
+        (request,) = seen
+        assert request.url.host == PUBLIC_V6
+        assert request.headers["host"] == "api.box.com"
+
+    async def test_a_record_that_flips_after_validation_changes_nothing(self):
+        """The rebinding race: the name validates as public, then would resolve
+        to the metadata service. Nothing resolves it a second time, so the
+        connection still goes where validation looked."""
+        seen = []
+        lookups = []
+
+        async def resolver(host):
+            lookups.append(host)
+            return [PUBLIC] if len(lookups) == 1 else ["169.254.169.254"]
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen.append(request)
+            return httpx.Response(200, content=b"ok")
+
+        with _mock_client(handler), patch("app.utils.safe_fetch._resolve_host", new=resolver):
+            await safe_download("https://api.box.com/a", max_bytes=16, allowed_hosts=("box.com",))
+        assert lookups == ["api.box.com"]
+        assert seen[0].url.host == PUBLIC
+
+    async def test_a_relative_redirect_resolves_against_the_name_and_is_revalidated(self):
+        seen = []
+        validated = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen.append(request)
+            if request.url.path == "/a":
+                return httpx.Response(302, headers={"location": "/b"})
+            return httpx.Response(200, content=b"ok")
+
+        async def resolver(host):
+            validated.append(host)
+            return [PUBLIC]
+
+        with _mock_client(handler), patch("app.utils.safe_fetch._resolve_host", new=resolver):
+            await safe_download("https://api.box.com/a", max_bytes=16, allowed_hosts=("box.com",))
+        assert [r.url.path for r in seen] == ["/a", "/b"]
+        assert all(r.url.host == PUBLIC and r.headers["host"] == "api.box.com" for r in seen)
+        assert validated == ["api.box.com", "api.box.com"]  # every hop validated by name
+
+
 class TestRedirectCredentials:
     """A bearer token is only ever sent to the origin it was issued for."""
 
@@ -120,7 +244,7 @@ class TestRedirectCredentials:
 
         def handler(request: httpx.Request) -> httpx.Response:
             seen.append(request)
-            return routes[str(request.url)]
+            return routes[_by_name(request)]
 
         real_client = httpx.AsyncClient
 
@@ -130,7 +254,7 @@ class TestRedirectCredentials:
 
         with (
             patch("app.utils.safe_fetch.httpx.AsyncClient", side_effect=factory),
-            patch("app.utils.safe_fetch.assert_public_url", new=AsyncMock()),
+            patch("app.utils.safe_fetch.assert_public_url", new=AsyncMock(return_value=[PUBLIC])),
         ):
             body = await safe_download(
                 url, headers=headers, max_bytes=1024, allowed_hosts=("box.com", "boxcloud.com")
