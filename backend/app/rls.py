@@ -222,7 +222,8 @@ def rls_enable_statements() -> list[str]:
     for table, parent, key in CHILD_TABLES:
         # DDL built from the identifiers in CHILD_TABLES above, never from input.
         statements += _policy(
-            table, f"EXISTS (SELECT 1 FROM {parent} p WHERE p.id = {table}.{key})"  # nosec B608
+            table,
+            f"EXISTS (SELECT 1 FROM {parent} p WHERE p.id = {table}.{key})",  # nosec B608
         )
     return statements
 
