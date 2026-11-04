@@ -280,6 +280,98 @@ def test_a_false_condition_skips_the_step_and_the_run_goes_on(client):
     assert "review" in calls[1]["outputs"]
 
 
+# ------------------------------------------------------------ access revoked
+
+
+def _revoking_adapter(name: str, matter_id: str, user_id: str, calls: list):
+    """A step that, while it runs, removes the runner from the matter — the
+    shape of an admin acting during a long job."""
+
+    async def adapter(step, ctx):
+        calls.append(step["name"])
+        from app.database import AsyncSessionLocal
+        from app.services import matters as matters_service
+
+        async with AsyncSessionLocal() as session:
+            assert await matters_service.remove_member(session, matter_id, user_id)
+            await session.commit()
+        return StepOutput(
+            summary=f"{name} done", data={}, document_ids=list(ctx.input_document_ids)
+        )
+
+    return adapter
+
+
+def test_access_revoked_during_a_run_stops_the_remaining_steps(client):
+    owner, member = make_user("owner"), make_user("member")
+    matter_id = make_shared_matter(owner, member)
+    d1 = register_document(owner, matter_id=matter_id)
+    wf = _create(client, owner, steps=[EXTRACT, REVIEW, CITES], matter_id=matter_id)
+    calls: list = []
+    fakes = {
+        "extract_fields": _revoking_adapter("extract", matter_id, member.id, calls),
+        "analyze_contract": _fake_adapter("review", calls=calls),
+        "citation_check": _fake_adapter("cites", calls=calls),
+    }
+    with patch.dict(service_module.ADAPTERS, fakes):
+        started = _run(client, member, wf["id"], [d1])  # a member may run it...
+        job = _poll(client, member, started["job_id"])
+    # ...but once removed mid-run, nothing after the removing step runs.
+    assert job["status"] == "failed"
+    assert [c if isinstance(c, str) else c["step"] for c in calls] == ["extract"]
+    run = _run_detail(client, owner, wf["id"], started["run_id"])
+    assert run["status"] == "failed"
+    assert [s["status"] for s in run["step_runs"]] == ["completed", "failed", "skipped"]
+    assert "revoked while the run was in progress" in run["step_runs"][1]["error"]
+    assert "revoked" in run["error"]
+    # The former member can no longer read the run either.
+    resp = client.get(
+        f"/api/v1/workflows/{wf['id']}/runs/{started['run_id']}", headers=headers(member)
+    )
+    assert resp.status_code == 404
+
+
+def test_a_deactivated_runner_stops_the_run(client):
+    owner = make_user("owner")
+    insert_db_user(owner)  # deactivation is a users-table flag
+    d1 = register_document(owner)
+    wf = _create(client, owner, steps=[EXTRACT, REVIEW])
+    calls: list = []
+
+    async def deactivating(step, ctx):
+        calls.append(step["name"])
+        from app.database import AsyncSessionLocal
+        from app.models.db_models import User
+        from sqlalchemy import update
+
+        async with AsyncSessionLocal() as session:
+            await session.execute(update(User).where(User.id == owner.id).values(is_active=False))
+            await session.commit()
+        return StepOutput(summary="extract done", data={}, document_ids=[])
+
+    fakes = {
+        "extract_fields": deactivating,
+        "analyze_contract": _fake_adapter("review", calls=calls),
+    }
+    with patch.dict(service_module.ADAPTERS, fakes):
+        started = _run(client, owner, wf["id"], [d1])
+        # The deactivated account cannot poll its job; watch the run instead.
+        import asyncio
+
+        from app.services.workflows.service import workflow_service
+
+        for _ in range(200):
+            run, _wf, _outputs = asyncio.run(workflow_service._load_run(started["run_id"]))
+            if run.status in ("failed", "completed"):
+                break
+            time.sleep(0.05)
+    assert run.status == "failed" and "no longer active" in (run.error or "")
+    assert calls == ["extract"]
+    assert (
+        client.get(f"/api/v1/jobs/{started['job_id']}", headers=headers(owner)).status_code == 401
+    )
+
+
 # --------------------------------------------------------------- approval gate
 
 

@@ -30,6 +30,7 @@ from sqlalchemy import delete, select, update
 
 from app.config import settings
 from app.database import AsyncSessionLocal
+from app.models.db_models import User
 from app.models.schemas import WorkflowStepKind
 from app.models.workflows import (
     RUN_AWAITING_APPROVAL,
@@ -732,6 +733,40 @@ class WorkflowService:
         )
         return as_json
 
+    async def _access_revoked(self, run: WorkflowRun, ctx: StepContext) -> str | None:
+        """Refresh the runner's matter access and say why the run must stop, if it must.
+
+        A run can outlive the access it started with: the runner may be
+        removed from the matter, walled off it, or deactivated while the job
+        is in flight. Before every step the membership set is read again
+        (walls subtract from it, app/services/matters.py) and put on the
+        context the step adapters read documents through, so a step never
+        sees a document the runner could not open now. When the run's own
+        matter is no longer in that set, or the account is gone, the run
+        stops here with the reason; the steps already completed keep their
+        recorded outputs and the run detail stays readable to those who may
+        read it (the endpoints re-check access on every request).
+        """
+        from app.services import matters as matters_service
+        from app.services.auth import auth_service
+
+        if auth_service._is_user_revoked(ctx.user_id):  # deleted: tombstoned
+            return "The account that started this run is no longer active."
+        async with AsyncSessionLocal() as session:
+            active = (
+                await session.execute(select(User.is_active).where(User.id == ctx.user_id))
+            ).scalar_one_or_none()
+            if active is False:  # deactivated (a missing row is the tombstone's job)
+                return "The account that started this run is no longer active."
+            current = set(await matters_service.get_member_matter_ids(session, ctx.user_id))
+        ctx.accessible_matter_ids = current
+        if run.matter_id and run.matter_id not in current:
+            return (
+                "Access to this matter was revoked while the run was in progress; "
+                "the remaining steps were not run."
+            )
+        return None
+
     async def execute(
         self,
         *,
@@ -744,7 +779,10 @@ class WorkflowService:
         """Run the steps from ``start_index``; the job body. Persists every outcome.
 
         Returns the run's result; ``status`` is ``completed`` or
-        ``awaiting_approval`` (the job ends while an approver decides).
+        ``awaiting_approval`` (the job ends while an approver decides). The
+        runner's access is re-checked before every step
+        (:meth:`_access_revoked`); ``accessible_matter_ids`` is only the
+        starting point.
         """
         run, workflow, outputs = await self._load_run(run_id)
         steps = [dict(s) for s in (run.steps or [])]
@@ -776,6 +814,10 @@ class WorkflowService:
                 job_manager.report_progress(f"{_label}: {message}", _fraction)
 
             ctx.progress = report
+            revoked = await self._access_revoked(run, ctx)
+            if revoked:
+                await self._fail(run_id, index, total, name, revoked)
+                raise WorkflowError(revoked)
             condition = step.get("condition")
             if condition:
                 verdict = conditions.evaluate(condition, ctx.outputs)

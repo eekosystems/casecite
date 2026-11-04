@@ -87,6 +87,9 @@ network, disk encryption, backups and the firm's own policies. No SOC 2, ISO
   user filter still cannot return another user's rows. PostgreSQL exempts superusers from RLS, so in
   production the app refuses to start unless its database role has the
   fence in force. SQLite has no RLS.
+- A workflow run re-checks the runner's matter membership (walls
+  subtracted) and account status before every step and stops, as failed
+  with the reason, when either is gone.
 - Ethical walls: an admin can wall a user off a matter
   (`POST /matters/{id}/walls`). The wall removes their membership, refuses to
   add them back (with the same generic answer as an unknown address, so the
