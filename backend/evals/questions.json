@@ -1,6 +1,6 @@
 {
-  "version": 1,
-  "description": "Starter benchmark over the synthetic corpus in evals/corpus plus generated look-alike agreements (evals/distractors.py). Each question lists the passages that prove the answer (evidence), facts a correct answer must state (must_include: every inner list is a set of acceptable alternatives, at least one of which must appear; alternatives match whole words, case-insensitively, and a trailing * marks a stem such as accelerat*), statements a correct answer must not make (must_not_include), and a reference answer for the optional model-graded pass. expect_abstain marks questions the documents do not answer.",
+  "version": 2,
+  "description": "Benchmark over the synthetic corpus in evals/corpus plus generated look-alike agreements (evals/distractors.py). Each question lists the passages that prove the answer (evidence), facts a correct answer must state (must_include: every inner list is a set of acceptable alternatives, at least one of which must appear; alternatives match whole words, case-insensitively, and a trailing * marks a stem such as accelerat*), statements a correct answer must not make (must_not_include: literal phrases, so use wordings only a wrong answer would use, never a fact a correction might repeat), and a reference answer for the optional model-graded pass. expect_abstain marks questions the documents do not answer. Categories misleading_premise (the question asserts something the documents contradict) and conflict (two passages differ and one controls) are the adversarial set.",
   "questions": [
     {
       "id": "msa-cure-qualifier",
@@ -1051,6 +1051,506 @@
         ]
       ],
       "reference_answer": "The Loan and Security Agreement with Ridgeway Capital Partners and the Supply Agreement with Pelican Polymers."
+    },
+    {
+      "id": "premise-msa-convenience-anytime",
+      "category": "misleading_premise",
+      "question": "Since Brightline can terminate the Northwind MSA for convenience at any time, how much notice does it have to give?",
+      "evidence": [
+        {
+          "doc": "northwind_brightline_msa.txt",
+          "text": "Beginning twelve (12) months after the Effective Date, Customer may terminate this Agreement for convenience upon one hundred twenty (120) days' written notice"
+        }
+      ],
+      "must_include": [
+        [
+          "120 days",
+          "one hundred twenty (120) days",
+          "one hundred twenty days",
+          "120-day"
+        ],
+        [
+          "12 months",
+          "twelve (12) months",
+          "twelve months",
+          "12-month",
+          "first year",
+          "one year"
+        ]
+      ],
+      "must_not_include": [],
+      "reference_answer": "It cannot terminate at any time. Termination for convenience is available only from twelve months after the Effective Date, on 120 days' written notice, and costs an early termination fee of 50% of the Fees for the rest of the Initial Term (Section 5.3)."
+    },
+    {
+      "id": "premise-lease-late-charge-rate",
+      "category": "misleading_premise",
+      "question": "The Calloway Bakery lease charges a 10% late fee; how many days late does rent have to be before it applies?",
+      "evidence": [
+        {
+          "doc": "harbor_point_calloway_lease.txt",
+          "text": "If any installment of rent is not received by Landlord within ten (10) days after its due date, Tenant shall pay a late charge equal to five percent (5%) of the overdue amount"
+        }
+      ],
+      "must_include": [
+        [
+          "5%",
+          "five percent"
+        ],
+        [
+          "10 days",
+          "ten (10) days",
+          "ten days"
+        ]
+      ],
+      "must_not_include": [
+        "late charge is 10%",
+        "late fee is 10%",
+        "late charge of 10%",
+        "late fee of 10%"
+      ],
+      "reference_answer": "The late charge is 5% of the overdue amount, not 10%, and it applies when an installment is not received within ten days after its due date (Section 2.2)."
+    },
+    {
+      "id": "premise-loan-coc-automatic",
+      "category": "misleading_premise",
+      "question": "Given that a change in control automatically accelerates the Ridgeway loan, does Ridgeway still have to notify Ostrander?",
+      "evidence": [
+        {
+          "doc": "ridgeway_ostrander_loan.txt",
+          "text": "Upon the occurrence of any other Event of Default, Lender may, at its option and by written notice to Borrower, declare all Obligations immediately due and payable"
+        }
+      ],
+      "must_include": [
+        [
+          "option",
+          "optional",
+          "elect*",
+          "may declare",
+          "discretion",
+          "not automatic*",
+          "is not automatic"
+        ],
+        [
+          "written notice",
+          "notice"
+        ]
+      ],
+      "must_not_include": [],
+      "reference_answer": "Acceleration on a Change in Control is not automatic. A Change in Control is an Event of Default (Section 8.1(h)), and Lender may, at its option and by written notice to Borrower, declare the Obligations due (Section 8.2). Only a bankruptcy or insolvency proceeding (Section 8.1(f)) accelerates automatically."
+    },
+    {
+      "id": "premise-nda-perpetual",
+      "category": "misleading_premise",
+      "question": "The Halvorsen NDA's confidentiality obligations are perpetual, so does it matter when Northwind received the information?",
+      "evidence": [
+        {
+          "doc": "halvorsen_northwind_mutual_nda.txt",
+          "text": "The Recipient's obligations under Section 3 continue for three (3) years after the end of the disclosure period in Section 5.1, except that obligations with respect to information that constitutes a trade secret continue for as long as the information remains a trade secret"
+        }
+      ],
+      "must_include": [
+        [
+          "3 years",
+          "three (3) years",
+          "three years",
+          "3-year"
+        ],
+        [
+          "trade secret*"
+        ]
+      ],
+      "must_not_include": [],
+      "reference_answer": "They are not perpetual. Confidentiality obligations run for three years after the end of the two-year disclosure period, and only trade-secret information stays protected for as long as it remains a trade secret (Sections 5.1 and 5.2). Timing matters: the agreement covers information disclosed in the two years after May 20, 2025."
+    },
+    {
+      "id": "premise-emp-severance-length",
+      "category": "misleading_premise",
+      "question": "Priya Raman's agreement provides twelve months of severance; is COBRA covered for the same period?",
+      "evidence": [
+        {
+          "doc": "raman_executive_employment.txt",
+          "text": "continue the Executive's base salary for six (6) months after the termination date, and (b) pay the employer portion of COBRA premiums for up to six (6) months"
+        }
+      ],
+      "must_include": [
+        [
+          "6 months",
+          "six (6) months",
+          "six months",
+          "6-month"
+        ],
+        [
+          "COBRA"
+        ]
+      ],
+      "must_not_include": [
+        "twelve months of severance",
+        "12 months of severance",
+        "twelve (12) months of severance",
+        "severance for twelve months",
+        "severance for 12 months"
+      ],
+      "reference_answer": "Severance is six months, not twelve: six months of base salary continuation plus the employer portion of COBRA premiums for up to six months, conditioned on a release signed within 45 days (Sections 4.2 and 4.3). Twelve months is the length of the non-compete, during which garden leave pay of 50% of salary applies unless waived."
+    },
+    {
+      "id": "premise-apa-cap-rate",
+      "category": "misleading_premise",
+      "question": "Why did the parties set Ridgeline's indemnification cap at 10% of the purchase price?",
+      "evidence": [
+        {
+          "doc": "kestrel_ridgeline_asset_purchase.txt",
+          "text": "The aggregate liability of Seller and Member under Section 9.2(a) shall not exceed fifteen percent (15%) of the Purchase Price"
+        }
+      ],
+      "must_include": [
+        [
+          "15%",
+          "fifteen percent"
+        ]
+      ],
+      "must_not_include": [
+        "cap is 10%",
+        "capped at 10%",
+        "cap of 10%",
+        "cap at 10%",
+        "ten percent of the Purchase Price"
+      ],
+      "reference_answer": "The cap is 15% of the Purchase Price, not 10% (Section 9.4); the agreement does not say why. The cap and the 1% deductible do not apply to fraud or to breaches of Fundamental Representations, which are limited only to the Purchase Price (Section 9.5)."
+    },
+    {
+      "id": "premise-supply-governing-law",
+      "category": "misleading_premise",
+      "question": "Under the Louisiana law that governs the Pelican supply agreement, how long is the product warranty?",
+      "evidence": [
+        {
+          "doc": "pelican_ostrander_supply.txt",
+          "text": "This Agreement is governed by the laws of the State of Texas."
+        },
+        {
+          "doc": "pelican_ostrander_supply.txt",
+          "text": "Supplier warrants that each Product will conform to its specifications for twelve (12) months after delivery."
+        }
+      ],
+      "must_include": [
+        [
+          "Texas"
+        ],
+        [
+          "12 months",
+          "twelve (12) months",
+          "twelve months",
+          "12-month"
+        ]
+      ],
+      "must_not_include": [
+        "governed by Louisiana law",
+        "governed by the laws of the State of Louisiana",
+        "Louisiana law governs"
+      ],
+      "reference_answer": "The agreement is governed by Texas law, not Louisiana (Section 9.1; Louisiana is only where Pelican's delivery facility is). The product warranty is twelve months after delivery (Section 6.1)."
+    },
+    {
+      "id": "premise-lease-renewal-late-notice",
+      "category": "misleading_premise",
+      "question": "Calloway Bakery sent its renewal notice 90 days before the lease expires, so when does the renewal term start?",
+      "evidence": [
+        {
+          "doc": "harbor_point_calloway_lease.txt",
+          "text": "Tenant must exercise the option by written notice to Landlord given not less than one hundred eighty (180) days and not more than three hundred sixty-five (365) days before the expiration of the initial term. A notice given outside that window is void."
+        }
+      ],
+      "must_include": [
+        [
+          "void",
+          "not effective",
+          "ineffective",
+          "invalid",
+          "too late",
+          "not valid",
+          "does not start",
+          "no renewal"
+        ],
+        [
+          "180 days",
+          "one hundred eighty (180) days",
+          "one hundred eighty days",
+          "180-day"
+        ]
+      ],
+      "must_not_include": [],
+      "reference_answer": "It does not start. The option must be exercised between 365 and 180 days before the initial term expires, and a notice given outside that window is void (Section 8.2), so a notice 90 days before expiry does not renew the lease, which ends May 31, 2029."
+    },
+    {
+      "id": "conflict-msa-invoicing-frequency",
+      "category": "conflict",
+      "question": "How often does Northwind invoice Brightline, and does the original MSA or the amendment control?",
+      "evidence": [
+        {
+          "doc": "northwind_msa_amendment_1.txt",
+          "text": "Provider shall invoice Fees quarterly in advance."
+        },
+        {
+          "doc": "northwind_msa_amendment_1.txt",
+          "text": "If there is any conflict between this Amendment and the Agreement, this Amendment controls."
+        }
+      ],
+      "must_include": [
+        [
+          "quarterly"
+        ],
+        [
+          "Amendment"
+        ]
+      ],
+      "must_not_include": [],
+      "reference_answer": "Quarterly in advance. Amendment No. 1 deleted and replaced Section 3.2 (which required annual invoicing), and the Amendment controls over the Agreement where they conflict (Amendment Sections 1 and 5)."
+    },
+    {
+      "id": "conflict-msa-original-cap-superseded",
+      "category": "conflict",
+      "question": "Section 10.2 of the Northwind MSA caps liability at twelve months of fees. Is that still the cap?",
+      "evidence": [
+        {
+          "doc": "northwind_msa_amendment_1.txt",
+          "text": "shall not exceed two times (2x) the Fees paid or payable by Customer in the twelve (12) months preceding the event giving rise to the claim"
+        }
+      ],
+      "must_include": [
+        [
+          "2x",
+          "two times",
+          "twice",
+          "2 times",
+          "double"
+        ]
+      ],
+      "must_not_include": [],
+      "reference_answer": "No. Amendment No. 1 replaced Section 10.2: the cap is now two times (2x) the Fees paid or payable in the twelve months before the event giving rise to the claim. The exceptions in Section 10.3 (indemnities, confidentiality breaches, gross negligence or wilful misconduct) are unchanged."
+    },
+    {
+      "id": "conflict-liability-caps-compared",
+      "category": "multi_doc",
+      "question": "Compare the liability caps in the Northwind MSA (as amended) and the Pelican supply agreement.",
+      "evidence": [
+        {
+          "doc": "northwind_msa_amendment_1.txt",
+          "text": "shall not exceed two times (2x) the Fees paid or payable by Customer in the twelve (12) months preceding the event giving rise to the claim"
+        },
+        {
+          "doc": "pelican_ostrander_supply.txt",
+          "text": "Supplier's aggregate liability under this Agreement in any contract year shall not exceed the amounts paid by Buyer in that contract year"
+        }
+      ],
+      "must_include": [
+        [
+          "2x",
+          "two times",
+          "twice",
+          "2 times",
+          "double"
+        ],
+        [
+          "contract year",
+          "that year",
+          "each year",
+          "per year",
+          "annual*",
+          "same year"
+        ]
+      ],
+      "must_not_include": [],
+      "reference_answer": "Under the MSA as amended, each party's aggregate liability is capped at 2x the Fees paid or payable in the preceding twelve months (Amendment Section 2). Under the supply agreement only Supplier's liability is capped, at the amounts Buyer paid in the same contract year (Section 8.1). Both exclude lost profits and consequential damages."
+    },
+    {
+      "id": "emp-restricted-periods-differ",
+      "category": "qualifier",
+      "question": "How long after leaving Northwind is Priya Raman barred from soliciting its customers, and is that the same as her non-compete?",
+      "evidence": [
+        {
+          "doc": "raman_executive_employment.txt",
+          "text": "For eighteen (18) months after employment ends, the Executive shall not solicit any Company employee to leave the Company or solicit any customer of the Company"
+        },
+        {
+          "doc": "raman_executive_employment.txt",
+          "text": "During employment and for twelve (12) months after it ends for any reason"
+        }
+      ],
+      "must_include": [
+        [
+          "18 months",
+          "eighteen (18) months",
+          "eighteen months",
+          "18-month"
+        ],
+        [
+          "12 months",
+          "twelve (12) months",
+          "twelve months",
+          "12-month"
+        ]
+      ],
+      "must_not_include": [],
+      "reference_answer": "Non-solicitation of employees and customers lasts 18 months after employment ends (Section 6.3); the non-compete lasts 12 months (Section 6.1). They are different periods."
+    },
+    {
+      "id": "supply-px400-absent",
+      "category": "missing_evidence",
+      "question": "What does Pelican charge Ostrander per pound for PX-400?",
+      "evidence": [],
+      "expect_abstain": true,
+      "must_include": [
+        [
+          "does not",
+          "doesn't",
+          "not address*",
+          "not specif*",
+          "silent",
+          "no provision",
+          "not contain*",
+          "no requirement",
+          "not found",
+          "not mention*",
+          "no clause",
+          "not include*",
+          "not list*",
+          "not set*",
+          "no cap",
+          "no maximum",
+          "not capped",
+          "no such",
+          "not state*",
+          "nothing in"
+        ]
+      ],
+      "must_not_include": [],
+      "reference_answer": "Schedule B lists only PX-100, PX-200 and PX-310; there is no PX-400 price."
+    },
+    {
+      "id": "apa-noncompete-absent",
+      "category": "missing_evidence",
+      "question": "How long is Marcus Bell's non-compete under the Kestrel asset purchase agreement?",
+      "evidence": [],
+      "expect_abstain": true,
+      "must_include": [
+        [
+          "does not",
+          "doesn't",
+          "not address*",
+          "not specif*",
+          "silent",
+          "no provision",
+          "not contain*",
+          "no requirement",
+          "not found",
+          "not mention*",
+          "no clause",
+          "not include*",
+          "not list*",
+          "not set*",
+          "no cap",
+          "no maximum",
+          "not capped",
+          "no such",
+          "not state*",
+          "nothing in"
+        ]
+      ],
+      "must_not_include": [],
+      "reference_answer": "The asset purchase agreement contains no non-competition covenant for Marcus Bell."
+    },
+    {
+      "id": "msa-data-location-absent",
+      "category": "missing_evidence",
+      "question": "Where must Northwind store Brightline's Customer Data?",
+      "evidence": [],
+      "expect_abstain": true,
+      "must_include": [
+        [
+          "does not",
+          "doesn't",
+          "not address*",
+          "not specif*",
+          "silent",
+          "no provision",
+          "not contain*",
+          "no requirement",
+          "not found",
+          "not mention*",
+          "no clause",
+          "not include*",
+          "not list*",
+          "not set*",
+          "no cap",
+          "no maximum",
+          "not capped",
+          "no such",
+          "not state*",
+          "nothing in"
+        ]
+      ],
+      "must_not_include": [],
+      "reference_answer": "The MSA does not specify where Customer Data must be stored."
+    },
+    {
+      "id": "loan-interest-cap-absent",
+      "category": "missing_evidence",
+      "question": "What is the maximum interest rate on the Ridgeway term loan?",
+      "evidence": [],
+      "expect_abstain": true,
+      "must_include": [
+        [
+          "does not",
+          "doesn't",
+          "not address*",
+          "not specif*",
+          "silent",
+          "no provision",
+          "not contain*",
+          "no requirement",
+          "not found",
+          "not mention*",
+          "no clause",
+          "not include*",
+          "not list*",
+          "not set*",
+          "no cap",
+          "no maximum",
+          "not capped",
+          "no such",
+          "not state*",
+          "nothing in"
+        ]
+      ],
+      "must_not_include": [],
+      "reference_answer": "The loan agreement sets no maximum rate: interest is SOFR (floored at zero) plus 3.25%, plus 2% while an Event of Default exists, with no cap stated."
+    },
+    {
+      "id": "emp-equity-vesting-elsewhere",
+      "category": "cross_reference",
+      "question": "What is the vesting schedule for Priya Raman's stock options?",
+      "evidence": [
+        {
+          "doc": "raman_executive_employment.txt",
+          "text": "The Executive will receive the stock option grant described in a separate award agreement, which governs its vesting and exercise."
+        }
+      ],
+      "must_include": [
+        [
+          "award agreement",
+          "separate agreement",
+          "separate award",
+          "not in",
+          "does not",
+          "elsewhere"
+        ]
+      ],
+      "must_not_include": [],
+      "reference_answer": "The employment agreement does not set a vesting schedule; vesting and exercise are governed by a separate award agreement (Section 2.3), which is not among the documents."
     }
-  ]
+  ],
+  "review": {
+    "status": "unreviewed",
+    "note": "Questions, evidence and reference answers were written by the engineering team over synthetic documents. See evals/REVIEW.md for the attorney review and sign-off process; sign-offs are recorded here.",
+    "signoffs": []
+  }
 }

@@ -145,7 +145,11 @@ async def main(argv: list[str] | None = None) -> int:
                 report["retrieval_detail"] = retrieval
             if args.mode in ("answers", "all"):
                 rows = await harness.run_answers(
-                    index, questions, settings_overrides=settings_overrides, judge=args.judge
+                    index,
+                    questions,
+                    settings_overrides=settings_overrides,
+                    judge=args.judge,
+                    search_options=search_options,
                 )
                 report["answers"] = harness.summarize_answers(rows)
                 report["answers_detail"] = rows

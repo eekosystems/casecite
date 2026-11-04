@@ -484,24 +484,52 @@ def _citation_dict(c: Any) -> dict[str, Any]:
     return c.model_dump() if hasattr(c, "model_dump") else dict(c)
 
 
+@contextlib.contextmanager
+def _corpus_texts(index: EvalIndex) -> Iterator[None]:
+    """Let the claim-grounding step read the benchmark documents.
+
+    Grounding re-reads each cited document's full text through the document
+    registry to verify quotes verbatim. The benchmark corpus is indexed
+    straight into the isolated store, never registered, so without this the
+    grounding step finds no documents and every answer reports zero claims.
+    """
+    from app.services.documents import document_service
+
+    texts = {d.document_id: (d.filename, d.text) for d in index.corpus}
+    original = document_service.get_document_text
+
+    async def get_document_text(doc_id, user_id, accessible_matter_ids=None):
+        if doc_id in texts:
+            return texts[doc_id]
+        return await original(doc_id, user_id, accessible_matter_ids)
+
+    with patch.object(document_service, "get_document_text", get_document_text):
+        yield
+
+
 async def run_answers(
     index: EvalIndex,
     questions: list[dict[str, Any]],
     settings_overrides: dict[str, Any] | None = None,
     judge: bool = False,
+    search_options: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     from app.models.schemas import RAGSettings
 
     rag_settings = RAGSettings(**(settings_overrides or {}))
+    # The same floor the retrieval pass uses (offline embeddings need 0.001).
+    similarity_threshold = (search_options or {}).get("similarity_threshold")
     rows = []
     for q in questions:
         started = time.time()
-        result = await index.service.generate_response(
-            query=q["question"],
-            include_case_law=False,
-            user_id=EVAL_USER,
-            rag_settings=rag_settings,
-        )
+        with _corpus_texts(index):
+            result = await index.service.generate_response(
+                query=q["question"],
+                include_case_law=False,
+                user_id=EVAL_USER,
+                rag_settings=rag_settings,
+                similarity_threshold=similarity_threshold,
+            )
         answer = result.get("content") or ""
         citations = [_citation_dict(c) for c in result.get("citations") or []]
         claims = [c for c in citations if str(c.get("id", "")).startswith("claim-")]

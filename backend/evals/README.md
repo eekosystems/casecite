@@ -16,6 +16,14 @@ From `backend/`:
 # Offline: no API key. A pipeline regression check (CI runs a floor of this).
 python -m evals.run
 
+# Offline answer path: scripts/mock_llm_server.py stands in for the provider
+# and answers by quoting the documents, so the whole answer pipeline (claim
+# grounding, verbatim verification, support labels) runs with no key. CI runs
+# this too. Every claim must verify; it is a plumbing check, not an accuracy
+# figure, and its facts_ok is meaningless.
+python ../scripts/mock_llm_server.py --port 8089 &
+OPENAI_BASE_URL=http://127.0.0.1:8089/v1 OPENAI_API_KEY=mock python -m evals.run --mode answers
+
 # Offline with a small real semantic model (all-MiniLM-L6-v2, ~80 MB one-time
 # download to ~/.cache/chroma). Better than hash embeddings, still not the
 # production model.
@@ -106,6 +114,10 @@ Questions live in `questions.json`:
 
 - `evidence` text must appear verbatim in the named document (the run refuses
   a question file where it does not). Keep it short: the operative sentence.
+- `must_not_include` is checked literally, so list only wordings a wrong
+  answer would use (`late charge is 10%`), never a fact a correction might
+  repeat (`not 10%`). A CI test refuses a file whose reference answer trips
+  its own forbidden phrases.
 - `must_include` is a list of groups; each group is a list of acceptable
   alternatives, one of which must appear. Matching is case-insensitive and on
   whole words; end an alternative with `*` to make it a stem (`accelerat*`).
@@ -113,14 +125,27 @@ Questions live in `questions.json`:
   `"expect_abstain": true`, and abstention phrases in `must_include`.
 - `category` groups the report: `fact`, `qualifier`, `defined_term`,
   `exact_clause`, `table`, `amendment`, `cross_reference`, `multi_doc`,
-  `missing_evidence`.
+  `missing_evidence`, and the adversarial pair `misleading_premise` (the
+  question asserts something the documents contradict, and a correct answer
+  corrects it) and `conflict` (two passages disagree and one controls). A CI
+  test keeps the adversarial and abstention questions from being trimmed.
 
 To benchmark on your own documents, add `.txt` files to `corpus/` (or point a
 copy of the harness at another folder) and write questions against them. The
-starter set is 49 questions over synthetic documents; it shows the shape of a
-benchmark, not a measure of real-world accuracy. Before claiming an accuracy
-figure, grow it to a few hundred questions written and checked by attorneys
-over documents like the firm's own, including questions designed to mislead.
+set is 66 questions over synthetic documents, 17 of them written to mislead
+(false premises, conflicting passages, questions with no answer where the
+look-alikes tempt one); it shows the shape of a benchmark, not a measure of
+real-world accuracy. Before claiming an accuracy figure, grow it to a few
+hundred questions written and checked by attorneys over documents like the
+firm's own, and review it as described below.
+
+## Review and sign-off
+
+The gold data has not been reviewed by an attorney: `questions.json` says so
+in its `review` block (`"status": "unreviewed"`). [REVIEW.md](REVIEW.md) is
+the review process — what to check per question, how a sign-off is recorded
+against a version of the file, and what has to be true before a number from
+this benchmark is quoted to anyone.
 
 ## Results
 
