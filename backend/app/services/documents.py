@@ -1,7 +1,7 @@
 import asyncio
-import json
 import logging
 import os
+import time
 import uuid
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Optional
@@ -18,6 +18,12 @@ from app.models.schemas import (
     DocumentTreeResponse,
 )
 from app.services.rag import rag_service
+from app.services.registry_store import (
+    DatabaseRegistryStore,
+    JsonRegistryStore,
+    document_json,
+    import_json_into_database,
+)
 from app.services.text_extraction import ExtractionResult, text_extraction_service
 from app.utils import file_crypto
 
@@ -93,17 +99,125 @@ class RegistryWriteError(ServiceUnavailableError):
         )
 
 
+# How often, at most, a process asks the shared store whether another
+# process changed the registry (one tiny primary-key read).
+_REFRESH_CHECK_SECONDS = 0.5
+
+
 class DocumentService:
-    def __init__(self):
-        self.documents: dict[str, Document] = {}
+    def __init__(self, store=None):
+        # The registry is held in memory and persisted through a store:
+        # index.json for a service built on its own (unit tests, the legacy
+        # layout) or the database once the app has started
+        # (use_database_store). ``_snapshot`` is each document's serialised
+        # form as last persisted, so a save writes only what changed and a
+        # refresh from another process never clobbers an unsaved change.
+        self._store = store if store is not None else JsonRegistryStore(settings.upload_dir)
+        self._documents: dict[str, Document] = {}
+        self._snapshot: dict[str, str] = {}
+        self._seen_version = 0
+        self._last_version_check = 0.0
         # Per-user list of explicit (possibly empty) knowledge-base folders.
         self.folders: dict[str, list[str]] = {}
         # Matters on legal hold. Loaded at startup and refreshed on every hold
-        # change by app/services/governance.py; process-local, which is
-        # correct for the supported single-process deployment.
+        # change by app/services/governance.py (and from the shared version
+        # counter when several processes run).
         self.held_matter_ids: set[str] = set()
         self._load_index()
         self._load_folders()
+
+    # ==================== Registry storage ====================
+
+    @property
+    def documents(self) -> dict[str, Document]:
+        """The registry. With a shared store, picks up other processes' changes."""
+        self._maybe_refresh()
+        return self._documents
+
+    @documents.setter
+    def documents(self, value: dict[str, Document]) -> None:
+        # A registry assigned wholesale is this process's truth and has not
+        # been persisted: every entry counts as unsaved, so a refresh from the
+        # shared store keeps it and the next save writes it. (Loading and
+        # refreshing set _documents and _snapshot directly, not through here.)
+        self._documents = value  # the caller's object, so its later mutations are seen
+        self._snapshot = {}
+
+    @documents.deleter
+    def documents(self) -> None:
+        # unittest.mock's patch.object restores a class property by deleting
+        # the instance attribute it set: an empty registry is the right result.
+        self._documents = {}
+        self._snapshot = {}
+
+    def use_database_store(self) -> dict[str, Any]:
+        """Switch the registry to the database tables (the running app).
+
+        The first time, ``index.json`` / ``folders.json`` are imported and
+        kept as ``*.migrated-<timestamp>``. Returns the import summary.
+        """
+        json_store = (
+            self._store
+            if isinstance(self._store, JsonRegistryStore)
+            else JsonRegistryStore(settings.upload_dir)
+        )
+        db_store = DatabaseRegistryStore()
+        summary = import_json_into_database(json_store, db_store)
+        self._store = db_store
+        self._load_index(replace=True)
+        self._load_folders()
+        return summary
+
+    def _maybe_refresh(self) -> None:
+        """Reload what other processes changed, keeping this process's unsaved edits."""
+        store = getattr(self, "_store", None)  # a bare __new__ in tests has none
+        if store is None or not store.shared:
+            return
+        now = time.monotonic()
+        if now - self._last_version_check < _REFRESH_CHECK_SECONDS:
+            return
+        self._last_version_check = now
+        try:
+            version = self._store.version()
+        except Exception as e:  # a failed check keeps serving the copy we have
+            logger.warning(f"Could not check the document registry version: {e}")
+            return
+        if version == self._seen_version:
+            return
+        try:
+            fresh = self._store.load_documents()
+        except Exception as e:
+            logger.error(f"Could not refresh the document registry: {e}")
+            return
+        self._merge_fresh(fresh)
+        self._seen_version = version
+
+    def _merge_fresh(self, fresh: dict[str, Document]) -> None:
+        """Three-way merge: a document this process has not changed since it
+        last loaded or saved it takes the shared version (or goes, if deleted
+        elsewhere); a document with unsaved local changes is kept."""
+        merged: dict[str, Document] = {}
+        snapshot: dict[str, str] = {}
+        for doc_id, local in self._documents.items():
+            local_json = document_json(local)
+            dirty = local_json != self._snapshot.get(doc_id)
+            if doc_id in fresh:
+                if dirty:
+                    merged[doc_id] = local
+                    snapshot[doc_id] = self._snapshot.get(doc_id, "")
+                else:
+                    merged[doc_id] = fresh[doc_id]
+                    snapshot[doc_id] = document_json(fresh[doc_id])
+            elif dirty:
+                merged[doc_id] = local
+                snapshot[doc_id] = self._snapshot.get(doc_id, "")
+            # else: deleted by another process and untouched here — dropped
+        for doc_id, doc in fresh.items():
+            if doc_id not in merged:
+                merged[doc_id] = doc
+                snapshot[doc_id] = document_json(doc)
+        self._documents = merged
+        self._snapshot = snapshot
 
     # ==================== Legal hold ====================
 
@@ -141,42 +255,43 @@ class DocumentService:
     def _get_index_path(self) -> str:
         return os.path.join(settings.upload_dir, "index.json")
 
+    @property
+    def registry_backend(self) -> str:
+        return "database" if self._store.shared else "json"
+
     def _get_user_upload_dir(self, user_id: str) -> str:
         """Get the upload directory for a specific user."""
         user_dir = os.path.join(settings.upload_dir, user_id)
         os.makedirs(user_dir, exist_ok=True)
         return user_dir
 
-    def _load_index(self):
-        """Load the document registry from disk.
+    def _load_index(self, replace: bool = False):
+        """Load the document registry from its store.
 
         An existing registry that cannot be read or parsed is fatal: starting
         with an empty registry would hide every document and the next save
         would overwrite the file, turning a transient read error into
         permanent loss. The file is left untouched for the operator.
         """
-        index_path = self._get_index_path()
-        if not os.path.exists(index_path):
-            return
+        where = self._get_index_path() if isinstance(self._store, JsonRegistryStore) else "database"
         try:
-            with open(index_path) as f:
-                data = json.load(f)
-            loaded: dict[str, Document] = {}
-            for doc_data in data:
-                # Migrate legacy docs without user_id
-                if "user_id" not in doc_data:
-                    doc_data["user_id"] = "legacy"
-                doc = Document(**doc_data)
-                loaded[doc.id] = doc
+            loaded = self._store.load_documents()
         except (ValueError, KeyError, TypeError, OSError) as e:
-            logger.critical(f"Document registry {index_path} is unreadable: {e}")
+            logger.critical(f"Document registry {where} is unreadable: {e}")
             raise RuntimeError(
-                f"The document registry {index_path} could not be loaded ({e}). "
+                f"The document registry {where} could not be loaded ({e}). "
                 "Refusing to start with an empty registry, which would hide every "
                 "document and overwrite the file on the next save. Restore the file "
                 "from a backup or repair it, then start again."
             ) from e
-        self.documents.update(loaded)
+        if replace:
+            self._documents = {}
+        self._documents.update(loaded)
+        self._snapshot = {doc_id: document_json(doc) for doc_id, doc in self._documents.items()}
+        try:
+            self._seen_version = self._store.version()
+        except Exception as e:  # noqa: BLE001 - the next refresh retries
+            logger.warning(f"Could not read the document registry version: {e}")
 
     def _save_index(self):
         """Persist the registry with an atomic write (temp + rename).
@@ -185,30 +300,23 @@ class DocumentService:
         registry is not touched here: each caller decides what to roll back
         so that nothing it changed is left looking committed.
         """
-        import tempfile
-
-        index_path = self._get_index_path()
-        tmp_path: str | None = None
+        current = {doc_id: document_json(doc) for doc_id, doc in self._documents.items()}
+        changed = {
+            doc_id: self._documents[doc_id]
+            for doc_id, serialised in current.items()
+            if self._snapshot.get(doc_id) != serialised
+        }
+        removed = set(self._snapshot) - set(current)
         try:
-            data = [doc.model_dump(mode="json") for doc in self.documents.values()]
-            dir_name = os.path.dirname(index_path)
-            os.makedirs(dir_name, exist_ok=True)
-            with tempfile.NamedTemporaryFile(
-                mode="w", dir=dir_name, suffix=".tmp", delete=False
-            ) as f:
-                tmp_path = f.name
-                json.dump(data, f, default=str)
-                f.flush()
-                os.fsync(f.fileno())
-            os.replace(tmp_path, index_path)  # Atomic on POSIX
-        except (ValueError, KeyError, TypeError, OSError) as e:
+            self._store.save_documents(self._documents, changed, removed)
+        except Exception as e:  # file system or database errors alike
             logger.error(f"Error saving document index: {e}")
-            if tmp_path:
-                try:
-                    os.unlink(tmp_path)
-                except OSError:
-                    pass
             raise RegistryWriteError() from e
+        self._snapshot = current
+        try:
+            self._seen_version = self._store.version()
+        except Exception as e:  # noqa: BLE001 - the next refresh retries
+            logger.warning(f"Could not read the document registry version: {e}")
 
     def _get_user_documents(self, user_id: str) -> dict[str, Document]:
         """Get all documents belonging to a specific user."""
@@ -220,30 +328,17 @@ class DocumentService:
         return os.path.join(settings.upload_dir, "folders.json")
 
     def _load_folders(self):
-        """Load the per-user folder list from disk."""
-        path = self._get_folders_path()
-        if os.path.exists(path):
-            try:
-                with open(path) as f:
-                    data = json.load(f)
-                    if isinstance(data, dict):
-                        self.folders = {u: list(v) for u, v in data.items()}
-            except (ValueError, KeyError, OSError) as e:
-                logger.error(f"Error loading folders: {e}")
+        """Load the per-user folder lists from the store."""
+        try:
+            self.folders = self._store.load_folders()
+        except Exception as e:  # noqa: BLE001 - folders are a convenience, never fatal
+            logger.error(f"Error loading folders: {e}")
 
     def _save_folders(self):
-        """Persist the per-user folder list atomically."""
-        import tempfile
-
-        path = self._get_folders_path()
+        """Persist the per-user folder lists."""
         try:
-            with tempfile.NamedTemporaryFile(
-                mode="w", dir=os.path.dirname(path), suffix=".tmp", delete=False
-            ) as f:
-                json.dump(self.folders, f)
-                tmp_path = f.name
-            os.replace(tmp_path, path)
-        except (ValueError, KeyError, OSError) as e:
+            self._store.save_folders(self.folders)
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Error saving folders: {e}")
 
     @staticmethod

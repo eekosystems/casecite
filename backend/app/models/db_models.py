@@ -46,6 +46,13 @@ from app.models.enums import (  # noqa: F401
 # Matters & membership (collaboration/isolation unit)
 from app.models.matters import Matter, MatterMember  # noqa: F401
 
+# Document registry (which documents exist) and shared version counters
+from app.models.registry import (  # noqa: F401
+    DocumentFolderRow,
+    DocumentRegistryRow,
+    SharedVersion,
+)
+
 # Tabular review (schema-driven extraction across many documents)
 from app.models.review_tables import (  # noqa: F401
     ReviewCell,

@@ -94,7 +94,7 @@ async def test_upload_whose_first_registry_write_fails_leaves_nothing_behind(svc
     rag = _rag()
     with (
         patch("app.services.documents.rag_service", rag),
-        patch("app.services.documents.os.replace", side_effect=OSError(28, "No space left")),
+        patch("app.services.registry_store.os.replace", side_effect=OSError(28, "No space left")),
         pytest.raises(RegistryWriteError, match="Nothing was changed"),
     ):
         await svc.upload_and_index(user_id="u1", **_UPLOAD)
@@ -112,7 +112,7 @@ async def test_upload_whose_final_registry_write_fails_is_undone(svc, tmp_path):
     with (
         patch("app.services.documents.rag_service", rag),
         patch.object(svc, "extract", AsyncMock(return_value=ExtractionResult(text="hello"))),
-        patch("app.services.documents.os.replace", side_effect=_failing_replace(2)),
+        patch("app.services.registry_store.os.replace", side_effect=_failing_replace(2)),
         pytest.raises(RegistryWriteError),
     ):
         await svc.upload_and_index(user_id="u1", **_UPLOAD)
@@ -139,7 +139,7 @@ async def test_delete_whose_registry_write_fails_says_the_entry_may_return(svc, 
     with (
         patch("app.services.documents.rag_service", rag),
         patch.object(svc, "_delete_derived_data", AsyncMock()),
-        patch("app.services.documents.os.replace", side_effect=OSError(13, "Permission denied")),
+        patch("app.services.registry_store.os.replace", side_effect=OSError(13, "Permission denied")),
         pytest.raises(RegistryWriteError, match="may reappear after a restart"),
     ):
         await svc.delete_document(doc.id, "u1")
@@ -150,7 +150,7 @@ async def test_delete_whose_registry_write_fails_says_the_entry_may_return(svc, 
 async def test_move_whose_registry_write_fails_is_rolled_back(svc, tmp_path):
     doc = await _persisted_upload(svc)
     with (
-        patch("app.services.documents.os.replace", side_effect=OSError(13, "Permission denied")),
+        patch("app.services.registry_store.os.replace", side_effect=OSError(13, "Permission denied")),
         pytest.raises(RegistryWriteError),
     ):
         svc.move_document(doc.id, "u1", "/Cases/Smith")
@@ -194,7 +194,7 @@ def test_delete_registry_failure_is_a_503(client):
 
 def test_save_index_cleans_up_its_temp_file(svc, tmp_path):
     with (
-        patch("app.services.documents.os.replace", side_effect=OSError(28, "No space left")),
+        patch("app.services.registry_store.os.replace", side_effect=OSError(28, "No space left")),
         pytest.raises(RegistryWriteError),
     ):
         svc._save_index()

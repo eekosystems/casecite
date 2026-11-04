@@ -295,6 +295,18 @@ async def lifespan(app: FastAPI):
     logger.info("Ensuring database tables exist (backstop; migrations run at startup)...")
     await init_sqlalchemy_db()
 
+    # The document registry lives in the database (shared between processes);
+    # the first start with the tables present imports index.json.
+    try:
+        from app.services.documents import document_service as _registry
+
+        summary = await asyncio.to_thread(_registry.use_database_store)
+        if summary.get("migrated"):
+            logger.info("Imported the document registry from index.json: %s", summary)
+    except Exception as e:
+        logger.critical(f"Document registry could not be opened in the database: {e}")
+        raise
+
     # SQLite (development only) never runs Alembic, and create_all cannot add a
     # column to an existing table — add any model columns a dev database lacks.
     try:
