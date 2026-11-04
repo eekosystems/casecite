@@ -1,7 +1,7 @@
 import { Icon } from './Icon';
 import { activateOnKey } from './activateOnKey';
 import { safeHttpUrl } from './safeUrl';
-import { groupCitationsBySource, claimLabel } from '../../utils';
+import { groupCitationsBySource, claimLabel, verificationBadge } from '../../utils';
 import type { Citation } from '../../types';
 
 interface SourcesListProps {
@@ -35,6 +35,7 @@ function SourcesList({ styles, allCitations, setSelectedCitation, showTitle = tr
             // A claim citation IS one fact of the answer — its row says the
             // fact; the filename is the meta line.
             const claim = claimLabel(cite);
+            const badge = verificationBadge(cite);
             return (
               <div
                 key={cite.id}
@@ -49,19 +50,14 @@ function SourcesList({ styles, allCitations, setSelectedCitation, showTitle = tr
                   <span className={styles.sourceName}>{claim || cite.source}</span>
                   <span className={styles.sourceMeta}>
                     <span>{claim ? cite.source : (cite.type === 'case_law' ? 'Case Law' : 'Internal Doc')}</span>
-                    {/* Quality signals are binary: verification, and a quiet
-                        flag when retrieval itself scored the passage below the
-                        user's threshold. Never a numeric score. */}
-                    {cite.verified === true && (
+                    {/* Quality signals are categorical: the explicit
+                        verification state (what was and was not checked), and
+                        a quiet flag when retrieval itself scored the passage
+                        below the user's threshold. Never a numeric score. */}
+                    {badge && (
                       <>
                         <span className={styles.sourceMetaRule} aria-hidden="true" />
-                        <span className={styles.verifiedBadge}>Verified</span>
-                      </>
-                    )}
-                    {cite.verified === false && (
-                      <>
-                        <span className={styles.sourceMetaRule} aria-hidden="true" />
-                        <span className={styles.unverifiedBadge}>Unverified</span>
+                        <span className={styles[badge.className]} title={badge.title}>{badge.label}</span>
                       </>
                     )}
                     {cite.weakMatch && (

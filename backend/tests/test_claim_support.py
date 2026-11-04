@@ -96,6 +96,7 @@ class TestSupportCheck:
         citation = result.citations[0]
         assert citation.verified is True  # the quote is genuine...
         assert citation.support == "partial"  # ...but it does not say what the answer says
+        assert citation.verification.value == "partial"
         assert "Material Breach" in citation.support_note
         assert citation.reasoning[-1].type == "Does the source support it"
 
@@ -114,6 +115,7 @@ class TestSupportCheck:
         client = _client(GROUNDED, {"items": [{"n": 0, "label": "supported", "note": ""}]})
         result = await _ground(client)
         assert result.citations[0].support == "supported"
+        assert result.citations[0].verification.value == "supported"
         assert result.flagged == [] and result.notice() is None
 
     @pytest.mark.asyncio
@@ -144,6 +146,11 @@ class TestSupportCheck:
         assert client.chat.completions.create.await_count == 1
         assert result.citations[0].support is None
         assert result.support_checked is False
+        # The citation and the answer both say that only the quotation was verified.
+        assert result.citations[0].verification.value == "quote_only"
+        notice = result.notice()
+        assert "source-support checking is off in Settings" in notice
+        assert "verified as real quotations only" in notice
 
     @pytest.mark.asyncio
     async def test_a_failed_check_keeps_the_grounded_claims(self):
@@ -155,6 +162,57 @@ class TestSupportCheck:
         assert result.citations[0].verified is True
         assert result.citations[0].support is None
         assert result.support_checked is False
+        # A failed check must not leave the citation looking checked, and the
+        # answer must announce that the check did not run.
+        assert result.citations[0].verification.value == "quote_only"
+        notice = result.notice()
+        assert "the source-support check could not run" in notice
+        assert "whether each supports its statement was not assessed" in notice
+
+    @pytest.mark.asyncio
+    async def test_a_quote_not_found_in_the_file_is_marked_unverified(self):
+        payload = {
+            "claims": [
+                {
+                    "claim": "Either party may terminate on 30 days' notice",
+                    "answer_quote": ANSWER,
+                    "file_ref": "f0",
+                    "quote": "Either Party may terminate this Agreement at any time for convenience",
+                }
+            ]
+        }
+        client = _client(payload, {"items": [{"n": 0, "label": "supported", "note": ""}]})
+        result = await _ground(client)
+        citation = result.citations[0]
+        assert citation.verified is False
+        # The model called it supported, but the words it judged are not in
+        # the file, so the citation does not get to claim support.
+        assert citation.verification.value == "quote_unverified"
+        assert result.quote_unverified == 1
+        assert "could not be found verbatim" in result.notice()
+
+    @pytest.mark.asyncio
+    async def test_more_claims_than_the_cap_says_so(self):
+        claims = [
+            {
+                "claim": f"Claim {i}",
+                "answer_quote": ANSWER,
+                "file_ref": "f0",
+                "quote": "Either Party may terminate this Agreement upon thirty (30) days' written notice",
+            }
+            for i in range(cg.MAX_CLAIMS + 3)
+        ]
+        client = _client(
+            {"claims": claims},
+            {"items": [{"n": n, "label": "supported", "note": ""} for n in range(cg.MAX_CLAIMS)]},
+        )
+        result = await _ground(client)
+        assert len(result.citations) == cg.MAX_CLAIMS
+        assert result.claims_total == cg.MAX_CLAIMS + 3
+        assert (
+            f"only the first {cg.MAX_CLAIMS} of the {cg.MAX_CLAIMS + 3} statements"
+            in result.notice()
+        )
 
 
 class TestCoverage:
@@ -243,6 +301,45 @@ class TestAnswerShowsTheNotice:
         assert "Source check" in result["content"]
         assert "Needs a Material Breach." in result["content"]
         assert g.call_args.kwargs["check_support"] is True
+
+    @pytest.mark.asyncio
+    async def test_grounding_that_did_not_run_is_announced_in_the_answer(self):
+        """No grounding means retrieval-only citations and an unchecked answer;
+        the answer must not look verified by omission."""
+        service = _service(openai=_llm_client(ANSWER))
+        with (
+            patch("app.services.rag.service.search_documents", AsyncMock(return_value=RETRIEVED)),
+            patch("app.services.rag.service.ground_answer", AsyncMock(return_value=None)),
+            patch("app.services.rag.service.enrich_citations_with_reasoning", AsyncMock()),
+        ):
+            result = await service.generate_response(
+                query="Can either party terminate at will?",
+                include_case_law=False,
+                user_id="user-1",
+                rag_settings=RAGSettings(query_expansion=False),
+            )
+        assert result["content"].startswith(ANSWER)
+        assert result["content"].endswith(cg.GROUNDING_UNAVAILABLE_NOTICE)
+        assert {c.verification.value for c in result["citations"]} == {"not_checked"}
+
+    @pytest.mark.asyncio
+    async def test_grounding_that_raises_is_announced_in_the_answer(self):
+        service = _service(openai=_llm_client(ANSWER))
+        with (
+            patch("app.services.rag.service.search_documents", AsyncMock(return_value=RETRIEVED)),
+            patch(
+                "app.services.rag.service.ground_answer",
+                AsyncMock(side_effect=RuntimeError("provider down")),
+            ),
+            patch("app.services.rag.service.enrich_citations_with_reasoning", AsyncMock()),
+        ):
+            result = await service.generate_response(
+                query="q",
+                include_case_law=False,
+                user_id="user-1",
+                rag_settings=RAGSettings(query_expansion=False),
+            )
+        assert "claim-level verification could not run" in result["content"]
 
     @pytest.mark.asyncio
     async def test_citation_verification_off_skips_the_support_check(self):

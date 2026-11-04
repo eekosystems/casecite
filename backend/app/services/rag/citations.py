@@ -12,6 +12,7 @@ from app.models.schemas import (
     CitationLogic,
     CitationStatus,
     ReasoningStep,
+    VerificationState,
 )
 from app.services.embeddings import embedding_service
 from app.services.rag.prompts import get_mode_focus
@@ -171,6 +172,9 @@ def build_document_citations(
             type=metadata.get("doc_type", "document"),
             confidence=confidence,
             status=CitationStatus.PENDING,
+            # A passage retrieval matched. No statement of the answer has been
+            # checked against it; claim grounding replaces these when it runs.
+            verification=VerificationState.NOT_CHECKED,
             similarity=similarity,
             relevance_rank=result["rank"],
             chunk_index=metadata.get("chunk_index", 0),

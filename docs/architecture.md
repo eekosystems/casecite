@@ -216,7 +216,11 @@ passages go to Cohere, which must be on the provider allowlist).
 **Verification.** Claim grounding pins each factual claim in the answer to a
 verbatim passage; an independent support check then reads each passage in
 context and labels the claim supported, partial (a condition, exception or
-threshold is missing), contradicted or unsupported. Claims that are not fully
+threshold is missing), contradicted or unsupported. Every document citation
+carries an explicit `verification` state: one of those four verdicts, or
+`quote_only` (the quotation is real but support was not assessed — the check
+is off or failed), `quote_unverified` (the quote was not found in the file) or
+`not_checked` (a retrieval match; grounding did not run). Claims that are not fully
 supported, and any part of the answer or file set that was not checked, are
 listed with the answer. `evals/` measures retrieval and answer accuracy on a
 seeded corpus (see `backend/evals/README.md`).

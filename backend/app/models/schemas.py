@@ -41,6 +41,23 @@ class CitationStatus(str, Enum):
     REJECTED = "rejected"
 
 
+class VerificationState(str, Enum):
+    """How far a document citation was checked. Set on every citation so an
+    answer can never look more verified than it is.
+
+    The first four are the support check's verdict on a claim whose quote was
+    found verbatim in the source. The rest say what was NOT done.
+    """
+
+    SUPPORTED = "supported"  # the passage, read in context, supports the claim
+    PARTIAL = "partial"  # a condition, exception or threshold is missing
+    CONTRADICTED = "contradicted"  # the passage says something different
+    UNSUPPORTED = "unsupported"  # the passage does not establish the claim
+    QUOTE_ONLY = "quote_only"  # quote verified verbatim; support not assessed
+    QUOTE_UNVERIFIED = "quote_unverified"  # the quote was not found in the file
+    NOT_CHECKED = "not_checked"  # a retrieval match; nothing was verified
+
+
 class AnalysisMode(str, Enum):
     RESEARCH = "research"
     CASE = "case"
@@ -201,6 +218,10 @@ class Citation(BaseModel):
     # None when the support check did not run.
     support: str | None = None
     support_note: str | None = None
+    # The explicit verification state (see VerificationState). Chunk and
+    # case-law citations are NOT_CHECKED; claim citations carry the support
+    # verdict, or say that only the quotation (or nothing) was verified.
+    verification: VerificationState = VerificationState.NOT_CHECKED
 
 
 class ChatStats(BaseModel):

@@ -3,6 +3,7 @@ export type {
   Citation,
   ChatStats,
   ChatMessage,
+  VerificationState,
 } from './research';
 
 export type {

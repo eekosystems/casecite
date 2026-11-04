@@ -32,7 +32,7 @@ from app.services.rag.citations import (
     build_document_citations,
     extract_cited_cases,
 )
-from app.services.rag.claim_grounding import ground_answer
+from app.services.rag.claim_grounding import GROUNDING_UNAVAILABLE_NOTICE, ground_answer
 from app.services.rag.enhancements import (
     annotate_source_locations,
     compress_context_results,
@@ -1177,7 +1177,15 @@ async def _build_answer_citations(
         user_keys=user_keys,
         model=model,
     )
-    return citations, cited_cases, (grounding.notice() if grounding else None)
+    if grounding:
+        notice = grounding.notice()
+    elif include_documents and search_results:
+        # Grounding did not run: the citations are retrieval matches and
+        # nothing in the answer was checked. The answer must say so.
+        notice = GROUNDING_UNAVAILABLE_NOTICE
+    else:
+        notice = None
+    return citations, cited_cases, notice
 
 
 async def _count_docs_searched(

@@ -44,6 +44,24 @@ describe('SourcesList', () => {
     expect(container.textContent).not.toContain('0.18');
   });
 
+  it('shows the explicit verification state instead of a bare Verified badge', () => {
+    const citations = [
+      { id: '1', source: 'Supported.pdf', type: 'document', confidence: 95, verified: true, verification: 'supported' },
+      { id: '2', source: 'Partial.pdf', type: 'document', confidence: 90, verified: true, verification: 'partial' },
+      { id: '3', source: 'QuoteOnly.pdf', type: 'document', confidence: 90, verified: true, verification: 'quote_only' },
+      { id: '4', source: 'Chunk.pdf', type: 'document', confidence: 60, verification: 'not_checked' },
+      { id: '5', source: 'Contra.pdf', type: 'document', confidence: 60, verified: true, verification: 'contradicted' },
+    ];
+    const { container } = render(<SourcesList {...defaultProps({ allCitations: citations })} />);
+    expect(screen.getByText('Supported')).toBeTruthy();
+    expect(screen.getByText('Partly supported')).toBeTruthy();
+    expect(screen.getByText('Quote verified · support not checked')).toBeTruthy();
+    expect(screen.getByText('Not checked')).toBeTruthy();
+    expect(screen.getByText('Contradicted')).toBeTruthy();
+    // A verbatim quote whose support was not assessed never reads as plain "Verified".
+    expect(container.textContent).not.toMatch(/(^|[^·] )Verified(?! verbatim)/);
+  });
+
   it('renders citations when provided', () => {
     const citations = [
       { id: '1', source: 'Miranda v. Arizona', type: 'case_law', confidence: 95, was_cited_by_ai: true },

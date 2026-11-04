@@ -8,6 +8,7 @@ import { useCaseViewStore } from '../../stores/caseViewStore';
 import ResearchContext from '../../contexts/ResearchContext';
 import { appNavigate } from '../../utils/router';
 import { copyToClipboard } from '../../utils/copyToClipboard';
+import { verificationBadge } from '../../utils/verification';
 import type { Citation, ReasoningStep } from '../../types';
 import s from './CitationModal.module.css';
 
@@ -36,6 +37,7 @@ export const CitationModal = ({ isOpen, onClose, citation }: CitationModalProps)
   if (!isOpen || !citation) return null;
 
   // Backend-supplied link: only an http(s) URL becomes an anchor.
+  const badge = verificationBadge(citation);
   const courtListenerUrl = citation.notes?.includes('CourtListener URL:')
     ? safeHttpUrl(citation.notes.replace('CourtListener URL: ', ''))
     : null;
@@ -60,20 +62,22 @@ export const CitationModal = ({ isOpen, onClose, citation }: CitationModalProps)
               <span className={s.citationSourceType}>
                 {citation.type === 'case_law' ? 'Case Law · CourtListener' : 'Internal Document'}
               </span>
-              {/* The ONLY quality signal is binary verification — scores and
-                  ranks are retrieval telemetry, not legal judgments. */}
-              {citation.verified === true && (
-                <span className={s.verifiedBadge}>
-                  <Icon name="ShieldCheck" size={12} /> Verified verbatim
-                </span>
-              )}
-              {citation.verified === false && (
-                <span className={s.unverifiedBadge}>
-                  <Icon name="ShieldAlert" size={12} /> Unverified
+              {/* The ONLY quality signal is the verification state — scores
+                  and ranks are retrieval telemetry, not legal judgments. */}
+              {badge && (
+                <span className={s[badge.className]} data-testid="verification-badge">
+                  <Icon name={badge.tone === 'good' ? 'ShieldCheck' : badge.tone === 'muted' ? 'Shield' : 'ShieldAlert'} size={12} />
+                  {' '}{badge.label}
                 </span>
               )}
             </div>
             <h3 className={s.citationSourceTitle}>{citation.source}</h3>
+            {badge && (
+              <p className={s.citationSourceRef} data-testid="verification-detail">
+                {badge.title}
+                {citation.supportNote ? ` ${citation.supportNote}` : ''}
+              </p>
+            )}
             {citation.weakMatch && (
               <p className={s.citationSourceRef}>
                 Weak match — this passage scored below your similarity threshold.

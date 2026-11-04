@@ -219,8 +219,11 @@ class TestRAGService:
                 rag_settings=RAGSettings(query_expansion=False),
             )
 
-        assert result["content"] == "Rent is due on the first (lease.pdf)."
+        # Grounding was skipped (patched to None): the answer says so.
+        assert result["content"].startswith("Rent is due on the first (lease.pdf).")
+        assert "claim-level verification could not run" in result["content"]
         citations = result["citations"]
+        assert {c.verification.value for c in citations} == {"not_checked"}
         assert [c.source for c in citations] == ["lease.pdf", "lease.pdf"]
         assert [c.similarity for c in citations] == [0.75, 0.5]
         assert [c.confidence for c in citations] == [75, 50]

@@ -143,6 +143,21 @@ describe('citationParser', () => {
     expect(result[0].opinionId).toBe('123');
   });
 
+  it('carries the explicit verification state and the support note', () => {
+    const result = parseCitations([
+      { verification: 'partial', support_note: 'Needs a Material Breach.', verified: true },
+      { verification: 'not_checked' },
+      { verification: 'made_up' },
+      {},
+    ]);
+    expect(result[0].verification).toBe('partial');
+    expect(result[0].supportNote).toBe('Needs a Material Breach.');
+    expect(result[1].verification).toBe('not_checked');
+    expect(result[1].supportNote).toBeNull();
+    expect(result[2].verification).toBeUndefined();
+    expect(result[3].verification).toBeUndefined();
+  });
+
   it('carries the cluster id and the verified flag for case-law citations', () => {
     const raw = [
       { type: 'case_law', opinion_id: '123', cluster_id: '77', verified: true },

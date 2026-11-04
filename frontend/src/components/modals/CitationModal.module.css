@@ -124,7 +124,9 @@
 
 /* Binary verification badges — never scores or match-strength gradients. */
 .verifiedBadge,
-.unverifiedBadge {
+.unverifiedBadge,
+.contradictedBadge,
+.notCheckedBadge {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -142,6 +144,16 @@
 .unverifiedBadge {
   background: var(--amber-50);
   color: var(--amber-700);
+}
+
+.contradictedBadge {
+  background: var(--red-50);
+  color: var(--red-700);
+}
+
+.notCheckedBadge {
+  background: var(--gray-100);
+  color: var(--gray-600);
 }
 
 .citationSourceTitle {

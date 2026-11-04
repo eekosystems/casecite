@@ -91,6 +91,11 @@ interface Citation {
   /** True when the quoted passage was verified verbatim against the source;
       null/undefined when unknown (never false). */
   verified?: boolean | null;
+  /** Explicit verification state: supported | partial | contradicted |
+      unsupported | quote_only | quote_unverified | not_checked. */
+  verification?: string;
+  support?: string | null;
+  support_note?: string | null;
   [key: string]: unknown;
 }
 

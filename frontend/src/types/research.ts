@@ -42,6 +42,11 @@ export interface Citation {
   // CourtListener cluster (case) id the opinion belongs to.
   clusterId?: string | null;
   verified?: boolean;
+  /** Explicit verification state of a research-chat document citation (see
+      VerificationState); undefined for citations that only carry `verified`. */
+  verification?: VerificationState;
+  /** What the source-support check found missing or different, if anything. */
+  supportNote?: string | null;
   // Which exchange produced this citation: the assistant message id (for
   // jump-to-answer anchoring) and the question it answered (the Sources
   // panel's per-question group label).
@@ -52,6 +57,20 @@ export interface Citation {
   docSpanStart?: number | null;
   docSpanEnd?: number | null;
 }
+
+/**
+ * How far a document citation was checked. The first four are the support
+ * check's verdict on a claim whose quote was found verbatim; the rest say
+ * what was NOT done. Mirrors VerificationState in backend/app/models/schemas.py.
+ */
+export type VerificationState =
+  | 'supported'
+  | 'partial'
+  | 'contradicted'
+  | 'unsupported'
+  | 'quote_only'
+  | 'quote_unverified'
+  | 'not_checked';
 
 export interface ChatStats {
   docsSearched: number;

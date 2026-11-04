@@ -477,7 +477,7 @@ class TestGenerateResponse:
             )
 
         keys.get_google_model.assert_called_once_with("gemini-2.5-flash")
-        assert result["content"] == "From Gemini."
+        assert result["content"].startswith("From Gemini.")
 
 
 class TestReplaceDocument:

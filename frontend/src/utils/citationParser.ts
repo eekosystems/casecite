@@ -1,5 +1,9 @@
 import { generateId } from './index';
-import type { Citation, ReasoningStep } from '../types';
+import type { Citation, ReasoningStep, VerificationState } from '../types';
+
+const VERIFICATION_STATES: ReadonlySet<string> = new Set([
+  'supported', 'partial', 'contradicted', 'unsupported', 'quote_only', 'quote_unverified', 'not_checked',
+]);
 
 /** Phrase the backend writes into a citation's ranking step when the passage
  * scored below the user's similarity threshold (services/rag/citations.py). */
@@ -66,6 +70,11 @@ export function parseCitations(rawCitations: unknown[], query?: string): Citatio
       clusterId: (cite.cluster_id as string) || (cite.clusterId as string) || null,
       // null from the server means "unknown" — never shown as unverified.
       verified: typeof cite.verified === 'boolean' ? (cite.verified as boolean) : undefined,
+      // The explicit state; an unknown value is dropped rather than guessed at.
+      verification: typeof cite.verification === 'string' && VERIFICATION_STATES.has(cite.verification)
+        ? (cite.verification as VerificationState)
+        : undefined,
+      supportNote: typeof cite.support_note === 'string' && cite.support_note ? cite.support_note : null,
       docSpanStart: (cite.doc_span_start as number) ?? null,
       docSpanEnd: (cite.doc_span_end as number) ?? null,
     };

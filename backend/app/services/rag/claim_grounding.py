@@ -31,7 +31,13 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
-from app.models.schemas import Citation, CitationLogic, CitationStatus, ReasoningStep
+from app.models.schemas import (
+    Citation,
+    CitationLogic,
+    CitationStatus,
+    ReasoningStep,
+    VerificationState,
+)
 from app.services.llm_clients import make_openai, openai_chat, utility_model
 from app.services.provider_policy import enforce_openai_client
 from app.services.quote_verify import find_quote_offset
@@ -72,6 +78,15 @@ _LABEL_TITLE = {
     CONTRADICTED: "Contradicted by the source",
     UNSUPPORTED: "Not supported by the source",
 }
+
+# Shown with the answer when claim grounding did not run at all (no readable
+# files, no model, unparsable output, or an error): the citations are then
+# the passages retrieval matched, and nothing in the answer was checked.
+GROUNDING_UNAVAILABLE_NOTICE = (
+    "⚠ Source check: claim-level verification could not run for this answer. "
+    "The citations show the passages that matched your question; no statement "
+    "in the answer was checked against its source."
+)
 
 
 def _api_key(user_keys) -> str | None:
@@ -293,13 +308,24 @@ class GroundingResult:
     citations: list[Citation] = field(default_factory=list)
     flagged: list[FlaggedClaim] = field(default_factory=list)
     claims: int = 0
+    # Claims the extraction returned before the MAX_CLAIMS cap.
+    claims_total: int = 0
     files_checked: int = 0
     files_total: int = 0
     answer_truncated: bool = False
+    # Whether the support check was asked for, and whether it produced verdicts.
+    support_requested: bool = True
     support_checked: bool = False
+    # Claim citations whose quote was not found verbatim in the source file.
+    quote_unverified: int = 0
 
     def notice(self) -> str | None:
-        """Text to append to the answer: unsupported claims and unchecked parts."""
+        """Text to append to the answer: unsupported claims and unchecked parts.
+
+        Every way the verification was incomplete is named here — a support
+        check that did not run, quotes that were not found, the answer, claim
+        and file caps — so the answer itself says how far it was checked.
+        """
         lines: list[str] = []
         if self.flagged:
             n = len(self.flagged)
@@ -316,8 +342,34 @@ class GroundingResult:
             if n > 8:
                 lines.append(f"- ...and {n - 8} more (see the citations).")
         gaps = []
+        n_cited = len(self.citations)
+        if n_cited and not self.support_checked:
+            passages = f"the {n_cited} cited passage{'s' if n_cited != 1 else ''}"
+            if self.support_requested:
+                gaps.append(
+                    f"the source-support check could not run, so {passages} "
+                    f"{'are' if n_cited != 1 else 'is'} verified as real quotations only — "
+                    "whether each supports its statement was not assessed"
+                )
+            else:
+                gaps.append(
+                    f"source-support checking is off in Settings, so {passages} "
+                    f"{'are' if n_cited != 1 else 'is'} verified as real quotations only"
+                )
+        if self.quote_unverified:
+            n = self.quote_unverified
+            gaps.append(
+                f"{n} cited passage{'s' if n != 1 else ''} could not be found verbatim in "
+                f"{'their' if n != 1 else 'its'} source file — treat "
+                f"{'those points' if n != 1 else 'that point'} as unverified"
+            )
         if self.answer_truncated:
             gaps.append(f"only the first {ANSWER_LIMIT:,} characters of the answer were checked")
+        if self.claims_total > MAX_CLAIMS:
+            gaps.append(
+                f"only the first {MAX_CLAIMS} of the {self.claims_total} statements "
+                "found in the answer were checked"
+            )
         if self.files_checked < self.files_total:
             gaps.append(f"{self.files_checked} of the {self.files_total} source files were checked")
         if gaps:
@@ -429,9 +481,11 @@ async def ground_answer(
         return None
 
     result = GroundingResult(
+        claims_total=sum(1 for c in claims if isinstance(c, dict) and c.get("claim")),
         files_checked=len(files),
         files_total=len(doc_ids),
         answer_truncated=len(answer) > ANSWER_LIMIT,
+        support_requested=check_support,
     )
     by_ref = {f["ref"]: f for f in files}
     grounded: list[dict[str, Any]] = []
@@ -507,6 +561,15 @@ async def ground_answer(
             result.flagged.append(
                 FlaggedClaim(claim, g["answer_quote"], support, support_note, f["name"])
             )
+        # The explicit state. A support verdict on a quote that was not found
+        # in the file is not trusted: the words it judged may not be there.
+        if not verified:
+            verification = VerificationState.QUOTE_UNVERIFIED
+            result.quote_unverified += 1
+        elif support:
+            verification = VerificationState(support)
+        else:
+            verification = VerificationState.QUOTE_ONLY
         location = _chunk_at(search_results, f["id"], span[0]) if span else {}
         line = line_of(f["text"], span[0]) if span else None
         where = f'line {line} of "{f["name"]}"' if line else f'"{f["name"]}"'
@@ -576,6 +639,7 @@ async def ground_answer(
                 doc_span_end=span[1] if span else None,
                 support=support,
                 support_note=support_note or None,
+                verification=verification,
                 section=location.get("section") or None,
                 page_start=page_start or None,
                 page_end=page_end or None,

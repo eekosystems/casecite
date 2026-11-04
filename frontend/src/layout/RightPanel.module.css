@@ -819,9 +819,11 @@
   font-weight: 600;
 }
 
-/* Binary verification badges — never scores or match-strength gradients. */
+/* Verification-state badges — never scores or match-strength gradients. */
 .verifiedBadge { color: #047857; font-weight: 700; }
 .unverifiedBadge { color: var(--amber-700); font-weight: 700; }
+.contradictedBadge { color: var(--red-700); font-weight: 700; }
+.notCheckedBadge { color: var(--gray-500); font-weight: 600; }
 /* Retrieved below the user's similarity threshold — a quiet flag, not a score. */
 .weakMatch { color: var(--gray-500); font-style: italic; }
 
