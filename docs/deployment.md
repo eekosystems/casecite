@@ -544,6 +544,21 @@ docker compose -f docker-compose.prod.yml logs -f backend
 docker compose -f docker-compose.prod.yml exec caddy cat /data/access.log
 ```
 
+### Traces
+
+Set `OTEL_EXPORTER_OTLP_ENDPOINT` to an OpenTelemetry collector's OTLP/HTTP
+base URL (for example `http://otel-collector:4318`) and the backend exports
+one trace per request: the HTTP request, its database statements, outbound
+calls to the AI providers and CourtListener, and the research pipeline's
+stages as child spans — `rag.retrieve` (passages, hybrid, reranking),
+`rag.answer` (model, intent, token counts from the provider) and
+`rag.citations` (citations built, whether an unverified-statement notice was
+added). The collector forwards to whatever the firm runs (Jaeger, Tempo,
+Honeycomb, Datadog). Spans carry counts, names and identifiers only, never
+the question, the prompt or document text. `/health` (admin view) reports
+`tracing.enabled`. Without the variable nothing is exported and the spans
+cost nothing.
+
 ### Audit Logs
 
 Audit logs are stored in `/app/data/audit_logs/` inside the backend container, one `audit_YYYY-MM-DD.jsonl` file per UTC day. Each entry carries an HMAC-SHA256 hash chained to the previous entry, so an edited, removed or reordered entry is detectable. Admins can also read and verify the log in the product (Settings → Audit Log) or over the API (`GET /api/v1/admin/audit/logs`, `GET /api/v1/admin/audit/verify`).

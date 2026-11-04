@@ -99,6 +99,15 @@ async def root() -> dict | FileResponse:
     }
 
 
+def _tracing_status() -> dict:
+    try:
+        from app.telemetry import tracing_status
+
+        return tracing_status()
+    except Exception as e:  # the probe must never break a health response
+        return {"enabled": False, "error": type(e).__name__}
+
+
 def _ocr_status() -> dict:
     try:
         from app.services.text_extraction import OCR_STATUS
@@ -253,6 +262,7 @@ async def health_check(request: Request) -> dict:
             "row_level_security": rls_info,
             # Whether scanned (image-only) PDFs become searchable on this server.
             "ocr": _ocr_status(),
+            "tracing": _tracing_status(),
         }
 
     return response

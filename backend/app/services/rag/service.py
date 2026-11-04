@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 from anthropic import AsyncAnthropic
 
+from app import telemetry
 from app.config import settings
 from app.models.schemas import (
     AnalysisMode,
@@ -353,19 +354,31 @@ class RAGService:
         matter_ids: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         """Search for relevant documents. Delegates to search module."""
-        return await search_documents(
-            vector_db=self.vector_db,
-            query=query,
-            top_k=top_k,
-            similarity_threshold=similarity_threshold,
-            filter=filter,
-            use_hybrid=use_hybrid,
-            use_reranking=use_reranking,
-            user_keys=user_keys,
-            document_ids=document_ids,
-            user_id=user_id,
-            matter_ids=matter_ids,
-        )
+        with telemetry.span(
+            "rag.retrieve",
+            **{
+                "rag.top_k": top_k,
+                "rag.hybrid": use_hybrid,
+                "rag.reranking": use_reranking,
+                "rag.scoped_documents": len(document_ids) if document_ids else 0,
+                "rag.matters": len(matter_ids) if matter_ids else 0,
+            },
+        ) as current:
+            results = await search_documents(
+                vector_db=self.vector_db,
+                query=query,
+                top_k=top_k,
+                similarity_threshold=similarity_threshold,
+                filter=filter,
+                use_hybrid=use_hybrid,
+                use_reranking=use_reranking,
+                user_keys=user_keys,
+                document_ids=document_ids,
+                user_id=user_id,
+                matter_ids=matter_ids,
+            )
+            current.set_attribute("rag.passages", len(results))
+            return results
 
     async def generate_response(
         self,
@@ -532,34 +545,51 @@ class RAGService:
         max_tokens = _resolve_max_tokens(model, query_intent, effective_settings)
 
         try:
-            content = await call_llm(
-                openai_client,
-                anthropic_client,
-                gemini_model,
-                model,
-                system_prompt,
-                user_prompt,
-                max_tokens,
-                effective_settings.temperature,
-            )
+            with telemetry.span(
+                "rag.answer",
+                **{
+                    "gen_ai.request.model": model,
+                    "gen_ai.request.max_tokens": max_tokens,
+                    "rag.mode": mode.value,
+                    "rag.intent": query_intent.value if query_intent else None,
+                    "rag.passages": len(search_results),
+                    "rag.case_law": len(case_law_results),
+                },
+            ):
+                content = await call_llm(
+                    openai_client,
+                    anthropic_client,
+                    gemini_model,
+                    model,
+                    system_prompt,
+                    user_prompt,
+                    max_tokens,
+                    effective_settings.temperature,
+                )
         except Exception as e:  # provider SDK errors share no builtin base class
             return self._llm_failure_response(e, start_time)
 
         content = _redact_unverified_references(content, case_law_results, search_results)
 
-        citations, cited_cases, grounding_notice = await _build_answer_citations(
-            content=content,
-            query=query,
-            mode=mode,
-            search_results=search_results,
-            case_law_results=case_law_results,
-            include_documents=include_documents,
-            effective_settings=effective_settings,
-            user_id=user_id,
-            user_keys=user_keys,
-            model=model,
-            matter_ids=matter_ids,
-        )
+        with telemetry.span(
+            "rag.citations",
+            **{"rag.verification": bool(effective_settings.citation_verification)},
+        ) as citation_span:
+            citations, cited_cases, grounding_notice = await _build_answer_citations(
+                content=content,
+                query=query,
+                mode=mode,
+                search_results=search_results,
+                case_law_results=case_law_results,
+                include_documents=include_documents,
+                effective_settings=effective_settings,
+                user_id=user_id,
+                user_keys=user_keys,
+                model=model,
+                matter_ids=matter_ids,
+            )
+            citation_span.set_attribute("rag.citations", len(citations))
+            citation_span.set_attribute("rag.unverified_notice", bool(grounding_notice))
         if grounding_notice:
             # Statements the source check could not confirm are shown with the
             # answer, not only inside citation details a reader may never open.

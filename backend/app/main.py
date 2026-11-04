@@ -585,6 +585,13 @@ app.include_router(branding.router, prefix=settings.api_prefix)
 app.include_router(addin.router, prefix=settings.api_prefix)
 app.include_router(usage.router, prefix=settings.api_prefix)
 
+# Tracing, when OTEL_EXPORTER_OTLP_ENDPOINT is set: the request, its database
+# statements, outbound provider calls and the research pipeline's stages.
+from app.database import async_engine as _async_engine  # noqa: E402
+from app.telemetry import configure_tracing  # noqa: E402
+
+configure_tracing(app, engine=_async_engine)
+
 # CSRF token endpoint (for SPA frontends)
 app.include_router(get_csrf_router(), prefix=settings.api_prefix)
 

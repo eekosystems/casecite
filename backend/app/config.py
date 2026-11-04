@@ -104,6 +104,13 @@ class Settings(BaseSettings):
     # way (GET /api/v1/usage/me, GET /api/v1/admin/usage).
     server_key_daily_token_quota: int = 0
 
+    # Distributed tracing (OpenTelemetry). Set the collector's OTLP/HTTP base
+    # URL (e.g. http://otel-collector:4318) and every request, its database
+    # statements, its provider calls and the research pipeline's stages are
+    # exported as one trace. Empty = off, at no cost (app/telemetry.py).
+    otel_exporter_otlp_endpoint: str | None = None
+    otel_service_name: str = "casecite"
+
     # Encryption salt - generated per deployment, stored in .env
     encryption_salt: str = ""  # Will be auto-generated if not set
     # Previous encryption salts for key rotation (comma-separated)

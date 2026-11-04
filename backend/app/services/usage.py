@@ -110,6 +110,26 @@ def _event(
     )
 
 
+def _annotate_span(
+    provider: str, model: str | None, tokens: tuple[int, int, int], server_key: bool
+):
+    """Token counts onto the current trace span (gen_ai semantic conventions)."""
+    try:
+        from app.telemetry import annotate
+
+        annotate(
+            **{
+                "gen_ai.system": provider,
+                "gen_ai.request.model": model,
+                "gen_ai.usage.input_tokens": tokens[0],
+                "gen_ai.usage.output_tokens": tokens[1],
+                "casecite.server_key": bool(server_key),
+            }
+        )
+    except Exception:  # noqa: BLE001 - never affect the call
+        pass
+
+
 def current_user_id() -> str | None:
     from app import rls
 
@@ -128,6 +148,7 @@ async def record_usage(
     """Record one call. Never raises; never blocks the call it describes."""
     try:
         tokens = tokens_from_response(provider, response)
+        _annotate_span(provider, model, tokens, server_key)
         from app.database import AsyncSessionLocal
 
         async with AsyncSessionLocal() as db:
@@ -158,6 +179,7 @@ def record_usage_sync(
     """The same, from code running in a worker thread."""
     try:
         tokens = tokens_from_response(provider, response)
+        _annotate_span(provider, model, tokens, server_key)
         from app.database import SyncSessionLocal
 
         with SyncSessionLocal() as db:
