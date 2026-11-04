@@ -60,7 +60,7 @@ test.describe('Research journey (live backend)', () => {
     await sources.getByText(FILE_NAME).first().click();
     const modal = page.getByRole('dialog');
     await expect(modal.getByTestId('verification-badge')).toContainText('Supported');
-    await expect(modal.getByText(/Material Breach/)).toBeVisible();
+    await expect(modal.getByText(/Material Breach/).first()).toBeVisible();
     await modal.getByRole('button', { name: 'Close' }).first().click();
 
     // ── Delete it; the deletion is in the audit trail ─────────────────────

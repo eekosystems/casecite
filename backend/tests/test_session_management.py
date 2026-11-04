@@ -19,7 +19,17 @@ os.environ["DEBUG"] = "true"
 from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
+import pytest
 from app.middleware.security import SessionManager
+
+
+@pytest.fixture(autouse=True)
+def _process_local_sessions():
+    """These tests cover the process-local store (dict mirrored to a file).
+    CI runs the suite with a Redis service configured, which would route
+    sessions through it; tests/test_session_redis_backend.py covers that."""
+    with patch("app.middleware.security.get_redis", return_value=None):
+        yield
 
 
 def _make_session_manager(tmp_path) -> SessionManager:

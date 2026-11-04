@@ -28,6 +28,16 @@ from app.services import mfa as mfa_service
 from app.services.auth import auth_service, password_reset_service
 from app.services.passwords import hash_password
 
+
+@pytest.fixture(autouse=True)
+def _process_local_sessions():
+    """These tests cover the process-local store (dict mirrored to a file).
+    CI runs the suite with a Redis service configured, which would route
+    sessions through it; tests/test_session_redis_backend.py covers that."""
+    with patch("app.middleware.security.get_redis", return_value=None):
+        yield
+
+
 pytestmark = pytest.mark.usefixtures("no_rate_limit")
 
 PASSWORD = "Xy7!longenoughpass"
