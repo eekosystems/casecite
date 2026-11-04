@@ -180,3 +180,36 @@ class TestReindexAndClear:
             response = client.post("/api/v1/settings/clear", headers=headers(attorney))
         assert response.status_code == 502
         assert "Nothing was deleted" in response.json()["detail"]
+
+
+class TestInstanceModels:
+    """GET /settings/models — feeds the model picker for every user."""
+
+    def test_requires_auth(self, client):
+        assert client.get("/api/v1/settings/models").status_code == 401
+
+    def test_reports_local_models_without_the_endpoint_address(self, client, auth_headers):
+        runtime = {
+            "base_url": "http://ollama.internal:11434/v1",
+            "chat_model": "qwen3:27b",
+            "utility_model": "qwen3:4b",
+            "research_model": None,
+            "drafting_model": None,
+            "models": [
+                {"name": "qwen3:27b", "base_url": "http://ollama.internal:11434/v1"},
+                {"name": "qwen3:4b", "base_url": "http://ollama.internal:11434/v1"},
+                {"name": "llama-3.3-70b", "base_url": "http://vllm.internal:8000/v1"},
+            ],
+        }
+        with patch.dict("app.services.llm_clients._runtime", runtime):
+            response = client.get("/api/v1/settings/models", headers=auth_headers)
+        assert response.status_code == 200
+        assert response.json() == {
+            "custom_endpoint": True,
+            "chat_model": "qwen3:27b",
+            "utility_model": "qwen3:4b",
+            "research_model": "qwen3:4b",  # follows the utility model
+            "drafting_model": "qwen3:27b",  # follows the chat model
+            "models": ["qwen3:27b", "qwen3:4b", "llama-3.3-70b"],
+        }
+        assert "internal" not in response.text  # server addresses are admin-only

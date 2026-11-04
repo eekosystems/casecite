@@ -6,7 +6,7 @@ for the others once a second one runs. Instead of moving every cache to
 Redis, each cache checks a counter in the ``shared_versions`` table — one
 primary-key read, throttled — and reloads when the counter moved; whoever
 changes the underlying data bumps the counter, in the same transaction when
-there is one. Without the table (a database that predates migration 024)
+there is one. Without the table (a database that predates migration 025)
 reads answer 0 and bumps are no-ops, which is the single-process behaviour.
 """
 

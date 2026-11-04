@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 from app.config import settings
 from app.models.schemas import QueryIntent
-from app.services.llm_clients import SDK_MAX_RETRIES, openai_chat
+from app.services.llm_clients import SDK_MAX_RETRIES, model_family, openai_chat
 from app.services.provider_policy import (
     enforce_openai_client,
     enforce_provider_allowed,
@@ -57,6 +57,10 @@ def build_context_with_case_law(
     return "\n---\n".join(context_parts)
 
 
+# Same as the RAGSettings.max_tokens ceiling: no cap beyond the user's own setting.
+UNKNOWN_MODEL_MAX_TOKENS = 128_000
+
+
 def get_model_max_tokens(model_name: str, intent: QueryIntent | None = None) -> int:
     """Get maximum output tokens for a model, adjusted by query intent."""
     # Factual queries: cap at 500 tokens - they should be brief
@@ -82,8 +86,10 @@ def get_model_max_tokens(model_name: str, intent: QueryIntent | None = None) -> 
         return 8192
     elif "o1" in model_lower or "o3" in model_lower:
         return 32768
-    else:
-        return 4096
+    # A model the table doesn't know — usually a local or gateway model. Its
+    # limit can't be read from the name, so the admin's LLM_MAX_OUTPUT_TOKENS
+    # caps it when set; otherwise the user's own max-tokens setting decides.
+    return settings.llm_max_output_tokens or UNKNOWN_MODEL_MAX_TOKENS
 
 
 def provider_of_model(model: str | None) -> str:
@@ -92,12 +98,7 @@ def provider_of_model(model: str | None) -> str:
     Used only to pick a client; the allowlist check always keys on the client
     that actually carries the request, never on this.
     """
-    lowered = (model or "").lower()
-    if "claude" in lowered:
-        return "anthropic"
-    if "gemini" in lowered:
-        return "google"
-    return "openai"
+    return model_family(model)
 
 
 async def call_llm(
@@ -109,8 +110,12 @@ async def call_llm(
     user_prompt: str,
     max_tokens: int,
     temperature: float = 0.1,
+    history: list[dict[str, str]] | None = None,
 ) -> str:
     """Call the provider that serves ``model`` and return the response text.
+
+    ``history`` holds earlier turns of the conversation (``{"role", "content"}``,
+    oldest first, starting with the user); they are sent before ``user_prompt``.
 
     The model name picks the provider and the request never silently moves to
     a different one: a Claude model needs an Anthropic client, a Gemini model
@@ -124,6 +129,7 @@ async def call_llm(
     allowed.
     """
     family = provider_of_model(model)
+    turns = _alternating(history or [])
 
     if family == "anthropic" and anthropic_client:
         enforce_provider_allowed("anthropic", "AI request")
@@ -131,7 +137,7 @@ async def call_llm(
             model=model,
             max_tokens=max_tokens,
             system=system_prompt,
-            messages=[{"role": "user", "content": user_prompt}],
+            messages=_alternating([*turns, {"role": "user", "content": user_prompt}]),
         )
         await record_usage(
             "anthropic",
@@ -143,7 +149,11 @@ async def call_llm(
         return response.content[0].text
     if family == "google" and gemini_model:
         enforce_provider_allowed("google", "AI request")
-        full_prompt = f"{system_prompt}\n\n{user_prompt}"
+        transcript = "\n\n".join(
+            f"{'User' if t['role'] == 'user' else 'Assistant'}: {t['content']}" for t in turns
+        )
+        earlier = f"CONVERSATION SO FAR:\n{transcript}\n\n" if transcript else ""
+        full_prompt = f"{system_prompt}\n\n{earlier}{user_prompt}"
         response = await asyncio.to_thread(gemini_model.generate_content, full_prompt)
         # Gemini runs on the user's own key only (there is no instance key).
         await record_usage("google", response, model=model, purpose="answer", server_key=False)
@@ -170,6 +180,7 @@ async def call_llm(
             model=model,
             messages=[
                 {"role": "system", "content": system_prompt},
+                *turns,
                 {"role": "user", "content": user_prompt},
             ],
             temperature=temperature,
@@ -180,6 +191,22 @@ async def call_llm(
         "No LLM configured. Please provide an API key in Settings, "
         "or set OPENAI_API_KEY or ANTHROPIC_API_KEY environment variable."
     )
+
+
+def _alternating(turns: list[dict[str, str]]) -> list[dict[str, str]]:
+    """Turns that start with the user and alternate roles (Anthropic requires it):
+    leading assistant turns are dropped, consecutive same-role turns joined."""
+    out: list[dict[str, str]] = []
+    for t in turns:
+        if t.get("role") not in ("user", "assistant") or not t.get("content"):
+            continue
+        if not out and t["role"] != "user":
+            continue
+        if out and out[-1]["role"] == t["role"]:
+            out[-1] = {"role": t["role"], "content": f"{out[-1]['content']}\n\n{t['content']}"}
+        else:
+            out.append({"role": t["role"], "content": t["content"]})
+    return out
 
 
 _server_anthropic_client = None

@@ -140,7 +140,7 @@ def first_boot(base_url: str) -> None:
 
         expect(client.get(f"{API}/auth/me", headers=auth), 200, "GET auth/me")
         # A document in the registry: the second boot must still list it (the
-        # registry lives in the database since migration 024). With the CI
+        # registry lives in the database since migration 025). With the CI
         # dummy provider key indexing fails, which is fine — the row is what
         # must survive, and a failed index is reported, never hidden.
         uploaded = expect(

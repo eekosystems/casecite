@@ -39,7 +39,7 @@ def _scoped_url() -> str:
 
 @pytest_asyncio.fixture(autouse=True)
 async def _rls_installed():
-    """Idempotent: the schema, the DDL migration 023 installs, and a
+    """Idempotent: the schema, the DDL migration 024 installs, and a
     non-superuser role with full table access for the scoped queries."""
     from app.models.db_models import Base
 

@@ -20,5 +20,6 @@ import './contracts';
 import './integrations';
 import './users';
 import './branding';
+import './embeddings';
 
 export { api, API_BASE_URL };

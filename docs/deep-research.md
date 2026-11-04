@@ -52,6 +52,17 @@ index; there is no read-a-document-on-demand path to wrap, and inventing one wou
 bypass the index's tenant scoping. Documents reach deep research the way they
 reach every other feature: by being indexed.
 
+## Model
+
+Every model call in a run (the plan, each sub-question, the synthesis) uses the
+**research model**: `OPENAI_RESEARCH_MODEL` (or `OPENAI_DEEP_RESEARCH_MODEL`), or
+*Research Model* in Settings → API Keys → Local / Self-Hosted Models. Unset, it
+is the utility model, as before the setting existed. It is kept
+apart from the utility model on purpose: the utility model serves many small
+background calls, so it can stay small and fast while research runs on a
+stronger model. Calls go through the instance's OpenAI-compatible client, so a
+configured local endpoint serves them.
+
 ## Caps
 
 Every run is bounded so its cost is predictable. All of these are settings

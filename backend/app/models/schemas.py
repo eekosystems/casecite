@@ -338,6 +338,25 @@ class MatterListResponse(BaseModel):
 
 class MatterDetailResponse(MatterResponse):
     members: list[MatterMemberResponse]
+    # The case team's facts (Matter → Facts); read by chat and strategy.
+    facts: str | None = None
+    facts_updated_at: datetime | None = None
+    facts_updated_by: str | None = None
+
+
+MAX_MATTER_FACTS_CHARS = 20_000
+
+
+class MatterFactsRequest(BaseModel):
+    """Replace a matter's facts. An empty string clears them."""
+
+    facts: str = Field(..., max_length=MAX_MATTER_FACTS_CHARS)
+
+
+class MatterFactsResponse(BaseModel):
+    facts: str | None = None
+    facts_updated_at: datetime | None = None
+    facts_updated_by: str | None = None
 
 
 class UpdateMatterRequest(BaseModel):
@@ -1418,7 +1437,8 @@ class RAGSettings(BaseModel):
     context_compression: bool = False
     query_expansion: bool = True
     source_tracking: bool = True
-    llm_model: str = Field(default="gpt-5.5", max_length=100)
+    # Empty: the instance chat model (the admin's local model when one is set).
+    llm_model: str = Field(default="", max_length=100)
     temperature: float = Field(default=0.1, ge=0.0, le=2.0)
     max_tokens: int = Field(default=4096, ge=100, le=128000)
     # Firm contract playbook: standing review standards applied to every

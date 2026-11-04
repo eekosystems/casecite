@@ -1,6 +1,6 @@
 import logging
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import NoReturn
 
@@ -12,18 +12,27 @@ from fastapi.responses import JSONResponse, Response
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.config import settings
-from app.exceptions import ServiceUnavailableError, UpstreamError
+from app.database import get_db_context
+from app.exceptions import AppError, ServiceUnavailableError, UpstreamError
 from app.models.schemas import ChatRequest, ChatResponse, ConversationExportRequest, RAGSettings
 from app.routers._matter_deps import accessible_matter_ids as _accessible_matter_ids
 from app.routers._matter_deps import personal_matter_id as _personal_matter_id
 from app.services import chat_sessions as chat_session_service
 from app.services import conversation_export
+from app.services import matters as matters_service
 from app.services.audit import AuditEventType, audit_service
 from app.services.auth import TokenData
 from app.services.documents import document_service
-from app.services.job_queue import RETRY_POLICIES, job_manager
+from app.services.job_queue import RetryPolicy, job_manager
+from app.services.llm_clients import resolve_chat_model
 from app.services.permissions import require_permission
 from app.services.rag import rag_service
+from app.services.rag.conversation import (
+    ConversationContext,
+    context_notes,
+    standalone_question,
+    trim_history,
+)
 from app.services.rag.per_file import PER_FILE_MAX_FILES, per_file_answer
 from app.services.rag.routing import route_query
 from app.services.rag.service import describe_llm_failure
@@ -89,6 +98,8 @@ class _ChatContext:
     # indexed yet): downstream code answers "nothing in that scope" rather
     # than widening the search to the rest of the knowledge base.
     document_ids: list[str] | None
+    # The earlier turns of this chat and the Facts of the matters in scope.
+    conversation: ConversationContext = field(default_factory=ConversationContext)
 
 
 async def _chat_context(
@@ -144,7 +155,51 @@ async def _chat_context(
         accessible_matters=accessible_matters,
         matter_ids=matter_ids,
         document_ids=document_ids,
+        conversation=await _load_conversation(
+            request, user_id, accessible_matters, personal_matter_id
+        ),
     )
+
+
+async def _load_conversation(
+    request: ChatRequest,
+    user_id: str,
+    accessible_matters: set[str],
+    personal_matter_id: str | None,
+) -> ConversationContext:
+    """The earlier turns of this chat and the Facts of the matters it is about.
+
+    The matters are the chat's own (when it is filed under one) and those
+    selected in the scope, limited to matters the caller belongs to. Never
+    fails a chat: on a storage error the answer simply goes without them.
+    """
+    history: list[dict[str, str]] = []
+    matter_ids: set[str] = set()
+    if request.session_id:
+        try:
+            thread = await chat_session_service.get_session_with_messages(
+                request.session_id, user_id, accessible_matters
+            )
+        except (SQLAlchemyError, OSError, RuntimeError) as e:
+            logger.warning(f"Could not load the conversation so far: {e}")
+            thread = None
+        if thread:
+            history = trim_history(thread.get("messages") or [])
+            if thread.get("matter_id"):
+                matter_ids.add(thread["matter_id"])
+    doc_filter = request.document_filter
+    if doc_filter and doc_filter.matter_ids and not doc_filter.search_all:
+        matter_ids.update(doc_filter.matter_ids)
+    allowed = set(accessible_matters) | ({personal_matter_id} if personal_matter_id else set())
+    matter_ids &= allowed
+    facts: list[dict[str, str]] = []
+    if matter_ids:
+        try:
+            async with get_db_context() as db:
+                facts = await matters_service.get_matter_facts(db, matter_ids)
+        except (SQLAlchemyError, OSError, RuntimeError) as e:
+            logger.warning(f"Could not load matter facts: {e}")
+    return ConversationContext(history=history, matter_facts=facts)
 
 
 def _brief_citation(c: dict, idx: int) -> dict:
@@ -181,7 +236,9 @@ def _brief_citation(c: dict, idx: int) -> dict:
     }
 
 
-async def _research_answer(request: ChatRequest, case_law_query, ctx: _ChatContext) -> dict:
+async def _research_answer(
+    request: ChatRequest, case_law_query, ctx: _ChatContext, search_query: str
+) -> dict:
     """Pure legal-research lookup ("find me case law on DWI"): outside authority only.
 
     The user's documents are irrelevant here and must not be dragged into the
@@ -190,6 +247,8 @@ async def _research_answer(request: ChatRequest, case_law_query, ctx: _ChatConte
     """
     return await rag_service.generate_response(
         query=request.query,
+        search_query=search_query,
+        conversation=ctx.conversation,
         mode=request.mode,
         top_k=ctx.user_settings.top_k,
         similarity_threshold=ctx.user_settings.similarity_threshold,
@@ -209,7 +268,7 @@ async def _research_answer(request: ChatRequest, case_law_query, ctx: _ChatConte
 
 
 async def _strategy_answer(
-    request: ChatRequest, include_case_law: bool, ctx: _ChatContext
+    request: ChatRequest, include_case_law: bool, ctx: _ChatContext, search_query: str
 ) -> tuple[dict | None, dict | None]:
     """Answer with a strategy brief; ``(None, None)`` when the brief fails.
 
@@ -222,7 +281,8 @@ async def _strategy_answer(
             # and folders together, including documents shared via a matter.
             brief_document_ids = ctx.document_ids
         brief = await strategy_service.generate_brief(
-            question=request.query,
+            question=search_query,
+            context_notes=context_notes(ctx.conversation),
             document_ids=brief_document_ids,
             include_case_law=include_case_law,
             user_id=ctx.user_id,
@@ -251,15 +311,17 @@ async def _strategy_answer(
         return None, None
 
 
-async def _per_file_answer(request: ChatRequest, ctx: _ChatContext) -> dict | None:
+async def _per_file_answer(
+    request: ChatRequest, ctx: _ChatContext, search_query: str
+) -> dict | None:
     """Per-file map-reduce over the scoped files; None when it fails."""
     try:
         return await per_file_answer(
-            query=request.query,
+            query=search_query,
             document_ids=ctx.document_ids,
             user_id=ctx.user_id,
             user_keys=ctx.user_keys,
-            model=ctx.user_settings.llm_model,
+            model=resolve_chat_model(ctx.user_settings.llm_model),
             accessible_matter_ids=ctx.accessible_matters,
         )
     except Exception as e:  # per-file must never kill chat
@@ -268,11 +330,17 @@ async def _per_file_answer(request: ChatRequest, ctx: _ChatContext) -> dict | No
 
 
 async def _pooled_answer(
-    request: ChatRequest, include_case_law: bool, case_law_query, ctx: _ChatContext
+    request: ChatRequest,
+    include_case_law: bool,
+    case_law_query,
+    ctx: _ChatContext,
+    search_query: str,
 ) -> dict:
     """The ordinary pooled RAG answer over the scoped documents and case law."""
     return await rag_service.generate_response(
         query=request.query,
+        search_query=search_query,
+        conversation=ctx.conversation,
         mode=request.mode,
         top_k=ctx.user_settings.top_k,
         similarity_threshold=ctx.user_settings.similarity_threshold,
@@ -298,8 +366,14 @@ async def _retrieve_answer(request: ChatRequest, ctx: _ChatContext) -> tuple[dic
     # explicit include_case_law from the client always wins. The router
     # also distills the case-law SEARCH TERM — the raw message ("find me
     # case law for a dwi") is never a usable keyword query.
+    model = resolve_chat_model(ctx.user_settings.llm_model)
+    # A follow-up ("and when was it signed?") is searched and routed as the
+    # question it stands for; the answer still replies to the message as typed.
+    search_query = await standalone_question(
+        request.query, ctx.conversation.history, user_keys=ctx.user_keys, model=model
+    )
     intent, wants_authority, case_law_query, per_file = await route_query(
-        request.query, ctx.user_keys, model=ctx.user_settings.llm_model
+        search_query, ctx.user_keys, model=model
     )
     include_case_law = (
         request.include_case_law if request.include_case_law is not None else wants_authority
@@ -308,11 +382,13 @@ async def _retrieve_answer(request: ChatRequest, ctx: _ChatContext) -> tuple[dic
     strategy_payload = None
     result = None
     if intent == "research":
-        result = await _research_answer(request, case_law_query, ctx)
+        result = await _research_answer(request, case_law_query, ctx, search_query)
     # The strategy brief reads the documents by design — never route to it
     # when the client explicitly asked for a documents-off answer.
     elif intent == "strategy" and request.include_documents:
-        strategy_payload, result = await _strategy_answer(request, include_case_law, ctx)
+        strategy_payload, result = await _strategy_answer(
+            request, include_case_law, ctx, search_query
+        )
 
     # Per-file map-reduce: the question is about the scoped files
     # individually/comparatively and the scope is a small multi-file set —
@@ -326,10 +402,10 @@ async def _retrieve_answer(request: ChatRequest, ctx: _ChatContext) -> tuple[dic
         and ctx.document_ids
         and 2 <= len(ctx.document_ids) <= PER_FILE_MAX_FILES
     ):
-        result = await _per_file_answer(request, ctx)
+        result = await _per_file_answer(request, ctx, search_query)
 
     if result is None:
-        result = await _pooled_answer(request, include_case_law, case_law_query, ctx)
+        result = await _pooled_answer(request, include_case_law, case_law_query, ctx, search_query)
 
     return result, strategy_payload
 
@@ -427,6 +503,10 @@ async def _answer_chat(request: ChatRequest, ctx: _ChatContext) -> dict:
     return response_payload
 
 
+class ChatJobError(Exception):
+    """A chat answered in the background failed; the message is for the user."""
+
+
 def _raise_chat_error(e: Exception, user_id: str) -> NoReturn:
     """Map a failure that escaped the per-stage handling to the client response."""
     if isinstance(e, openai.OpenAIError | anthropic.AnthropicError | httpx.HTTPError):
@@ -470,18 +550,38 @@ async def chat(
         return await _answer_chat(request, ctx)
 
     if async_mode:
+        # The web app asks this way: an answer can take minutes (a strategy
+        # brief reads opinions in full for up to CASE_LAW_TIME_BUDGET_SECONDS
+        # and then synthesises), longer than a browser, a reverse proxy or a
+        # platform's front proxy will hold one HTTP request open. The job
+        # runs on, and the client polls GET /jobs/{id} for the answer.
+        async def do_work_in_job():
+            try:
+                return await do_work()
+            except Exception as e:
+                # The job's ``error`` is shown to the user, so it carries the
+                # same message the synchronous path would have answered with,
+                # never the exception text (an upstream body, a parse error
+                # quoting the input).
+                try:
+                    _raise_chat_error(e, ctx.user_id)
+                except (AppError, HTTPException) as mapped:
+                    raise ChatJobError(str(mapped.detail)) from e
+
         job_id = await job_manager.submit(
-            do_work,
+            do_work_in_job,
             user_id=ctx.user_id,
             endpoint="/chat",
-            retry_policy=RETRY_POLICIES["ai_analysis"],
+            # One attempt: a retry would re-run minutes of LLM work, and the
+            # SDK clients already retry each provider call.
+            retry_policy=RetryPolicy(max_retries=0),
         )
         return JSONResponse(
             status_code=202,
             content={"job_id": job_id, "poll_url": f"/api/v1/jobs/{job_id}"},
         )
 
-    # Synchronous mode — unchanged behaviour
+    # Synchronous mode (API clients): the answer is the response.
     try:
         result_data = await do_work()
         return result_data

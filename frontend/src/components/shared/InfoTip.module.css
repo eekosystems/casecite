@@ -1,0 +1,91 @@
+/* (i) button beside a setting, and the explanation it opens. */
+.button {
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  /* 24px hit area around a 13px icon (phones raise buttons to 44px tall,
+     which only adds tap area: the highlight below stays a 24px circle). */
+  width: 24px;
+  height: 24px;
+  margin: -6px -4px -6px 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--gray-400);
+  cursor: help;
+  vertical-align: middle;
+}
+
+.button::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: -1;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.button:hover,
+.button:focus-visible,
+.button[aria-expanded="true"] {
+  color: var(--blue-600);
+}
+
+.button:hover::before,
+.button:focus-visible::before,
+.button[aria-expanded="true"]::before {
+  background: var(--blue-100);
+}
+
+.button:focus-visible {
+  outline: none;
+}
+
+.button:focus-visible::before {
+  box-shadow: 0 0 0 2px var(--blue-500);
+}
+
+.warning {
+  color: var(--amber-600);
+}
+
+.warning:hover,
+.warning:focus-visible,
+.warning[aria-expanded="true"] {
+  color: var(--amber-700);
+}
+
+.warning:hover::before,
+.warning:focus-visible::before,
+.warning[aria-expanded="true"]::before {
+  background: var(--amber-100);
+}
+
+.tip {
+  position: fixed;
+  /* Above dialogs (1000-1100). */
+  z-index: 1200;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--gray-900);
+  color: white;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.45;
+  text-align: left;
+  white-space: normal;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+  pointer-events: auto;
+}
+
+.tipWarning {
+  border-left: 3px solid var(--amber-500);
+}

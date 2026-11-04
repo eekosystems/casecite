@@ -29,7 +29,7 @@ from typing import Any
 
 from app.config import settings
 from app.services.case_law_research import redact_unverified_case_references
-from app.services.llm_clients import chat_model, openai_chat, utility_model
+from app.services.llm_clients import drafting_model, openai_chat, utility_model
 from app.services.rag.prompt_safety import UNTRUSTED_CONTENT_RULE, untrusted_block
 
 logger = logging.getLogger(__name__)
@@ -84,7 +84,7 @@ def context_window_tokens(model: str | None = None) -> int:
     override = getattr(settings, "llm_context_window", None)
     if override:
         return int(override)
-    name = (model or chat_model() or "").lower()
+    name = (model or drafting_model() or "").lower()
     for fragment, window in _CONTEXT_WINDOWS:
         if fragment in name:
             return window
@@ -234,7 +234,7 @@ def _parse_json(content: str) -> dict[str, Any]:
 async def _chat(client, *, system: str, user: str, model: str | None = None, **kwargs) -> str:
     resp = await openai_chat(
         client,
-        model=model or chat_model(),
+        model=model or drafting_model(),
         messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
         temperature=0.3,
         **kwargs,

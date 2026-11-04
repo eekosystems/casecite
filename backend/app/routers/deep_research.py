@@ -37,7 +37,7 @@ from app.services.auth import TokenData
 from app.services.deep_research import PlanningError, deep_research_service
 from app.services.documents import document_service
 from app.services.job_queue import RETRY_POLICIES, job_manager
-from app.services.llm_clients import utility_model
+from app.services.llm_clients import research_model
 from app.services.permissions import require_permission
 from app.services.user_keys import UserAPIKeys
 from app.utils.ip_resolution import get_client_ip
@@ -188,7 +188,7 @@ async def plan_deep_research(
         plan=[DeepResearchSubQuestion(**s) for s in plan],
         scope=_scope_response(body.matter_id, document_ids, count),
         caps=deep_research_service.caps(),
-        model=utility_model(),
+        model=research_model(),
     )
 
 

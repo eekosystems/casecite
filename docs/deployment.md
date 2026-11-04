@@ -242,14 +242,14 @@ reason, in addition to whatever `ALLOWED_HOSTS` lists.
 ## Scaling Considerations
 
 **One process by default; several when the shared footing is in place.**
-Before migration 024 the session store, the document registry and the connector
+Before migration 025 the session store, the document registry and the connector
 credential caches were process-local, and the audit hash chain was continued
 from each process's memory, so the app refused `UVICORN_WORKERS` above 1 and
 held an exclusive lock on `data/.instance.lock`. They are shared now:
 
 | Store | Where it lives now | How other processes see a change |
 |-------|--------------------|----------------------------------|
-| Document registry | `document_registry` / `document_folders` tables (migration 024; `index.json` imported once and kept as `index.json.migrated-*`) | A `shared_versions` counter, checked at most twice a second; a three-way merge keeps a process's unsaved edit |
+| Document registry | `document_registry` / `document_folders` tables (migration 025; `index.json` imported once and kept as `index.json.migrated-*`) | A `shared_versions` counter, checked at most twice a second; a three-way merge keeps a process's unsaved edit |
 | Session store | Redis (`sessions:<user>`; one JSON list per user, expiring with its longest session) | Every validation reads it; a terminate on one worker ends the session everywhere |
 | Role permission matrix, legal holds | The database, as before | `shared_versions` counters bumped on change (the hold counter in the same transaction as the hold) |
 | Connector credentials | Encrypted files on the data volume, as before | The cache reloads when the file's modification time changed |
@@ -308,7 +308,7 @@ When in doubt, restore the pre-deploy backup instead.
 
 ### Row-level security needs a non-superuser app role
 
-Migration 023 enables and **forces** PostgreSQL row-level security on the
+Migration 024 enables and **forces** PostgreSQL row-level security on the
 user-content tables (`app/rls.py`, SECURITY.md): a query that forgets its
 user filter still returns only the caller's rows. PostgreSQL exempts
 **superusers** from it, and the bundled stack's `POSTGRES_USER` is one. The

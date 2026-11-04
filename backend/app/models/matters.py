@@ -21,6 +21,7 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    Text,
     UniqueConstraint,
 )
 
@@ -60,6 +61,12 @@ class Matter(Base):
     # Retention policy: documents and conversations filed under the matter are
     # removed by the daily retention run once older than this. None = keep.
     retention_days = Column(Integer, nullable=True)
+    # The case team's account of the matter (parties, dates, what happened,
+    # the client's goals), written in Matter → Facts. Every chat and strategy
+    # brief in the matter reads it as facts the user stated, never as a source.
+    facts = Column(Text, nullable=True)
+    facts_updated_at = Column(DateTime, nullable=True)
+    facts_updated_by = Column(String(36), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

@@ -7,8 +7,8 @@ worker is seen by the others). The running app imports ``index.json`` into
 these tables the first time it starts with them present, and keeps the file
 as ``index.json.migrated-<timestamp>``. Purely additive.
 
-Revision ID: 024
-Revises: 023
+Revision ID: 025
+Revises: 024
 Create Date: 2026-11-03
 """
 
@@ -17,8 +17,8 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "024"
-down_revision: str = "023"
+revision: str = "025"
+down_revision: str = "024"
 branch_labels = None
 depends_on = None
 

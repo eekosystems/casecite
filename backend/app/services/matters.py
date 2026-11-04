@@ -15,6 +15,8 @@ Design notes:
 from __future__ import annotations
 
 import uuid
+from collections.abc import Iterable
+from datetime import UTC, datetime
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -159,6 +161,44 @@ async def transfer_ownership(session: AsyncSession, matter: Matter, new_owner_id
     )
     await session.refresh(matter)
     return matter
+
+
+async def set_matter_facts(
+    session: AsyncSession, matter: Matter, facts: str, updated_by: str
+) -> Matter:
+    """Replace the matter's facts (an empty string clears them)."""
+    cleaned = facts.strip() or None
+    await session.execute(
+        update(Matter)
+        .where(Matter.id == matter.id)
+        .values(
+            facts=cleaned,
+            facts_updated_at=datetime.now(UTC).replace(tzinfo=None),
+            facts_updated_by=updated_by,
+        )
+    )
+    await session.refresh(matter)
+    return matter
+
+
+async def get_matter_facts(session: AsyncSession, matter_ids: Iterable[str]) -> list[dict]:
+    """Facts of the given matters that have any, as ``{"matter_id", "name", "facts"}``.
+
+    The caller decides which matters the user may read; this only loads them.
+    """
+    ids = sorted({m for m in matter_ids if m})
+    if not ids:
+        return []
+    rows = (
+        (await session.execute(select(Matter).where(Matter.id.in_(ids)).order_by(Matter.name)))
+        .scalars()
+        .all()
+    )
+    return [
+        {"matter_id": m.id, "name": m.name, "facts": m.facts.strip()}
+        for m in rows
+        if m.facts and m.facts.strip()
+    ]
 
 
 async def get_matter(session: AsyncSession, matter_id: str) -> Matter | None:

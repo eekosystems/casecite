@@ -113,7 +113,7 @@ async def _retention_loop() -> None:
 def multi_process_requirements() -> list[str]:
     """What a multi-worker / multi-replica deployment still lacks (empty = ready).
 
-    Since migration 024 the stores that were process-local are shared: the document
+    Since migration 025 the stores that were process-local are shared: the document
     registry and the shared version counters live in the database, sessions
     live in Redis, the permission matrix, legal holds and connector
     credentials reload when another process changes them, and the audit
@@ -295,6 +295,12 @@ async def lifespan(app: FastAPI):
     except Exception as _enc_err:  # never block startup on migration
         logger.error(f"Encrypted-at-rest migration failed: {_enc_err}")
 
+    # Apply the admin's embedding settings (Settings → Embedding) and select
+    # that model's vector collection BEFORE reconciliation checks documents.
+    from app.services.embedding_switch import load_from_storage as _load_embedding_cfg
+
+    await _load_embedding_cfg()
+
     # The document registry and the vector store persist independently; a
     # Chroma schema upgrade resets the store while documents stay marked
     # INDEXED. Repair any divergence in the background so users never see
@@ -441,7 +447,7 @@ async def lifespan(app: FastAPI):
         async with AsyncSessionLocal() as _seed_session:
             seed_result = await seed_clause_intelligence(
                 _seed_session,
-                embed_fn=_embed if settings.openai_api_key else None,
+                embed_fn=_embed if embedding_service.is_usable() else None,
                 embedding_model=embedding_service.model,
             )
         logger.info(f"Clause-intel seed: {seed_result}")

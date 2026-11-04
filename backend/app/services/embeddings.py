@@ -5,8 +5,13 @@ Providers:
 - OpenAI embeddings (text-embedding-3-small/large) — the default
 - Voyage AI (voyage-law-2 is trained on legal text)
 - Cohere
-- Any OpenAI-compatible embeddings server you host (EMBEDDING_BASE_URL), so
-  document text can be embedded on your own network
+- Any OpenAI-compatible embeddings server you host (EMBEDDING_BASE_URL, or
+  Settings → Embedding), so document text can be embedded on your own network
+
+The settings come from .env and can be replaced at runtime by an admin
+(``apply_instance_config``). Vectors from different models can't be mixed, so
+each model has its own vector collection (``collection_name``); see
+app/services/embedding_switch.py for how a switch re-embeds the documents.
 
 Every provider call is checked against the AI provider allowlist first
 (app/services/provider_policy.py).
@@ -29,6 +34,13 @@ if TYPE_CHECKING:
 # than the one the server model belongs to.
 DEFAULT_VOYAGE_MODEL = "voyage-law-2"
 DEFAULT_COHERE_MODEL = "embed-english-v3.0"
+
+# Vector collection for the .env embedding model (the name every existing
+# install already uses). Other models get their own collection.
+DEFAULT_COLLECTION = "legal_documents"
+
+# Instance secret holding the admin's embedding settings (encrypted at rest).
+INSTANCE_KEY = "embedding_config"
 
 
 def _real_key(value: str | None) -> str | None:
@@ -75,6 +87,14 @@ class EmbeddingService:
         self.openai_api_key = _real_key(settings.openai_api_key)
         self.voyage_api_key = _real_key(getattr(settings, "voyage_api_key", None))
         self.cohere_api_key = _real_key(getattr(settings, "cohere_api_key", None))
+        self._apply_env()
+        self._env_signature = self.signature()
+
+    def _apply_env(self) -> None:
+        """Embedding settings from .env (the default until an admin changes them)."""
+        self.source = "env"
+        self._dimensions: int | None = getattr(settings, "embedding_dimensions", None)
+        self._instance_api_key: str | None = None
         # Self-hosted OpenAI-compatible embeddings endpoint (None = hosted providers).
         self.base_url = (getattr(settings, "embedding_base_url", None) or "").strip() or None
 
@@ -93,6 +113,76 @@ class EmbeddingService:
         else:
             self.model = preferred_model
 
+    def apply_instance_config(self, cfg: dict | None) -> None:
+        """Use an admin's embedding server, or go back to .env with ``None``.
+
+        ``cfg``: ``{"base_url", "model", "dimensions", "api_key"?}``, already
+        checked with :meth:`probe` (so ``dimensions`` is the real vector size).
+        """
+        if not cfg:
+            self._apply_env()
+            return
+        self.source = "instance"
+        self.base_url = str(cfg["base_url"]).strip()
+        self.model = str(cfg["model"]).strip()
+        self._dimensions = int(cfg["dimensions"])
+        self._instance_api_key = cfg.get("api_key") or None
+
+    @property
+    def server_api_key(self) -> str | None:
+        """Credential for a self-hosted server. From .env it is the OpenAI key, as
+        it always has been; an admin-set server only ever gets its own key."""
+        key: str | None = (
+            self._instance_api_key if self.source == "instance" else self.openai_api_key
+        )
+        return key
+
+    def signature(self) -> tuple[str, int]:
+        """What makes vectors comparable: the model and its vector size."""
+        return (self.model, self.dimensions)
+
+    def collection_name(self) -> str:
+        """Vector collection for the active model.
+
+        The .env model keeps the original collection, so existing installs see
+        no change. Any other model gets its own, so switching back to a model
+        used before needs no re-embedding.
+        """
+        if self.source == "env" or self.signature() == self._env_signature:
+            return DEFAULT_COLLECTION
+        model, dims = self.signature()
+        digest = hashlib.sha256(f"{model}|{dims}".encode()).hexdigest()[:12]
+        return f"{DEFAULT_COLLECTION}_{digest}"
+
+    def is_usable(self) -> bool:
+        """True when an embedding request has somewhere to go (server or key)."""
+        return bool(self.base_url or self.resolve_route(None).api_key)
+
+    async def probe(self, base_url: str, model: str, api_key: str | None = None) -> int:
+        """Embed a test string on a server before switching to it; return the vector size.
+
+        Raises ValueError with a message fit to show an admin.
+        """
+        from openai import AsyncOpenAI
+
+        enforce_provider_allowed(provider_for_base_url(base_url), "embedding request")
+        client = AsyncOpenAI(
+            api_key=api_key or "not-needed",
+            base_url=base_url,
+            timeout=min(settings.api_timeout, 60),
+            max_retries=0,
+        )
+        try:
+            response = await client.embeddings.create(model=model, input=["embedding check"])
+            vector = response.data[0].embedding
+        except Exception as e:  # SDK / network errors share no useful base class
+            raise ValueError(
+                f"The embedding server at {base_url} did not return an embedding for '{model}': {e}"
+            ) from e
+        if not vector:
+            raise ValueError(f"The embedding server returned an empty vector for '{model}'.")
+        return len(vector)
+
     @functools.cached_property
     def tokenizer(self) -> tiktoken.Encoding:
         """Tokenizer for chunking, loaded on first use.
@@ -109,9 +199,8 @@ class EmbeddingService:
     @property
     def dimensions(self) -> int:
         """Get embedding dimensions for current model."""
-        configured = getattr(settings, "embedding_dimensions", None)
-        if configured:
-            return int(configured)
+        if self._dimensions:
+            return int(self._dimensions)
         return self.MODEL_DIMENSIONS.get(self.model, 1536)
 
     def resolve_route(self, user_keys: Optional["UserAPIKeys"] = None) -> EmbeddingRoute:
@@ -134,7 +223,7 @@ class EmbeddingService:
                 provider=provider_for_base_url(self.base_url),
                 kind="openai",
                 model=self.model,
-                api_key=self.openai_api_key,
+                api_key=self.server_api_key,
                 base_url=self.base_url,
             )
 
@@ -218,7 +307,8 @@ class EmbeddingService:
         """Generate embeddings using the OpenAI API or a self-hosted compatible server."""
         from openai import AsyncOpenAI
 
-        key = api_key or self.openai_api_key
+        # A self-hosted server gets only the credential its route carries.
+        key = api_key or (None if self.base_url else self.openai_api_key)
         if self.base_url and not key:
             # Local servers ignore the key, but the SDK requires a non-empty one.
             key = "not-needed"

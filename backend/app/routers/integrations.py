@@ -11,7 +11,7 @@ import json
 import logging
 
 from fastapi import APIRouter, Request
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.config import settings
 from app.exceptions import BadRequestError, NotFoundError
@@ -207,18 +207,86 @@ async def clear_connector_credentials(
 LLM_SECRET = "local_llm_config"
 
 
-class LocalLLMRequest(BaseModel):
+def _http_url(v: str) -> str:
+    v = v.strip()
+    if not v.lower().startswith(("http://", "https://")):
+        raise ValueError("base_url must start with http:// or https://")
+    return v
+
+
+class LocalModelEntry(BaseModel):
+    """One registered model and the server that serves it."""
+
+    name: str = Field(..., min_length=1, max_length=120)
     base_url: str = Field(..., min_length=4, max_length=400)  # e.g. http://localhost:11434/v1
+
+    _check_url = field_validator("base_url")(_http_url)
+
+
+class LocalLLMRequest(BaseModel):
+    # The model list. Older clients send one server instead (base_url, no
+    # models); that is read as the role models on that server.
+    models: list[LocalModelEntry] | None = Field(None, max_length=50)
+    base_url: str | None = Field(None, min_length=4, max_length=400)
     chat_model: str = Field(..., min_length=1, max_length=120)
     utility_model: str | None = Field(None, max_length=120)
+    # Deep research. Blank: follows the utility model.
+    research_model: str | None = Field(None, max_length=120)
+    # Drafting documents. Blank: follows the chat model.
+    drafting_model: str | None = Field(None, max_length=120)
 
     @field_validator("base_url")
     @classmethod
-    def _http_url(cls, v: str) -> str:
-        v = v.strip()
-        if not v.lower().startswith(("http://", "https://")):
-            raise ValueError("base_url must start with http:// or https://")
-        return v
+    def _base_url(cls, v: str | None) -> str | None:
+        return None if v is None else _http_url(v)
+
+    @model_validator(mode="after")
+    def _registry(self) -> "LocalLLMRequest":
+        if self.models is None:
+            if not self.base_url:
+                raise ValueError("Send the model list (models) or one server URL (base_url).")
+            role_models = dict.fromkeys(
+                n.strip()
+                for n in (
+                    self.chat_model,
+                    self.utility_model,
+                    self.research_model,
+                    self.drafting_model,
+                )
+                if n and n.strip()
+            )
+            self.models = [LocalModelEntry(name=n, base_url=self.base_url) for n in role_models]
+        if not self.models:
+            raise ValueError("Add at least one model.")
+        names = [m.name.strip() for m in self.models]
+        duplicate = next((n for n in names if names.count(n) > 1), None)
+        if duplicate:
+            raise ValueError(
+                f"The model '{duplicate}' is listed more than once. Each model name must be "
+                "unique, so every request goes to one known server."
+            )
+        for role, value in (
+            ("chat", self.chat_model),
+            ("utility", self.utility_model),
+            ("research", self.research_model),
+            ("drafting", self.drafting_model),
+        ):
+            if value and value.strip() and value.strip() not in names:
+                raise ValueError(f"The {role} model '{value.strip()}' is not in the model list.")
+        return self
+
+
+def _embeddings_provider() -> str:
+    """Where document text goes for embeddings. The model endpoint above does not
+    cover embeddings (EMBEDDING_BASE_URL does), so the UI can warn when chat is
+    local but embeddings still go to a hosted provider."""
+    from app.services.embeddings import embedding_service
+
+    try:
+        return embedding_service.resolve_route(None).provider
+    except Exception as e:  # status display must never fail on this
+        logger.warning("Could not resolve the embeddings provider: %s", e)
+        return "unknown"
 
 
 def _local_llm_status() -> dict:
@@ -229,6 +297,10 @@ def _local_llm_status() -> dict:
         "base_url": cfg.get("base_url"),
         "chat_model": cfg.get("chat_model"),
         "utility_model": cfg.get("utility_model"),
+        "research_model": cfg.get("research_model"),
+        "drafting_model": cfg.get("drafting_model"),
+        "models": cfg.get("models") or [],
+        "embeddings_provider": _embeddings_provider(),
     }
 
 
@@ -244,14 +316,36 @@ async def set_local_llm(
     request: Request,
     current_user: TokenData = require_permission("admin.settings"),
 ):
-    """Point the instance at a custom OpenAI-compatible endpoint and apply immediately."""
+    """Register the instance's OpenAI-compatible models (one or more servers) and
+    which model fills each role, and apply immediately."""
+    models = [
+        {"name": m.name.strip(), "base_url": m.base_url.strip().rstrip("/")}
+        for m in body.models or []
+    ]
+    chat = body.chat_model.strip()
+    # The chat model's server: the endpoint clients are built for.
+    base_url = next(m["base_url"] for m in models if m["name"] == chat)
+    utility = (body.utility_model or "").strip() or chat
+    # "" (not None) so a cleared field is stored as cleared and survives a restart.
+    research = (body.research_model or "").strip()
+    drafting = (body.drafting_model or "").strip()
     payload = {
-        "base_url": body.base_url.strip(),
-        "chat_model": body.chat_model.strip(),
-        "utility_model": (body.utility_model or "").strip() or body.chat_model.strip(),
+        "base_url": base_url,
+        "models": models,
+        "chat_model": chat,
+        "utility_model": utility,
+        "research_model": research,
+        "drafting_model": drafting,
     }
     await set_secret(LLM_SECRET, json.dumps(payload))
-    llm_clients.set_runtime(**payload)
+    llm_clients.set_runtime(
+        base_url=base_url,
+        models=models,
+        chat_model=chat,
+        utility_model=utility,
+        research_model=research,
+        drafting_model=drafting,
+    )
     await audit_service.log_event(
         event_type=AuditEventType.SETTINGS_CHANGE,
         user_id=current_user.user_id,
@@ -259,11 +353,22 @@ async def set_local_llm(
         resource_type="integration",
         resource_id="local_llm",
         ip_address=get_client_ip(request),
-        details={"action": "local_llm_set", "base_url": payload["base_url"]},
+        details={
+            "action": "local_llm_set",
+            "base_url": payload["base_url"],
+            "models": [m["name"] for m in models],
+        },
     )
     # Same fields as GET /local-llm (configured + the applied values), so the
     # UI shows "configured" right after saving instead of "not configured".
-    return {"status": "saved", "configured": True, **payload}
+    return {
+        "status": "saved",
+        "configured": True,
+        **payload,
+        "research_model": payload["research_model"] or None,
+        "drafting_model": payload["drafting_model"] or None,
+        "embeddings_provider": _embeddings_provider(),
+    }
 
 
 @router.delete("/local-llm")
@@ -280,6 +385,8 @@ async def clear_local_llm(
         base_url=settings.openai_base_url or "",
         chat_model=settings.openai_chat_model,
         utility_model=settings.openai_utility_model,
+        research_model=settings.openai_research_model or settings.openai_deep_research_model or "",
+        drafting_model=settings.openai_drafting_model or "",
     )
     await audit_service.log_event(
         event_type=AuditEventType.SETTINGS_CHANGE,
@@ -291,3 +398,152 @@ async def clear_local_llm(
         details={"action": "local_llm_cleared"},
     )
     return {"status": "cleared", **_local_llm_status()}
+
+
+# ----- Embeddings: model and server (Settings → Embedding) -----
+
+
+class EmbeddingConfigRequest(BaseModel):
+    base_url: str = Field(..., min_length=4, max_length=400)  # e.g. http://localhost:11434/v1
+    model: str = Field(..., min_length=1, max_length=120)
+    # Optional check: the server's vectors must be this long. Blank: use what it returns.
+    dimensions: int | None = Field(None, ge=8, le=16384)
+    # None keeps the saved key when the server is unchanged; "" clears it.
+    api_key: str | None = Field(None, max_length=400)
+
+    @field_validator("base_url")
+    @classmethod
+    def _http_url(cls, v: str) -> str:
+        v = v.strip()
+        if not v.lower().startswith(("http://", "https://")):
+            raise ValueError("base_url must start with http:// or https://")
+        return v
+
+
+def _embeddings_status() -> dict:
+    """Effective embedding settings and re-embedding progress (admin view)."""
+    from app.services import embedding_switch
+    from app.services.embeddings import embedding_service as svc
+
+    return {
+        "source": svc.source,  # "env" (.env) or "instance" (set here)
+        "vector_store": embedding_switch.vector_store_kind(),
+        "editable": embedding_switch.can_switch(),
+        "provider": _embeddings_provider(),
+        "base_url": svc.base_url,
+        "model": svc.model,
+        "dimensions": svc.dimensions,
+        "api_key_set": svc.source == "instance" and bool(svc.server_api_key),
+        "collection": svc.collection_name(),
+        "reindex": embedding_switch.reindex_status(),
+    }
+
+
+@router.get("/embeddings")
+async def embeddings_status(current_user: TokenData = require_permission("admin.settings")):
+    """Current embedding model and server, and re-embedding progress."""
+    return _embeddings_status()
+
+
+@router.post("/embeddings")
+async def set_embeddings(
+    body: EmbeddingConfigRequest,
+    request: Request,
+    current_user: TokenData = require_permission("admin.settings"),
+):
+    """Use an OpenAI-compatible embedding server, then re-embed every document.
+
+    The server is checked first (it must return a vector), so a typo never
+    leaves the instance unable to index or search.
+    """
+    from app.services import embedding_switch
+    from app.services.embeddings import embedding_service
+
+    if not embedding_switch.can_switch():
+        raise BadRequestError(
+            "Embeddings can be changed here only with the built-in vector store "
+            "(Chroma). With Pinecone, set EMBEDDING_BASE_URL, EMBEDDING_MODEL and "
+            "EMBEDDING_DIMENSIONS in .env and use an index of that vector size."
+        )
+    api_key = body.api_key
+    if (
+        api_key is None
+        and embedding_service.source == "instance"
+        and embedding_service.base_url == body.base_url
+    ):
+        api_key = embedding_service.server_api_key
+    api_key = (api_key or "").strip() or None
+    model = body.model.strip()
+    try:
+        dimensions = await embedding_service.probe(body.base_url, model, api_key)
+    except ValueError as e:  # includes ProviderNotAllowedError
+        raise BadRequestError(str(e))
+    if body.dimensions and body.dimensions != dimensions:
+        raise BadRequestError(
+            f"The server returned {dimensions}-dimension vectors for '{model}', not "
+            f"{body.dimensions}. Leave Dimensions blank to use what the server returns."
+        )
+    cfg = {"base_url": body.base_url, "model": model, "dimensions": dimensions}
+    if api_key:
+        cfg["api_key"] = api_key
+    await embedding_switch.save_and_apply(cfg)
+    await audit_service.log_event(
+        event_type=AuditEventType.SETTINGS_CHANGE,
+        user_id=current_user.user_id,
+        user_email=current_user.email,
+        resource_type="integration",
+        resource_id="embeddings",
+        ip_address=get_client_ip(request),
+        details={
+            "action": "embeddings_set",
+            "base_url": body.base_url,
+            "model": model,
+            "dimensions": dimensions,
+        },
+    )
+    return {"status": "saved", **_embeddings_status()}
+
+
+@router.delete("/embeddings")
+async def clear_embeddings(
+    request: Request,
+    current_user: TokenData = require_permission("admin.settings"),
+):
+    """Go back to the .env embedding settings (and their vector collection)."""
+    from app.services import embedding_switch
+    from app.services.embeddings import embedding_service
+
+    if embedding_service.source == "instance":
+        await embedding_switch.save_and_apply(None)
+        await audit_service.log_event(
+            event_type=AuditEventType.SETTINGS_CHANGE,
+            user_id=current_user.user_id,
+            user_email=current_user.email,
+            resource_type="integration",
+            resource_id="embeddings",
+            ip_address=get_client_ip(request),
+            details={"action": "embeddings_cleared"},
+        )
+    return {"status": "cleared", **_embeddings_status()}
+
+
+@router.post("/embeddings/reindex")
+async def reindex_embeddings(
+    request: Request,
+    current_user: TokenData = require_permission("admin.settings"),
+):
+    """Retry re-embedding: documents the active collection is missing, and
+    documents that failed during a model switch."""
+    from app.services import embedding_switch
+
+    embedding_switch.start_reindex()
+    await audit_service.log_event(
+        event_type=AuditEventType.SETTINGS_CHANGE,
+        user_id=current_user.user_id,
+        user_email=current_user.email,
+        resource_type="integration",
+        resource_id="embeddings",
+        ip_address=get_client_ip(request),
+        details={"action": "embeddings_reindex_started"},
+    )
+    return {"status": "started", **_embeddings_status()}

@@ -207,7 +207,9 @@ export const api = {
         throw new Error('Session expired. Please refresh the page.');
       }
       handleAccountGate(error.code);
-      throw new Error(formatErrorDetail(error.detail, 'Forbidden'));
+      // Status attached like every other failure, so a caller can tell
+      // "not allowed" apart without parsing the message.
+      throw Object.assign(new Error(formatErrorDetail(error.detail, 'Forbidden')), { status: 403 });
     }
 
     if (!response.ok) {

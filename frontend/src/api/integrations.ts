@@ -53,9 +53,11 @@ Object.assign(api, {
     return api.request('/admin/integrations/local-llm', {
       method: 'POST',
       body: JSON.stringify({
-        base_url: config.baseUrl,
+        models: config.models.map((m) => ({ name: m.name, base_url: m.baseUrl })),
         chat_model: config.chatModel,
         utility_model: config.utilityModel || null,
+        research_model: config.researchModel || null,
+        drafting_model: config.draftingModel || null,
       }),
     });
   },

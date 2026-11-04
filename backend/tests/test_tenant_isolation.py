@@ -509,7 +509,7 @@ class TestGenerationHelpers:
 
     def test_get_model_max_tokens_various_models(self):
         """Test max tokens for various model names."""
-        from app.services.rag.generation import get_model_max_tokens
+        from app.services.rag.generation import UNKNOWN_MODEL_MAX_TOKENS, get_model_max_tokens
 
         assert get_model_max_tokens("gpt-4o") == 16384
         assert get_model_max_tokens("gpt-4-turbo") == 4096
@@ -517,4 +517,5 @@ class TestGenerationHelpers:
         assert get_model_max_tokens("claude-3-opus") == 4096
         assert get_model_max_tokens("gemini-pro") == 8192
         assert get_model_max_tokens("o1-preview") == 32768
-        assert get_model_max_tokens("unknown-model") == 4096
+        # Unknown (local / gateway) models defer to the user's own setting.
+        assert get_model_max_tokens("unknown-model") == UNKNOWN_MODEL_MAX_TOKENS

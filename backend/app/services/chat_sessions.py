@@ -208,6 +208,7 @@ async def get_session_with_messages(
             "title": session.title,
             "created_at": session.created_at,
             "updated_at": session.updated_at,
+            "matter_id": session.matter_id,
             "messages": [_serialize_message(m) for m in messages],
         }
 

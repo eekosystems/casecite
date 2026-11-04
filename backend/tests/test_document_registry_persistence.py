@@ -139,7 +139,9 @@ async def test_delete_whose_registry_write_fails_says_the_entry_may_return(svc, 
     with (
         patch("app.services.documents.rag_service", rag),
         patch.object(svc, "_delete_derived_data", AsyncMock()),
-        patch("app.services.registry_store.os.replace", side_effect=OSError(13, "Permission denied")),
+        patch(
+            "app.services.registry_store.os.replace", side_effect=OSError(13, "Permission denied")
+        ),
         pytest.raises(RegistryWriteError, match="may reappear after a restart"),
     ):
         await svc.delete_document(doc.id, "u1")
@@ -150,7 +152,9 @@ async def test_delete_whose_registry_write_fails_says_the_entry_may_return(svc, 
 async def test_move_whose_registry_write_fails_is_rolled_back(svc, tmp_path):
     doc = await _persisted_upload(svc)
     with (
-        patch("app.services.registry_store.os.replace", side_effect=OSError(13, "Permission denied")),
+        patch(
+            "app.services.registry_store.os.replace", side_effect=OSError(13, "Permission denied")
+        ),
         pytest.raises(RegistryWriteError),
     ):
         svc.move_document(doc.id, "u1", "/Cases/Smith")

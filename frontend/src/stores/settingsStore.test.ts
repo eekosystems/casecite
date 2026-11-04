@@ -22,7 +22,7 @@ const defaultRagSettings = {
   dimensions: 1536, chunkSize: 512, chunkOverlap: 128, similarityThreshold: 0.25,
   topK: 10, enableReranking: true, hybridSearch: true, citationVerification: true,
   contextCompression: false, queryExpansion: true, sourceTracking: true,
-  llmModel: 'gpt-5.5', temperature: 0.1, maxTokens: 4096,
+  llmModel: '', temperature: 0.1, maxTokens: 4096,
 };
 
 describe('settingsStore', () => {

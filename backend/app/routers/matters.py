@@ -14,6 +14,7 @@ defined before the parameterized /{matter_id} catch-alls.
 """
 
 import logging
+from typing import Any
 
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import or_, select
@@ -36,6 +37,8 @@ from app.models.schemas import (
     MatterAnalysesResponse,
     MatterAnalysisItem,
     MatterDetailResponse,
+    MatterFactsRequest,
+    MatterFactsResponse,
     MatterListResponse,
     MatterMemberResponse,
     MatterResponse,
@@ -175,6 +178,17 @@ def _personal_owner(matter: Matter) -> str | None:
     return str(matter.owner_id) if matter.is_personal else None
 
 
+def _facts_fields(matter: Matter | None) -> dict[str, Any]:
+    """A matter's facts fields for a response (columns read as plain values)."""
+    if matter is None:
+        return {}
+    return {
+        "facts": matter.facts,
+        "facts_updated_at": matter.facts_updated_at,
+        "facts_updated_by": matter.facts_updated_by,
+    }
+
+
 async def _detail_response(
     db: AsyncSession, matter: Matter, matter_id: str, caller_id: str
 ) -> MatterDetailResponse:
@@ -182,6 +196,7 @@ async def _detail_response(
     return MatterDetailResponse(
         **base.model_dump(),
         members=await _members_with_identity(db, matter_id),
+        **_facts_fields(matter),
     )
 
 
@@ -269,7 +284,34 @@ async def get_matter(
     return MatterDetailResponse(
         **base.model_dump(),
         members=await _members_with_identity(db, matter_id),
+        **_facts_fields(matter),
     )
+
+
+@router.put("/{matter_id}/facts", response_model=MatterFactsResponse)
+async def set_matter_facts(
+    matter_id: str,
+    body: MatterFactsRequest,
+    request: Request,
+    current_user: TokenData = require_permission("documents.upload"),
+    db: AsyncSession = Depends(get_db),
+) -> MatterFactsResponse:
+    """Replace the matter's facts. Any member who may add content to it may edit them.
+
+    Every chat and strategy brief in the matter reads these facts as the case
+    team's account, so the audit trail records who changed them, never the text.
+    """
+    matter = await _require_member_matter(db, matter_id, current_user.user_id)
+    await matters_service.set_matter_facts(db, matter, body.facts, current_user.user_id)
+    await db.commit()
+    await _audit(
+        request,
+        current_user,
+        AuditEventType.DATA_MODIFICATION,
+        matter_id,
+        {"action": "matter_facts_updated", "length": len(matter.facts or "")},
+    )
+    return MatterFactsResponse(**_facts_fields(matter))
 
 
 @router.post("/{matter_id}/members", response_model=MatterDetailResponse)
@@ -330,6 +372,7 @@ async def add_matter_member(
     return MatterDetailResponse(
         **base.model_dump(),
         members=await _members_with_identity(db, matter_id),
+        **_facts_fields(matter),
     )
 
 
@@ -362,6 +405,7 @@ async def remove_matter_member(
     return MatterDetailResponse(
         **base.model_dump(),
         members=await _members_with_identity(db, matter_id),
+        **_facts_fields(matter),
     )
 
 

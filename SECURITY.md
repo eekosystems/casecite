@@ -72,7 +72,7 @@ network, disk encryption, backups and the firm's own policies. No SOC 2, ISO
 - Every document, chat, analysis and job is scoped to its owner (or to the
   members of the matter it is filed under). The vector store refuses a query
   that carries no tenant scope.
-- On PostgreSQL, row-level security is a second fence (migration 023,
+- On PostgreSQL, row-level security is a second fence (migration 024,
   `app/rls.py`): every transaction carries the authenticated user's id, and
   forced policies on the content tables (conversations, analyses, review
   tables, workflows, deep research runs, workspace sessions and their child

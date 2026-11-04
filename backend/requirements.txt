@@ -33,11 +33,14 @@ pinecone==5.4.2
 numpy<2.0
 # transitive via chromadb/google SDKs; pinned to clear PYSEC-2026-1805
 protobuf>=5.29.6,<6
+# transitive via google-auth (pyasn1-modules); 0.6.5 clears CVE-2026-119194..119197
+pyasn1>=0.6.5
 
 # Document processing
-# 6.19.0 clears the 2026 pypdf advisory batches (pip-audit clean on 2026-10-04);
-# only PdfReader/page text extraction is used, unchanged across 4.x -> 6.x
-pypdf==6.21.2
+# 6.21.4 clears the 2026 pypdf advisory batches (CVE-2026-119203..119209,
+# pip-audit clean on 2026-11-01); only PdfReader/page text extraction is used,
+# unchanged across 4.x -> 6.x
+pypdf==6.21.4
 pdfplumber==0.11.10
 python-docx==1.1.0
 # PDF rendering: chat export to PDF and the DOCX/text -> PDF conversion behind

@@ -4,8 +4,8 @@ One row per provider call with the reported token counts and whether the
 instance's own key carried it; the basis of the admin usage view and of the
 daily quota for users on server-level keys. Purely additive.
 
-Revision ID: 025
-Revises: 024
+Revision ID: 026
+Revises: 025
 Create Date: 2026-11-03
 """
 
@@ -14,8 +14,8 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "025"
-down_revision: str = "024"
+revision: str = "026"
+down_revision: str = "025"
 branch_labels = None
 depends_on = None
 

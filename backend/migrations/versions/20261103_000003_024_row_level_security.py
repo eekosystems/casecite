@@ -10,8 +10,8 @@ supplies the per-transaction ``SET LOCAL`` of the scope.
 
 A no-op on SQLite, which has no row-level security.
 
-Revision ID: 023
-Revises: 022
+Revision ID: 024
+Revises: 023
 Create Date: 2026-11-03
 """
 
@@ -20,8 +20,8 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "023"
-down_revision: str = "022"
+revision: str = "024"
+down_revision: str = "023"
 branch_labels = None
 depends_on = None
 

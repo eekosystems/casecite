@@ -196,7 +196,7 @@ async_engine = get_async_engine()
 sync_engine = get_sync_engine()
 
 # PostgreSQL only: every transaction carries the request's user scope so the
-# row-level security policies (migration 023, app/rls.py) can enforce it.
+# row-level security policies (migration 024, app/rls.py) can enforce it.
 from app.rls import install_rls_listener  # noqa: E402  (needs the engine first)
 
 install_rls_listener(async_engine)

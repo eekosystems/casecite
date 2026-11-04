@@ -1,5 +1,7 @@
 # CaseCite — Private Legal RAG
 
+If you need help setting up or installing this on your infrastructure, contact me at https://thomasunise.com
+
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
 CaseCite is an **open-source, self-hosted** legal research platform. Upload your firm's documents, ask questions, and research cases & judges — on infrastructure you control. Documents, the search index and chat history are stored on your own servers. AI features send your questions and the relevant document text to the AI providers **you** configure, under your own API keys (BYOK); nothing is sent to the CaseCite maintainers, and there is no telemetry. See [What leaves your infrastructure](#what-leaves-your-infrastructure).
@@ -207,7 +209,9 @@ Not required to boot, but the product does little without them:
 | `ANTHROPIC_API_KEY` | — | Claude access |
 | `VOYAGE_API_KEY` | — | Voyage AI legal embeddings |
 | `OPENAI_BASE_URL` | — | OpenAI-compatible endpoint for chat (self-hosted model or gateway) |
-| `EMBEDDING_BASE_URL` | — | OpenAI-compatible endpoint for embeddings; set with `OPENAI_BASE_URL` to keep document text on your network |
+| `OPENAI_CHAT_MODEL` / `OPENAI_UTILITY_MODEL` | `gpt-5.5` / `gpt-5.4-mini` | Model for chat / for small background calls |
+| `OPENAI_RESEARCH_MODEL` (or `OPENAI_DEEP_RESEARCH_MODEL`) / `OPENAI_DRAFTING_MODEL` | utility model / chat model | Model for deep research / for drafting documents |
+| `EMBEDDING_BASE_URL` | — | OpenAI-compatible endpoint for embeddings; set with `OPENAI_BASE_URL` to keep document text on your network (admins can also set it in Settings → Embedding) |
 | `VECTOR_DB` | `chroma` | `chroma` (local) or `pinecone` (stores document text with Pinecone) |
 | `TRUSTED_PROXIES` | `127.0.0.1` | Reverse-proxy IP/CIDR — **required behind a proxy** |
 | `REQUIRE_MFA` | `false` | Require every password account to enrol TOTP MFA |

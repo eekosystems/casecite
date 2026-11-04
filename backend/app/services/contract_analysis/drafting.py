@@ -16,7 +16,7 @@ import logging
 
 from app.services.case_law_research import redact_unverified_case_references
 from app.services.contract_analysis.long_drafting import context_window_tokens
-from app.services.llm_clients import chat_model, openai_chat
+from app.services.llm_clients import drafting_model, openai_chat
 from app.services.rag.prompt_safety import UNTRUSTED_CONTENT_RULE, untrusted_block
 
 logger = logging.getLogger(__name__)
@@ -102,7 +102,7 @@ async def draft_document(
     try:
         resp = await openai_chat(
             client,
-            model=chat_model(),
+            model=drafting_model(),
             messages=[
                 {"role": "system", "content": _DRAFTING_SYSTEM_PROMPT},
                 {"role": "user", "content": user_content},

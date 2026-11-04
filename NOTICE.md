@@ -114,7 +114,7 @@ universal, so it includes a few packages that install only on some platforms.
 | [propcache](https://github.com/aio-libs/propcache) | 0.5.2 | Apache-2.0 |
 | [protobuf](https://developers.google.com/protocol-buffers/) | 5.29.6 | 3-Clause BSD License |
 | [psycopg2-binary](https://psycopg.org/) | 2.9.9 | LGPL with exceptions |
-| [pyasn1](https://github.com/pyasn1/pyasn1) | 0.6.4 | BSD-2-Clause |
+| [pyasn1](https://github.com/pyasn1/pyasn1) | 0.6.5 | BSD-2-Clause |
 | [pyasn1-modules](https://github.com/pyasn1/pyasn1-modules) | 0.4.2 | BSD |
 | [pybase64](https://github.com/mayeut/pybase64) | 1.4.3 | BSD-2-Clause |
 | [pycparser](https://github.com/eliben/pycparser) | 3.0 | BSD-3-Clause |
@@ -124,7 +124,7 @@ universal, so it includes a few packages that install only on some platforms.
 | [pygments](https://pygments.org) | 2.20.0 | BSD-2-Clause |
 | [pyjwt](https://github.com/jpadilla/pyjwt) | 2.15.1 | MIT |
 | [pyotp](https://github.com/pyotp/pyotp) | 2.9.0 | MIT License |
-| [pypdf](https://github.com/py-pdf/pypdf) | 6.21.2 | BSD-3-Clause |
+| [pypdf](https://github.com/py-pdf/pypdf) | 6.21.4 | BSD-3-Clause |
 | [pypdfium2](https://github.com/pypdfium2-team/pypdfium2) | 5.11.0 | BSD-3-Clause, Apache-2.0, dependency licenses |
 | [pypika](https://github.com/kayak/pypika) | 0.51.1 | Apache License Version 2.0 |
 | [pyproject-hooks](https://github.com/pypa/pyproject-hooks) | 1.2.0 | MIT License |

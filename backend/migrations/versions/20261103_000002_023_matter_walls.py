@@ -3,8 +3,8 @@
 Creates ``matter_walls``: one row per (matter, user) that must never see the
 matter, with the reason and who set it. Purely additive.
 
-Revision ID: 022
-Revises: 021
+Revision ID: 023
+Revises: 022
 Create Date: 2026-11-03
 """
 
@@ -13,8 +13,8 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "022"
-down_revision: str = "021"
+revision: str = "023"
+down_revision: str = "022"
 branch_labels = None
 depends_on = None
 

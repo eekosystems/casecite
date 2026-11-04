@@ -1,4 +1,4 @@
-"""Settings response models — prompt defaults and index clearing."""
+"""Settings response models — prompt defaults, instance models and index clearing."""
 
 from pydantic import BaseModel
 
@@ -22,6 +22,22 @@ class PromptDefaultsResponse(BaseModel):
     mode_prompts: ModePrompts
 
 
+class EmbeddingInfoResponse(BaseModel):
+    """GET /settings/embeddings — which embedding model indexes documents (read-only).
+
+    ``provider`` says where document text goes to be embedded ("self_hosted",
+    "openai", "voyage", "cohere" or a hostname). The server address is admin-only.
+    """
+
+    source: str
+    provider: str
+    model: str
+    dimensions: int
+    reindex_state: str
+    reindex_done: int
+    reindex_total: int
+
+
 class ClearResponse(BaseModel):
     """POST /settings/clear."""
 
@@ -29,3 +45,21 @@ class ClearResponse(BaseModel):
     message: str
     cleared_documents: int | None = None
     failed_documents: int | None = None
+
+
+class InstanceModelsResponse(BaseModel):
+    """GET /settings/models — the instance's configured models, for the model picker.
+
+    ``custom_endpoint`` is True when the OpenAI-compatible client points at a
+    custom endpoint (a local server or gateway), so OpenAI's own models are not
+    reachable through it. The endpoint address itself is admin-only.
+    """
+
+    custom_endpoint: bool
+    chat_model: str
+    utility_model: str
+    research_model: str
+    drafting_model: str
+    # Every model registered on the admin's servers (names only; empty when chat
+    # goes to OpenAI itself).
+    models: list[str] = []

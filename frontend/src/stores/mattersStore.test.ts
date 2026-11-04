@@ -15,6 +15,7 @@ vi.mock('../api', () => ({
     getMatterChats: vi.fn(),
     getMatterAnalyses: vi.fn(),
     getMatterActivity: vi.fn(),
+    setMatterFacts: vi.fn(),
     getAllDocuments: vi.fn().mockResolvedValue([]),
     listFolders: vi.fn().mockResolvedValue({ folders: [] }),
   },
@@ -156,6 +157,72 @@ describe('mattersStore', () => {
     useMattersStore.getState().setTab('activity');
     await vi.waitFor(() => expect(useMattersStore.getState().activity).toHaveLength(1));
     expect(useMattersStore.getState().tab).toBe('activity');
+  });
+
+  // ==================== facts ====================
+
+  it('setFactsDraft tracks edits and drops them when the text matches what is saved', () => {
+    useMattersStore.setState({ workspaceId: 'm1', workspace: { ...detail, facts: 'Saved facts' } as any });
+    useMattersStore.getState().setFactsDraft('Saved facts, edited');
+    expect(useMattersStore.getState().factsDraft).toBe('Saved facts, edited');
+    useMattersStore.getState().setFactsDraft('Saved facts');
+    expect(useMattersStore.getState().factsDraft).toBeNull();
+  });
+
+  it('saveFacts sends the draft, updates the workspace and clears the draft', async () => {
+    useMattersStore.setState({ workspaceId: 'm1', workspace: { ...detail, facts: null } as any, factsDraft: 'Lease signed 1 March.' });
+    (api.setMatterFacts as any).mockResolvedValue({
+      facts: 'Lease signed 1 March.', facts_updated_at: '2026-11-01T02:00:00', facts_updated_by: 'me',
+    });
+    expect(await useMattersStore.getState().saveFacts()).toBe(true);
+    expect(api.setMatterFacts).toHaveBeenCalledWith('m1', 'Lease signed 1 March.');
+    const st = useMattersStore.getState();
+    expect(st.workspace?.facts).toBe('Lease signed 1 March.');
+    expect(st.workspace?.facts_updated_by).toBe('me');
+    expect(st.factsDraft).toBeNull();
+    expect(st.factsSaving).toBe(false);
+    expect(useUIStore.getState().toasts.slice(-1)[0]?.type).toBe('success');
+  });
+
+  it('saveFacts turns read-only when the server refuses the edit (403)', async () => {
+    useMattersStore.setState({ workspaceId: 'm1', workspace: detail as any, factsDraft: 'New facts' });
+    (api.setMatterFacts as any).mockRejectedValue(Object.assign(new Error('Permission denied'), { status: 403 }));
+    expect(await useMattersStore.getState().saveFacts()).toBe(false);
+    const st = useMattersStore.getState();
+    expect(st.factsReadOnly).toBe(true);
+    expect(st.factsDraft).toBe('New facts'); // the text is not thrown away
+    expect(useUIStore.getState().toasts.slice(-1)[0]?.message).toMatch(/can read these facts but not change them/);
+  });
+
+  it('saveFacts shows the server message on other failures and stays editable', async () => {
+    useMattersStore.setState({ workspaceId: 'm1', workspace: detail as any, factsDraft: 'New facts' });
+    (api.setMatterFacts as any).mockRejectedValue(new Error('Database is locked'));
+    expect(await useMattersStore.getState().saveFacts()).toBe(false);
+    expect(useMattersStore.getState().factsReadOnly).toBe(false);
+    expect(useUIStore.getState().toasts.slice(-1)[0]?.message).toMatch(/Database is locked/);
+  });
+
+  it('saveFacts does nothing without edits', async () => {
+    useMattersStore.setState({ workspaceId: 'm1', workspace: detail as any, factsDraft: null });
+    expect(await useMattersStore.getState().saveFacts()).toBe(false);
+    expect(api.setMatterFacts).not.toHaveBeenCalled();
+  });
+
+  it('opening another matter drops the previous draft and read-only state', async () => {
+    useMattersStore.setState({ workspaceId: 'm1', workspace: detail as any, factsDraft: 'x', factsReadOnly: true });
+    (api.getMatter as any).mockResolvedValue({ ...detail, id: 'm2' });
+    (api.getMatterDocuments as any).mockResolvedValue({ documents: [] });
+    await useMattersStore.getState().loadWorkspace('m2');
+    expect(useMattersStore.getState().factsDraft).toBeNull();
+    expect(useMattersStore.getState().factsReadOnly).toBe(false);
+  });
+
+  it('the facts tab refreshes the matter so the facts are current, keeping a draft', async () => {
+    useMattersStore.setState({ workspaceId: 'm1', workspace: detail as any, factsDraft: 'mine' });
+    (api.getMatter as any).mockResolvedValue({ ...detail, facts: 'Edited by a colleague' });
+    useMattersStore.getState().setTab('facts');
+    await vi.waitFor(() => expect(useMattersStore.getState().workspace?.facts).toBe('Edited by a colleague'));
+    expect(useMattersStore.getState().factsDraft).toBe('mine');
   });
 
   it('renameMatter updates the workspace and the list', async () => {

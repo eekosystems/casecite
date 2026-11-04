@@ -13,7 +13,7 @@ user's rows:
   ``SET LOCAL app.rls_bypass`` taken from those variables (an engine event;
   ``SET LOCAL`` dies with the transaction, so pooled connections never leak
   a scope).
-- Migration 023 enables and FORCES row-level security on the content tables
+- Migration 024 enables and FORCES row-level security on the content tables
   and installs policies that allow a row when the session is unscoped (no
   user: background jobs, startup, migrations), bypassed (admin endpoint),
   the caller owns it, or the caller is a member — and not walled off — of
@@ -133,7 +133,7 @@ async def rls_status(session) -> dict[str, object]:
     }
 
 
-# ── The policies (shared by migration 023 and the PostgreSQL tests) ──────
+# ── The policies (shared by migration 024 and the PostgreSQL tests) ──────
 
 # (table, owner column, matter column) — rows the caller owns, or filed under
 # a matter they belong to.

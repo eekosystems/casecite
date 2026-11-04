@@ -5,8 +5,8 @@ deleted while set), who set it, when and why, and ``retention_days`` (content
 older than this is removed by the daily retention run unless the matter is on
 hold). Purely additive; existing matters are not on hold and keep everything.
 
-Revision ID: 021
-Revises: 020
+Revision ID: 022
+Revises: 021
 Create Date: 2026-11-03
 """
 
@@ -15,8 +15,8 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "021"
-down_revision: str = "020"
+revision: str = "022"
+down_revision: str = "021"
 branch_labels = None
 depends_on = None
 

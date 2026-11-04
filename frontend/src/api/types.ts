@@ -133,6 +133,22 @@ interface ChatStats {
   [key: string]: unknown;
 }
 
+/** POST /chat?async=true: the answer is being produced by a job to poll. */
+export interface ChatJobStarted {
+  job_id: string;
+  poll_url: string;
+}
+
+/** GET /jobs/{id} for a chat job; `result` is the answer once completed. */
+export interface ChatJob {
+  job_id: string;
+  status: string; // pending | processing | completed | failed | cancelled
+  result?: ChatResponse | null;
+  error?: string | null;
+  /** The answer was too large to store with the job. */
+  truncated?: boolean;
+}
+
 export interface ChatQueryOptions {
   includeCaseLaw?: boolean;
   caseLawLimit?: number;
@@ -469,6 +485,17 @@ export interface Matter {
 
 export interface MatterDetail extends Matter {
   members: MatterMember[];
+  /** The case team's account of the matter (Matter → Facts); read by chat and strategy. */
+  facts?: string | null;
+  facts_updated_at?: string | null;
+  /** User id of the member who last saved the facts. */
+  facts_updated_by?: string | null;
+}
+
+export interface MatterFacts {
+  facts: string | null;
+  facts_updated_at: string | null;
+  facts_updated_by: string | null;
 }
 
 /** An ethical wall: a user who must never see the matter (admin-managed). */
@@ -1219,17 +1246,46 @@ export interface ConnectorCredentialStatus {
   masked: Record<string, string | null>;
 }
 
+/** One registered model and the OpenAI-compatible server that serves it. */
+export interface LocalModelEntry {
+  name: string;
+  base_url: string;
+}
+
 export interface LocalLlmStatus {
   configured: boolean;
+  /** The chat model's server. */
   base_url: string | null;
   chat_model: string | null;
   utility_model: string | null;
+  /** Deep research model; null means it follows the utility model. */
+  research_model?: string | null;
+  /** Drafting model; null means it follows the chat model. */
+  drafting_model?: string | null;
+  /** Every registered model and its server. */
+  models?: LocalModelEntry[];
+  /** Where embeddings go ("openai", "voyage", "cohere", "self_hosted" or a hostname). */
+  embeddings_provider?: string;
 }
 
 export interface LocalLlmConfig {
-  baseUrl: string;
+  models: { name: string; baseUrl: string }[];
   chatModel: string;
   utilityModel?: string | null;
+  researchModel?: string | null;
+  draftingModel?: string | null;
+}
+
+/** GET /settings/models — the instance's configured models, for the model picker. */
+export interface InstanceModels {
+  /** True when chat goes to a custom endpoint (local server or gateway), not OpenAI. */
+  custom_endpoint: boolean;
+  chat_model: string;
+  utility_model: string;
+  research_model: string;
+  drafting_model?: string;
+  /** Every registered model name (no server addresses). Empty when chat goes to OpenAI. */
+  models?: string[];
 }
 
 // ==================== Admin User Management Types ====================
@@ -1783,6 +1839,7 @@ export interface ApiClient {
   saveApiKey(keyType: string, apiKey: string): Promise<void>;
   deleteApiKey(keyType: string): Promise<void>;
   getPromptDefaults(): Promise<Record<string, unknown>>;
+  getInstanceModels(): Promise<InstanceModels>;
   reindexDocuments(): Promise<ReindexResult>;
 
   // Admin Integrations (admin-only)
@@ -1863,6 +1920,8 @@ export interface ApiClient {
   getMatterChats(matterId: string): Promise<ChatSessionListResponse>;
   getMatterAnalyses(matterId: string): Promise<{ analyses: MatterAnalysisItem[] }>;
   getMatterActivity(matterId: string, limit?: number): Promise<{ events: MatterActivityEvent[] }>;
+  /** Replace the matter's facts (empty clears them). 403 when the caller's role can't edit. */
+  setMatterFacts(matterId: string, facts: string): Promise<MatterFacts>;
 
   // Tabular review
   listReviewTables(): Promise<{ tables: ReviewTableSummary[] }>;
@@ -1964,4 +2023,61 @@ export interface ApiClient {
   /** Render a chat transcript as Word / PDF / Markdown (POST /chat/export). */
   exportConversation(payload: ConversationExportPayload): Promise<Blob>;
 
+  // Embeddings (Settings → Embedding)
+  getEmbeddingInfo(): Promise<EmbeddingInfo>;
+  getEmbeddingStatus(): Promise<EmbeddingStatus>;
+  /** Checks the server first; a server that doesn't answer is refused with the reason. */
+  setEmbeddings(config: EmbeddingConfig): Promise<EmbeddingStatus & { status: string }>;
+  clearEmbeddings(): Promise<EmbeddingStatus & { status: string }>;
+  reindexEmbeddings(): Promise<EmbeddingStatus & { status: string }>;
+
+}
+
+// ==================== Embeddings ====================
+
+/** Background re-embedding after the embedding model changes. */
+export interface EmbeddingReindexStatus {
+  state: 'idle' | 'running' | 'done' | 'failed';
+  total: number;
+  done: number;
+  failed: number;
+  started_at: string | null;
+  finished_at: string | null;
+  error: string | null;
+}
+
+/** GET /settings/embeddings — read-only, for every user. */
+export interface EmbeddingInfo {
+  source: 'env' | 'instance';
+  /** Where document text goes to be embedded: "self_hosted", "openai", "voyage", "cohere" or a hostname. */
+  provider: string;
+  model: string;
+  dimensions: number;
+  reindex_state: EmbeddingReindexStatus['state'];
+  reindex_done: number;
+  reindex_total: number;
+}
+
+/** GET /admin/integrations/embeddings. */
+export interface EmbeddingStatus {
+  source: 'env' | 'instance';
+  vector_store: 'chroma' | 'pinecone' | 'none';
+  /** False with Pinecone: its index has one fixed vector size. */
+  editable: boolean;
+  provider: string;
+  base_url: string | null;
+  model: string;
+  dimensions: number;
+  api_key_set: boolean;
+  collection: string;
+  reindex: EmbeddingReindexStatus;
+}
+
+export interface EmbeddingConfig {
+  baseUrl: string;
+  model: string;
+  /** Optional check; blank uses what the server returns. */
+  dimensions?: number | null;
+  /** Only when the server needs one; blank keeps a saved key. */
+  apiKey?: string;
 }

@@ -3,8 +3,14 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.exceptions import UpstreamError
-from app.models.responses.settings import ClearResponse, PromptDefaultsResponse
+from app.models.responses.settings import (
+    ClearResponse,
+    EmbeddingInfoResponse,
+    InstanceModelsResponse,
+    PromptDefaultsResponse,
+)
 from app.models.schemas import RAGSettings
+from app.services import llm_clients
 from app.services.audit import AuditEventType, audit_service
 from app.services.auth import TokenData, get_current_user
 from app.services.permissions import require_permission
@@ -48,6 +54,22 @@ async def update_rag_settings(
     return merged
 
 
+@router.get("/models", response_model=InstanceModelsResponse)
+async def get_instance_models(
+    current_user: TokenData = Depends(get_current_user),
+) -> InstanceModelsResponse:
+    """The models this instance is set up with, so the model picker can offer
+    the instance default (an admin's local model, when one is configured)."""
+    return InstanceModelsResponse(
+        custom_endpoint=llm_clients.is_custom_endpoint(),
+        chat_model=llm_clients.chat_model(),
+        utility_model=llm_clients.utility_model(),
+        research_model=llm_clients.research_model(),
+        drafting_model=llm_clients.drafting_model(),
+        models=llm_clients.model_names(),
+    )
+
+
 @router.get("/prompts/defaults", response_model=PromptDefaultsResponse)
 async def get_default_prompts(current_user: TokenData = Depends(get_current_user)) -> dict:
     """Get all default prompts for reset/customization functionality. Requires authentication."""
@@ -67,6 +89,30 @@ async def get_default_prompts(current_user: TokenData = Depends(get_current_user
             for mode in ("research", "case", "document", "compliance", "strategy")
         },
     }
+
+
+@router.get("/embeddings", response_model=EmbeddingInfoResponse)
+async def get_embedding_info(
+    current_user: TokenData = Depends(get_current_user),
+) -> EmbeddingInfoResponse:
+    """Which embedding model indexes documents, and whether re-embedding is running."""
+    from app.services.embedding_switch import reindex_status
+    from app.services.embeddings import embedding_service
+
+    status = reindex_status()
+    try:
+        provider = embedding_service.resolve_route(None).provider
+    except Exception:  # status display only
+        provider = "unknown"
+    return EmbeddingInfoResponse(
+        source=embedding_service.source,
+        provider=provider,
+        model=embedding_service.model,
+        dimensions=embedding_service.dimensions,
+        reindex_state=status["state"],
+        reindex_done=status["done"],
+        reindex_total=status["total"],
+    )
 
 
 @router.post("/reindex")
